@@ -327,7 +327,7 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-service start *, /usr/l
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-apt check, /usr/local/sbin/proxyfibre-apt list, /usr/local/sbin/proxyfibre-apt apply, /usr/local/sbin/proxyfibre-apt state, /usr/local/sbin/proxyfibre-apt log
 # Mise à jour de Bastion depuis Git. Même règle : verbes énumérés, « _check » et
 # « _apply » (qui écrivent réellement sur le disque) ne sont PAS atteignables par le web.
-www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-selfupdate state, /usr/local/sbin/proxyfibre-selfupdate check, /usr/local/sbin/proxyfibre-selfupdate apply, /usr/local/sbin/proxyfibre-selfupdate log
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-selfupdate state, /usr/local/sbin/proxyfibre-selfupdate check, /usr/local/sbin/proxyfibre-selfupdate apply, /usr/local/sbin/proxyfibre-selfupdate log, /usr/local/sbin/proxyfibre-selfupdate pubkey, /usr/local/sbin/proxyfibre-selfupdate testssh
 # Écriture de la configuration du dépôt (URL, branche, jeton) : script dédié, jamais
 # un « tee » ou un « sh -c » générique, qui donneraient l'écriture de n'importe quel fichier.
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-update-conf

@@ -77,6 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'git') {
             proc_close($p);
         }
         $gitFlash = str_starts_with($out, 'ok') ? ['Dépôt enregistré.', 'ok'] : [$out ?: 'Enregistrement impossible.', 'err'];
+    } elseif ($act === 'testssh') {
+        $r = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate testssh 2>&1'));
+        $gitFlash = str_starts_with($r, 'OK:') ? [substr($r, 3), 'ok'] : [$r, 'err'];
     } elseif (in_array($act, ['check', 'apply'], true)) {
         $r = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate ' . $act . ' 2>&1'));
         $gitFlash = str_starts_with($r, 'ERREUR')
@@ -86,6 +89,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'git') {
     }
 }
 $git = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate state 2>/dev/null'), true) ?: [];
+// Clé publique de la passerelle — engendrée au premier affichage de cette page.
+$gitKey = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate pubkey 2>/dev/null'));
 
 // État courant (rapide : simulation locale, aucun accès réseau).
 $apt = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-apt state 2>/dev/null'), true) ?: [];
@@ -388,17 +393,64 @@ $gRetard = (int) ($git['retard'] ?? 0);
           <input type="password" name="git_token" autocomplete="new-password"
                  placeholder="<?= !empty($git['jeton']) ? '•••••••• (jeton enregistré — laisser vide pour le conserver… non : le retaper pour le changer)' : 'ghp_… (laisser vide si le dépôt est public)' ?>">
         </label>
-        <p class="hint" style="margin:.4rem 0 .8rem">Le jeton est stocké hors du dépôt, lisible par le seul compte
-          root, et n'est jamais écrit dans l'adresse du dépôt (il apparaîtrait sinon dans les journaux).
-          Sur GitHub : <em>Settings → Developer settings → Personal access tokens</em>, portée <code>repo</code> en
-          lecture seule.</p>
+        <p class="hint" style="margin:.4rem 0 .8rem">Inutile si vous utilisez une adresse <code>git@…</code> : la clé
+          ci-dessous s'en charge, et c'est préférable — rien à stocker, révocable d'un clic, limité à un seul dépôt.
+          Le jeton, lui, est conservé hors du dépôt, lisible par le seul compte root, et n'est jamais écrit dans
+          l'adresse (il apparaîtrait sinon dans les journaux).</p>
         <button class="btn-sm">Enregistrer le dépôt</button>
       </form>
     </details>
+
+    <?php if ($gitKey !== '' && !str_starts_with($gitKey, 'ERREUR')): ?>
+    <details style="margin-top:1rem" <?= $gPret ? '' : 'open' ?>>
+      <summary class="muted small" style="cursor:pointer;margin-bottom:.6rem">Clé d'accès de cette passerelle</summary>
+      <p class="hint" style="margin:.6rem 0">Ajoutez cette clé sur votre dépôt GitHub :
+        <em>dépôt → Settings → Deploy keys → Add deploy key</em>. <strong>Ne cochez pas « Allow write access »</strong> :
+        la passerelle n'a besoin que de lire.</p>
+      <p class="hint" style="margin:0 0 .6rem">Une clé dédiée plutôt qu'un jeton de compte : cette machine est exposée
+        et porte un serveur web. Si elle était compromise, une clé en lecture seule ne donnerait accès qu'à
+        <em>ce seul dépôt</em> — un jeton personnel ouvrirait tout votre compte GitHub, en écriture.
+        La clé privée, elle, ne quitte jamais la passerelle.</p>
+      <div style="display:flex;gap:.5rem;align-items:flex-start">
+        <textarea id="gitKey" readonly rows="3" onclick="this.select()"
+          style="flex:1;font-family:ui-monospace,monospace;font-size:.72rem;line-height:1.5;resize:vertical;
+                 background:#0b1120;color:#cbd5e1;border:1px solid var(--line);border-radius:8px;padding:.6rem"><?= e($gitKey) ?></textarea>
+        <button type="button" class="btn-sm" id="gitKeyCopy" style="flex:none">Copier</button>
+      </div>
+      <?php
+      // Un TUBE, pas un « here-string » : shell_exec passe par sh (dash), qui ne connaît
+      // pas la syntaxe « <<< » de bash — elle échouait sur « redirection unexpected ».
+      $emp = trim((string) shell_exec('printf %s ' . escapeshellarg($gitKey)
+           . ' | ssh-keygen -lf /dev/stdin 2>/dev/null'));
+      $emp = preg_match('/(SHA256:\S+)/', $emp, $mm) ? $mm[1] : '';
+      ?>
+      <?php if ($emp !== ''): ?>
+      <p class="hint" style="margin:.5rem 0 0">Empreinte : <code><?= e($emp) ?></code> — GitHub l'affiche après ajout,
+        elle doit correspondre.</p>
+      <?php endif; ?>
+      <form method="post" style="margin:.8rem 0 0">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="do" value="git"><input type="hidden" name="act" value="testssh">
+        <button class="btn-sm" <?= $gPret ? '' : 'disabled' ?>>Tester l'accès au dépôt</button>
+        <?php if (!$gPret): ?><span class="muted small" style="margin-left:.5rem">enregistrez d'abord une adresse de dépôt</span><?php endif; ?>
+      </form>
+    </details>
+    <?php endif; ?>
   </div>
 </section>
 
 <script>
+(function(){
+  var b=document.getElementById('gitKeyCopy'), t=document.getElementById('gitKey');
+  if(b && t) b.addEventListener('click', function(){
+    t.select();
+    // navigator.clipboard exige un contexte sécurisé : la console est en HTTPS, mais
+    // execCommand reste le repli si le certificat auto-signé fait tiquer le navigateur.
+    var fini = function(){ b.textContent='Copié'; setTimeout(function(){ b.textContent='Copier'; }, 1600); };
+    if(navigator.clipboard) navigator.clipboard.writeText(t.value).then(fini, function(){ document.execCommand('copy'); fini(); });
+    else { document.execCommand('copy'); fini(); }
+  });
+})();
 (function(){
   var j=document.getElementById('gitJauge'), lg=document.getElementById('gitLog');
   if(!j) return;

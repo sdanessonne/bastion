@@ -233,7 +233,53 @@ case "${1:-}" in
         git -C "$REPO_DIR" log -1 --pretty='  version %h — %s (%cr)' 2>/dev/null
         ;;
 
+    # Clé PUBLIQUE de la passerelle, à déposer sur GitHub en « deploy key ».
+    # Engendrée au premier appel : une installation neuve n'en a pas, et l'administrateur
+    # ne doit pas avoir à ouvrir une session SSH pour la récupérer.
+    # La clé PRIVÉE ne sort jamais d'ici (600, root).
+    pubkey)
+        K=/root/.ssh/id_ed25519
+        if [ ! -f "$K" ]; then
+            mkdir -p /root/.ssh && chmod 700 /root/.ssh
+            ssh-keygen -t ed25519 -f "$K" -N "" -q \
+                -C "bastion-$(hostname 2>/dev/null || echo passerelle)-lecture-seule" || {
+                    echo "ERREUR: impossible d'engendrer la clé" >&2; exit 1; }
+            chmod 600 "$K"
+        fi
+        # Empreinte de l'hôte enregistrée d'avance : sans elle, ssh POSERAIT une question
+        # à la première connexion et l'unité systemd se figerait, sans rien afficher.
+        touch /root/.ssh/known_hosts; chmod 600 /root/.ssh/known_hosts
+        for h in github.com gitlab.com; do
+            grep -q "^${h} " /root/.ssh/known_hosts 2>/dev/null || \
+                ssh-keyscan -t ed25519 -T 5 "$h" >> /root/.ssh/known_hosts 2>/dev/null
+        done
+        cat "${K}.pub"
+        ;;
+
+    # Éprouve l'accès au dépôt : la clé est-elle acceptée, et donne-t-elle ce dépôt ?
+    testssh)
+        [ -n "$GIT_REPO" ] || { echo "Aucun dépôt configuré."; exit 1; }
+        git_env
+        if sortie=$(git ls-remote --heads "$GIT_REPO" 2>&1); then
+            n=$(printf '%s\n' "$sortie" | grep -c 'refs/heads/')
+            b=$(printf '%s\n' "$sortie" | sed -n 's|.*refs/heads/||p' | paste -sd', ' -)
+            echo "OK: dépôt accessible — ${n} branche(s) : ${b}"
+        else
+            printf '%s\n' "$sortie" | head -3
+            case "$sortie" in
+                *"Permission denied"*|*"publickey"*)
+                    echo "ECHEC: clé refusée — la clé publique ci-dessus est-elle bien ajoutée en « deploy key » sur le dépôt ?" ;;
+                *"not found"*|*"does not exist"*|*"Repository not found"*)
+                    echo "ECHEC: dépôt introuvable — vérifiez l'adresse." ;;
+                *"Host key verification"*)
+                    echo "ECHEC: hôte inconnu — relancez l'affichage de la clé pour enregistrer son empreinte." ;;
+                *) echo "ECHEC: dépôt inaccessible." ;;
+            esac
+            exit 1
+        fi
+        ;;
+
     log) journalctl -u "$UNIT" --no-pager -n 300 -o cat 2>/dev/null ;;
 
-    *) echo "Usage: $0 state|check|apply|log" >&2; exit 2 ;;
+    *) echo "Usage: $0 state|check|apply|log|pubkey|testssh" >&2; exit 2 ;;
 esac
