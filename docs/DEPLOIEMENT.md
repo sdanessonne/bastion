@@ -38,7 +38,7 @@ sudo bash scripts/verify.sh
 ```
 
 Puis, depuis un appareil branché sur le **LAN** : ouvrez un site → vous êtes redirigé vers le
-portail → connectez-vous avec le compte de test `demo` / `demo1234` → accès Internet ouvert.
+portail → connectez-vous avec le compte de test `demo` (mot de passe défini dans provisioning/config.env) → accès Internet ouvert.
 
 ## 4. Accès à la console d'administration
 

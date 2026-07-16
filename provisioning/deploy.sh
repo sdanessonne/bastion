@@ -20,11 +20,49 @@ die(){ printf '\033[1;31m[Bastion]\033[0m %s\n' "$*" >&2; exit 1; }
 # ── Secrets ──────────────────────────────────────────────────────────────────
 mkdir -p /etc/proxyfibre
 gen(){ head -c 32 /dev/urandom | sha256sum | cut -c1-64; }
+# Mot de passe lisible et TYPOGRAPHIABLE : il sera tapé à la main. Alphabet sans
+# caractère ambigu (ni O/0, ni I/l/1), présenté en groupes de 5.
+#
+# La composition est IMPOSÉE, pas espérée. MESURÉ sur 2000 tirages : un tirage
+# purement aléatoire sur cet alphabet ne contient AUCUN chiffre dans 4,5 % des cas
+# (il n'y a que 8 chiffres pour 55 caractères). Samba refuse alors le mot de passe et
+# la création du domaine échoue — une fois sur 22, au hasard, sans rien d'explicable.
+# On force donc 2 majuscules, 2 minuscules et 2 chiffres, on complète depuis
+# /dev/urandom, puis on mélange (sans quoi les 6 premiers caractères suivraient
+# toujours le même motif). ~100 bits d'entropie.
+genpass(){
+  local maj='ABCDEFGHJKMNPQRSTUVWXYZ' min='abcdefghijkmnpqrstuvwxyz' chi='23456789'
+  local tout p='' i
+  tout="${maj}${min}${chi}"
+  for i in 1 2; do p+="$(tr -dc "$maj" < /dev/urandom | head -c1)"; done
+  for i in 1 2; do p+="$(tr -dc "$min" < /dev/urandom | head -c1)"; done
+  for i in 1 2; do p+="$(tr -dc "$chi" < /dev/urandom | head -c1)"; done
+  p+="$(tr -dc "$tout" < /dev/urandom | head -c 14)"
+  printf '%s' "$p" | fold -w1 | shuf | tr -d '\n' | sed 's/.\{5\}/&-/g; s/-$//'
+}
 if [[ -f "$SECRETS_ENV" ]]; then source "$SECRETS_ENV"; else
   RADIUS_SECRET="$(gen)"; FAS_KEY="$(gen)"; DB_PASS="$(gen)"
   umask 077
   printf 'RADIUS_SECRET="%s"\nFAS_KEY="%s"\nDB_PASS="%s"\n' "$RADIUS_SECRET" "$FAS_KEY" "$DB_PASS" > "$SECRETS_ENV"
   log "Secrets générés → $SECRETS_ENV"
+fi
+
+# Mot de passe de la console : ENGENDRÉ s'il n'est pas fourni, jamais codé en dur.
+# Un mot de passe par défaut inscrit dans le dépôt serait connu de quiconque lit le
+# code : toute passerelle installée sans le changer serait ouverte. Et un défaut
+# VIDE serait pire encore — la console n'aurait plus de mot de passe du tout.
+# Il est conservé pour que ré-exécuter deploy.sh ne le change pas sous les pieds
+# de l'administrateur.
+ADMIN_PASS_ENV=/etc/proxyfibre/admin-pass.env
+ADMIN_PASS_GENERE=0
+if [[ -z "${ADMIN_PASS:-}" ]]; then
+  if [[ -f "$ADMIN_PASS_ENV" ]]; then
+    source "$ADMIN_PASS_ENV"
+  else
+    ADMIN_PASS="$(genpass)"; ADMIN_PASS_GENERE=1
+    umask 077
+    printf 'ADMIN_PASS="%s"\n' "$ADMIN_PASS" > "$ADMIN_PASS_ENV"
+  fi
 fi
 
 # ── Détection du répertoire FreeRADIUS (3.0 / 3.2) ───────────────────────────
@@ -391,5 +429,22 @@ log "─────────────────────────
 log "Déploiement terminé."
 log "  LAN ${LAN_IF} = ${LAN_IP}/${LAN_CIDR}  ·  DHCP ${DHCP_START}-${DHCP_END}"
 log "  Portail FAS : http://${LAN_IP}/portal/fas.php"
-log "  Utilisateur de test : ${TEST_USER} / ${TEST_PASS}"
+[ -n "${TEST_USER:-}" ] && [ -n "${TEST_PASS:-}" ] && log "  Utilisateur de test : ${TEST_USER} / ${TEST_PASS}"
 log "──────────────────────────────────────────────────────────────"
+
+# Le mot de passe engendré n'est affiché QU'UNE FOIS, au premier déploiement : il n'est
+# ensuite lisible que dans /etc/proxyfibre/admin-pass.env, réservé à root.
+if [[ "${ADMIN_PASS_GENERE:-0}" = "1" ]]; then
+  echo
+  echo "  ╔══════════════════════════════════════════════════════════════════╗"
+  echo "  ║  MOT DE PASSE DE LA CONSOLE — À NOTER MAINTENANT                 ║"
+  echo "  ╠══════════════════════════════════════════════════════════════════╣"
+  printf '  ║  Utilisateur : %-49s ║\n' "${ADMIN_USER}"
+  printf '  ║  Mot de passe : %-48s ║\n' "${ADMIN_PASS}"
+  echo "  ║                                                                  ║"
+  echo "  ║  Engendré au hasard : aucun mot de passe par défaut n'existe     ║"
+  echo "  ║  dans ce produit. Relisible dans /etc/proxyfibre/admin-pass.env  ║"
+  echo "  ║  (accès root). Activez la double authentification dans Profil.   ║"
+  echo "  ╚══════════════════════════════════════════════════════════════════╝"
+  echo
+fi

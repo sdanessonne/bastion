@@ -45,7 +45,7 @@ Laissez les secrets vides : ils sont générés automatiquement.
 sudo bash provisioning/install.sh
 ```
 Le script installe et configure CoovaChilli, FreeRADIUS, dnsmasq, MariaDB et Apache, active le
-routage/NAT, et crée l'utilisateur de test `demo` / `demo1234`.
+routage/NAT, et crée l'utilisateur de test `demo` (mot de passe défini dans provisioning/config.env).
 
 ## 5. Vérifier l'installation
 
@@ -62,7 +62,7 @@ Sur la **machine cliente** reliée au LAN :
 1. Vérifiez qu'elle a bien reçu une IP dans `192.168.182.10-254` (DHCP de chilli).
 2. Ouvrez un navigateur et allez sur un site en **http** (ex. `http://neverssl.com`).
 3. → Vous devez être **redirigé automatiquement vers la page de login Bastion**.
-4. Connectez-vous avec `demo` / `demo1234`.
+4. Connectez-vous avec `demo` (mot de passe défini dans provisioning/config.env).
 5. → La page confirme la connexion, et l'accès Internet s'ouvre. Rechargez un site pour vérifier.
 
 Avant authentification, toute navigation (hors page de login) doit être bloquée/redirigée.
@@ -74,7 +74,7 @@ C'est le comportement attendu du portail captif. ✅
 |---|---|
 | Pas d'IP sur le client | `eth1`/`LAN_IF` incorrect, ou le client n'est pas sur le bon réseau interne |
 | Pas de redirection | `systemctl status chilli` ; vérifier `ip link show tun0` |
-| Login échoue toujours | `radtest demo demo1234 127.0.0.1 0 <RADIUS_SECRET>` ; logs `/var/log/freeradius/` |
+| Login échoue toujours | `radtest demo <TEST_PASS> 127.0.0.1 0 <RADIUS_SECRET>` ; logs `/var/log/freeradius/` |
 | Page de login inaccessible | `systemctl status apache2` ; la résolution de `PORTAL_FQDN` (dnsmasq) |
 | Voir les sessions actives | `chilli_query list` |
 

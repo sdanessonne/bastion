@@ -23,7 +23,32 @@ DOMAIN="${AD_DOMAIN:-}"
 [ -z "$DOMAIN" ] && DOMAIN="$(mysql -N radius -e "SELECT v FROM pf_settings WHERE k='ad_domain'" 2>/dev/null || true)"
 REALM="$(printf '%s' "${REALM:-BASTION.LOCAL}" | tr 'a-z' 'A-Z' | tr -cd 'A-Z0-9.-')"
 DOMAIN="$(printf '%s' "${DOMAIN:-BASTION}" | tr 'a-z' 'A-Z' | tr -cd 'A-Z0-9-' | cut -c1-15)"
-ADMINPASS="${AD_ADMIN_PASS:-Bastion#AD2026}"
+# Mot de passe de l'Administrateur du domaine : ENGENDRÉ, jamais codé en dur.
+# Un défaut inscrit dans le dépôt serait connu de quiconque lit le code : tout
+# commissariat déployé sans le surcharger aurait un compte « Domain Admins » dont le
+# mot de passe est public. Il est conservé dans /etc/proxyfibre/ad.env (600, root),
+# relu en tête de ce script — ré-exécuter setup-ad.sh ne le change donc pas.
+# Contrainte Samba : au moins 7 caractères, avec majuscules, minuscules et chiffres.
+genpass(){
+  # Composition IMPOSÉE et non espérée : MESURÉ, un tirage purement aléatoire sur cet
+  # alphabet est sans chiffre dans 4,5 % des cas (8 chiffres pour 55 caractères).
+  # Samba EXIGE majuscule + minuscule + chiffre : le provisioning du domaine
+  # échouerait donc une fois sur 22, au hasard. On mélange ensuite, sans quoi les six
+  # premiers caractères suivraient toujours le même motif.
+  local maj='ABCDEFGHJKMNPQRSTUVWXYZ' min='abcdefghijkmnpqrstuvwxyz' chi='23456789'
+  local tout p='' i
+  tout="${maj}${min}${chi}"
+  for i in 1 2; do p="${p}$(tr -dc "$maj" < /dev/urandom | head -c1)"; done
+  for i in 1 2; do p="${p}$(tr -dc "$min" < /dev/urandom | head -c1)"; done
+  for i in 1 2; do p="${p}$(tr -dc "$chi" < /dev/urandom | head -c1)"; done
+  p="${p}$(tr -dc "$tout" < /dev/urandom | head -c 14)"
+  printf '%s' "$p" | fold -w1 | shuf | tr -d '\n' | sed 's/.\{5\}/&-/g; s/-$//'
+}
+if [ -z "${AD_ADMIN_PASS:-}" ]; then
+    AD_ADMIN_PASS="$(genpass)"
+    AD_PASS_GENERE=1
+fi
+ADMINPASS="${AD_ADMIN_PASS}"
 echo "[AD] Domaine cible : ${REALM} (NetBIOS ${DOMAIN})"
 
 echo "[AD] Arrêt des services Samba classiques (mode DC uniquement)…"
@@ -159,5 +184,20 @@ nft list chain ip nds_filter ndsRTR 2>/dev/null | grep -q "${DNS_IP}" || \
 echo "[AD] Groupe par défaut « Fonctionnaires »…"
 samba-tool group add Fonctionnaires 2>/dev/null || true
 
-echo "[AD] OK. Domaine ${REALM} (Administrator / ${ADMINPASS})."
+echo "[AD] OK. Domaine ${REALM} créé."
 echo "     Postes membres : DNS = ${DNS_IP}, domaine ${DOMAIN}. Partages : \\\\${DNS_IP}\\Commun."
+# Affiché UNE SEULE FOIS, à la création du domaine. Ensuite, il n'est plus lisible que
+# dans /etc/proxyfibre/ad.env (600, root) — et surtout, il n'est plus dans le dépôt.
+if [ "${AD_PASS_GENERE:-0}" = "1" ]; then
+    echo
+    echo "  ╔══════════════════════════════════════════════════════════════════╗"
+    echo "  ║  ADMINISTRATEUR DU DOMAINE — À NOTER MAINTENANT                  ║"
+    echo "  ╠══════════════════════════════════════════════════════════════════╣"
+    printf '  ║  Compte      : %-49s ║\n' "${DOMAIN}\\Administrator"
+    printf '  ║  Mot de passe : %-48s ║\n' "${ADMINPASS}"
+    echo "  ║                                                                  ║"
+    echo "  ║  Engendré au hasard. Relisible dans /etc/proxyfibre/ad.env       ║"
+    echo "  ║  (accès root). Sert à joindre les postes au domaine.             ║"
+    echo "  ╚══════════════════════════════════════════════════════════════════╝"
+    echo
+fi
