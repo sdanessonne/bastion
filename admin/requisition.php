@@ -80,10 +80,13 @@ function req_seal_status(PDO $db, string $from, string $to): array
     $st->execute([$d1, $d2]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
-    $ok = true; $alt = [];
+    $ok = true; $alt = []; $purges = 0;
     foreach ($rows as $r) {
-        $calc = seal_digest_for_day($db, $r['day']);
-        $good = hash_equals($r['digest'], $calc['digest'])
+        // Journée purgée : l'empreinte n'est plus recalculable, les données ayant été
+        // légalement effacées. Le scellé et sa signature restent vérifiables.
+        $purge = !empty($r['purged_at']);
+        if ($purge) { $purges++; }
+        $good = ($purge || hash_equals($r['digest'], seal_digest_for_day($db, $r['day'])['digest']))
              && hash_equals($r['seal'], seal_compute($r['day'], $r['digest'], $r['prev_seal']))
              && seal_verify_signature($r['seal'], $r['signature']);
         if (!$good) { $ok = false; $alt[] = $r['day']; }
@@ -106,6 +109,11 @@ function req_seal_status(PDO $db, string $from, string $to): array
     if ($nb < $total) {
         $note .= ' ' . ($total - $nb) . " journée(s) de la période ne sont pas scellées (passerelle hors service, ou antérieures "
                . "à la mise en place du scellement) : l'intégrité n'est pas attestée pour celles-là.";
+    }
+    if ($purges > 0) {
+        $note .= ' ' . $purges . " journée(s) ont vu leurs données EFFACÉES au terme du délai légal de conservation "
+               . "(art. L.34-1 CPCE) : leur scellé et sa signature restent vérifiables et prouvent que la chaîne n'a "
+               . "pas été retouchée, mais les enregistrements eux-mêmes n'existent plus et ne peuvent pas être produits.";
     }
     return ['nb' => $nb, 'total' => $total,
             'verdict' => $nb === $total ? 'Intègre — aucune altération' : 'Intègre sur les journées scellées', 'note' => $note];

@@ -47,8 +47,12 @@ function seal_schema(PDO $db): void {
         seal       CHAR(64)    NOT NULL,
         signature  MEDIUMBLOB  NULL,
         created_at DATETIME    NOT NULL,
+        purged_at  DATETIME    NULL,
         KEY k_day (day)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    // Installations antérieures au marquage des purges.
+    try { $db->exec("ALTER TABLE pf_log_seal ADD COLUMN IF NOT EXISTS purged_at DATETIME NULL"); }
+    catch (Throwable $e) { /* colonne déjà là */ }
 }
 
 /**
@@ -119,8 +123,16 @@ function seal_verify_chain(PDO $db, int $limit = 400): array {
     $prev = null;
 
     foreach ($rows as $r) {
-        $calc      = seal_digest_for_day($db, $r['day']);
-        $digest_ok = hash_equals($r['digest'], $calc['digest']);
+        // Journée PURGÉE (conservation légale écoulée) : ses lignes ont légalement
+        // disparu, l'empreinte ne peut donc plus être recalculée. Ce n'est PAS une
+        // altération — l'annoncer comme telle décrédibiliserait tout le dispositif.
+        // Le scellé, le chaînage et la signature restent vérifiables : ce sont des
+        // valeurs stockées, que la purge ne touche pas. On prouve donc toujours que
+        // la chaîne n'a pas été retouchée, seulement plus que les données lui
+        // correspondent — elles n'existent plus.
+        $purge = !empty($r['purged_at']);
+
+        $digest_ok = $purge ? true : hash_equals($r['digest'], seal_digest_for_day($db, $r['day'])['digest']);
         $seal_ok   = hash_equals($r['seal'], seal_compute($r['day'], $r['digest'], $r['prev_seal']));
         // Le 1er jour examiné n'a pas de parent dans la fenêtre : on ne peut pas
         // conclure sur son chaînage, on ne l'invalide donc pas.
@@ -129,7 +141,7 @@ function seal_verify_chain(PDO $db, int $limit = 400): array {
 
         $out[] = [
             'day' => $r['day'], 'digest_ok' => $digest_ok, 'seal_ok' => $seal_ok,
-            'chain_ok' => $chain_ok, 'sig_ok' => $sig_ok,
+            'chain_ok' => $chain_ok, 'sig_ok' => $sig_ok, 'purge' => $purge,
             'nb_acct' => (int) $r['nb_acct'], 'nb_web' => (int) $r['nb_web'],
         ];
         if (!$digest_ok || !$seal_ok || !$chain_ok || !$sig_ok) { $ok = false; }

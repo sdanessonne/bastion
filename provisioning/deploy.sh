@@ -373,6 +373,18 @@ chmod 440 /etc/sudoers.d/proxyfibre-secu
 echo '0 4 * * 0 root [ "$(mysql -N -B radius -e "SELECT v FROM pf_settings WHERE k=\"adblock_enabled\"" 2>/dev/null)" = "1" ] && /usr/local/sbin/proxyfibre-update-adblock enable' > /etc/cron.d/proxyfibre-adblock
 # Quotas/horaires + journalisation : custombinauth (appelé par OpenNDS binauth)
 install -m755 "${REPO_DIR}/services/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh
+# Journal systemd : plafonné. Par défaut il grossit jusqu'à 10 % du disque — sur une
+# passerelle laissée des mois en service, c'est plusieurs gigaoctets pour rien.
+sed -i 's/^#\?SystemMaxUse=.*/SystemMaxUse=500M/' /etc/systemd/journald.conf 2>/dev/null || true
+grep -q '^SystemMaxUse=' /etc/systemd/journald.conf || echo 'SystemMaxUse=500M' >> /etc/systemd/journald.conf
+grep -q '^SystemMaxFileSize=' /etc/systemd/journald.conf || echo 'SystemMaxFileSize=50M' >> /etc/systemd/journald.conf
+systemctl restart systemd-journald >/dev/null 2>&1 || true
+
+# Pas de session graphique sur une passerelle : ~500 Mo de RAM, un flux de mises à jour
+# et une surface d'attaque qui n'ont rien à faire sur un équipement réseau exposé.
+# On ne DÉSINSTALLE pas (réversible d'une commande) : on ne la démarre plus.
+systemctl set-default multi-user.target >/dev/null 2>&1 || true
+
 # Rétention légale : purge quotidienne (365 j)
 install -m755 "${REPO_DIR}/services/scripts/purge-logs.sh" /usr/local/sbin/proxyfibre-purge-logs
 echo "30 3 * * * root /usr/local/sbin/proxyfibre-purge-logs 365" > /etc/cron.d/proxyfibre-purge
