@@ -1,0 +1,38 @@
+# Bastion — OpenNDS, configuration UCI (/etc/config/opennds)
+#
+# IMPORTANT : sur Debian 13, le paquet opennds 10.3.1 lit sa configuration ICI
+# (format UCI, comme sur OpenWrt), et NON dans le fichier « legacy »
+# /etc/opennds/opennds.conf (qui est ignoré malgré son en-tête trompeur).
+#
+# Les placeholders __XXX__ sont substitués au déploiement.
+
+config opennds 'ndsconfig'
+	option enabled '1'
+
+	# Interface LAN gérée par OpenNDS (doit posséder une IPv4).
+	option gatewayinterface '__LAN_IF__'
+	option gatewayname 'Bastion'
+
+	# ── FAS (Forwarding Authentication Service) : notre portail PHP ──────────
+	# fasport ≠ 80 : OpenNDS réserve le port 80 pour l'interception et refuse
+	# qu'un FAS local l'utilise. Apache sert donc le portail sur 2080.
+	option fas_secure_enabled '1'
+	option faskey '__FAS_KEY__'
+	option fasport '2080'
+	option faspath '/portal/fas.php'
+	option fasremoteip '__LAN_IP__'
+
+	# binauth : script appelé à chaque connexion/déconnexion (quotas + journalisation).
+	option binauth '/usr/lib/opennds/binauth_log.sh'
+
+	# ── Accès des clients pré-authentifiés au routeur (chaîne ndsRTR) ────────
+	# INDISPENSABLE : sans 'allow tcp port 2080', les clients ne peuvent PAS
+	# joindre la page de login (OpenNDS n'ouvre pas le port du FAS local tout seul).
+	list users_to_router 'allow tcp port 22'
+	list users_to_router 'allow tcp port 53'
+	list users_to_router 'allow udp port 53'
+	list users_to_router 'allow udp port 67'
+	list users_to_router 'allow tcp port 2050'
+	list users_to_router 'allow tcp port 2080'
+	list users_to_router 'allow tcp port 2443'
+	list users_to_router 'allow udp port 69'

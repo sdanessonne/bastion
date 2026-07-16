@@ -1,0 +1,40 @@
+# Bastion — module SQL FreeRADIUS (MariaDB). Déployé en mods-enabled/sql.
+# Le site "default" référence déjà -sql (authorize/accounting/post-auth/session) :
+# activer ce module suffit à faire lire les comptes depuis la base.
+# __DB_PASS__ est substitué au déploiement.
+sql {
+    dialect = "mysql"
+    driver = "rlm_sql_${dialect}"
+    mysql {
+        warnings = auto
+    }
+    server = "localhost"
+    port = 3306
+    login = "radius"
+    password = "__DB_PASS__"
+    radius_db = "radius"
+    read_clients = no
+    client_table = "nas"
+    group_attribute = "SQL-Group"
+
+    # Noms de tables attendus par queries.conf
+    authcheck_table = "radcheck"
+    authreply_table = "radreply"
+    groupcheck_table = "radgroupcheck"
+    groupreply_table = "radgroupreply"
+    usergroup_table = "radusergroup"
+    acct_table1 = "radacct"
+    acct_table2 = "radacct"
+    postauth_table = "radpostauth"
+
+    pool {
+        start = 1
+        min = 1
+        max = 5
+        spare = 1
+        uses = 0
+        lifetime = 0
+        idle_timeout = 60
+    }
+    $INCLUDE ${modconfdir}/sql/main/${dialect}/queries.conf
+}

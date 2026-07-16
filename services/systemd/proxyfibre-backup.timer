@@ -1,0 +1,11 @@
+[Unit]
+Description=Bastion — planification de la sauvegarde automatique hebdomadaire
+
+[Timer]
+# Chaque lundi à 02h30 ; rattrape l'exécution manquée si la machine était éteinte.
+OnCalendar=Mon *-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

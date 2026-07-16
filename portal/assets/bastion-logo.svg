@@ -1,0 +1,22 @@
+<svg viewBox="0 0 250 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bastion">
+  <defs>
+    <linearGradient id="lbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#0369a1"/>
+    </linearGradient>
+    <linearGradient id="lsh" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e0f2fe"/>
+    </linearGradient>
+  </defs>
+  <!-- Icône -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lbg)"/>
+  <path d="M16 14 L24 14 L24 20 L28 20 L28 14 L36 14 L36 20 L40 20 L40 14 L48 14 L48 33
+           C48 43 41 50 32 53 C23 50 16 43 16 33 Z" fill="url(#lsh)"/>
+  <path d="M27.5 49 L27.5 39.5 C27.5 34.5 36.5 34.5 36.5 39.5 L36.5 49 Z" fill="#0c4a6e"/>
+  <line x1="32" y1="36" x2="32" y2="49" stroke="#38bdf8" stroke-width="1.4" stroke-opacity="0.7"/>
+  <line x1="27.5" y1="43" x2="36.5" y2="43" stroke="#38bdf8" stroke-width="1.4" stroke-opacity="0.7"/>
+  <!-- Nom -->
+  <text x="76" y="41" font-family="'Segoe UI', system-ui, Roboto, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="currentColor">Bastion</text>
+  <text x="77" y="56" font-family="'Segoe UI', system-ui, Roboto, sans-serif" font-size="10.5" font-weight="500" letter-spacing="2.5" fill="currentColor" opacity="0.6">CONTRÔLE D'ACCÈS</text>
+</svg>

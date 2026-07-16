@@ -1,0 +1,14 @@
+[Unit]
+Description=Bastion — walled garden (relance dnsmasq quand @walledgarden est prêt)
+# Démarre avec OpenNDS et le suit (boot + redémarrages d'OpenNDS).
+After=opennds.service
+PartOf=opennds.service
+
+[Service]
+Type=oneshot
+# Attend que l'ensemble nftables @walledgarden d'OpenNDS existe, puis relance
+# dnsmasq pour qu'il y ajoute les IP des serveurs de mise à jour.
+ExecStart=/usr/local/sbin/proxyfibre-walledgarden-refresh
+
+[Install]
+WantedBy=multi-user.target opennds.service

@@ -1,0 +1,9 @@
+[Unit]
+# Bastion — scellement quotidien des journaux (intégrité de la journalisation légale).
+Description=Bastion — scellement des journaux
+After=mariadb.service
+Wants=mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/php /var/www/admin/logseal.php

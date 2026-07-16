@@ -1,0 +1,12 @@
+[Unit]
+Description=Bastion — surveillance périodique (toutes les minutes)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+# Sans cela, tous les Bastion d'un parc écriraient et enverraient au même instant.
+RandomizedDelaySec=10s
+Unit=proxyfibre-watchdog.service
+
+[Install]
+WantedBy=timers.target

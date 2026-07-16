@@ -1,0 +1,13 @@
+[Unit]
+Description=Bastion — journalisation de l'historique de navigation (DNS)
+After=dnsmasq.service mariadb.service
+Wants=dnsmasq.service
+
+[Service]
+# Suit le journal des requêtes DNS et l'ingère dans pf_weblog.
+ExecStart=/bin/sh -c 'tail -F -n0 /var/log/proxyfibre-dns.log | /usr/local/sbin/proxyfibre-weblog-ingest'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

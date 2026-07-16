@@ -1,0 +1,10 @@
+#!ipxe
+# Bastion — amorce PXE. Le clavier AZERTY est compilé dans l'iPXE (KEYBOARD_MAP fr).
+# Règle l'affichage (fond graphique) puis délègue TOUT au serveur : menu.php gère la
+# protection (identifiants administrateur) et construit le menu d'après la console.
+# Marges = bande VIDE de l'image de fond (1024x768), sinon le menu écrit par-dessus :
+#   en-tête « BASTION » + sous-titre jusqu'a y~205, trait de séparation y~232-235
+#   pied de page « Sélectionnez… » y~685, « © … » y~725
+# → zone du menu : y 260..668 (top 260 / bottom 100), x 80..944.
+console --picture http://__LAN_IP__:2080/boot/menu-bg.png --left 80 --right 80 --top 260 --bottom 100 || console
+chain --replace http://__LAN_IP__:2080/boot/menu.php || shell

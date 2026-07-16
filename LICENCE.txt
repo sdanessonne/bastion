@@ -1,0 +1,80 @@
+LICENCE D'UTILISATION — LOGICIEL « BASTION »
+=============================================
+
+Copyright © 2026 Mickaël MONESTIER. Tous droits réservés.
+Auteur et titulaire exclusif des droits : Mickaël MONESTIER (Mle 110.480).
+
+Le logiciel « Bastion » (ci-après « le Logiciel »), désignant l'ensemble du code
+source, des scripts, des configurations, des interfaces, de la documentation et
+des ressources associées contenus dans ce dépôt, est une œuvre originale dont
+Mickaël MONESTIER conserve l'intégralité des droits d'auteur et de propriété
+intellectuelle.
+
+
+1. TITULARITÉ DES DROITS
+------------------------
+L'auteur, Mickaël MONESTIER, demeure seul et unique titulaire de l'ensemble des
+droits patrimoniaux et moraux attachés au Logiciel. Aucune disposition de la
+présente licence n'emporte cession, transfert ou partage de ces droits. La
+présente licence concède un simple droit d'usage, à l'exclusion de tout autre.
+
+
+2. CONCESSION AU MINISTÈRE DE L'INTÉRIEUR
+-----------------------------------------
+L'auteur concède au ministère de l'Intérieur français, ainsi qu'aux services,
+directions et personnels placés sous son autorité (notamment la Police
+nationale), un droit d'utilisation du Logiciel :
+
+  a) à titre GRATUIT (aucune redevance, licence ou contrepartie financière) ;
+  b) non exclusif et non transférable à un tiers ;
+  c) pour ses besoins internes de service, sur autant d'installations que
+     nécessaire au sein de ses implantations ;
+  d) comprenant le droit d'installer, d'exécuter, de configurer et d'adapter le
+     Logiciel à ses besoins opérationnels internes.
+
+Cette concession est consentie pour la durée légale de protection des droits
+d'auteur, tant que les mentions du présent article et de l'article 1 sont
+respectées.
+
+
+3. RESTRICTIONS
+---------------
+Sauf autorisation écrite préalable de l'auteur, il est interdit à tout
+bénéficiaire :
+
+  - de commercialiser, vendre, louer ou sous-licencier le Logiciel, en tout ou
+    partie, à titre onéreux ;
+  - de le redistribuer en dehors du périmètre défini à l'article 2 ;
+  - de supprimer, masquer ou altérer les mentions de paternité, de copyright ou
+    la présente licence ;
+  - de revendiquer la paternité du Logiciel ou d'en attribuer la conception à un
+    tiers.
+
+Les adaptations réalisées pour les besoins internes restent la propriété
+intellectuelle de l'auteur pour la partie originale du Logiciel ; les mentions
+de copyright doivent y être conservées.
+
+
+4. ABSENCE DE GARANTIE
+----------------------
+LE LOGICIEL EST FOURNI « EN L'ÉTAT », SANS GARANTIE D'AUCUNE SORTE, EXPRESSE OU
+IMPLICITE, NOTAMMENT QUANT À SA QUALITÉ MARCHANDE, SON ADÉQUATION À UN USAGE
+PARTICULIER OU L'ABSENCE DE DÉFAUTS. L'auteur ne saurait être tenu responsable
+de tout dommage, direct ou indirect, résultant de l'utilisation ou de
+l'impossibilité d'utiliser le Logiciel.
+
+
+5. AUTRES UTILISATEURS
+----------------------
+Toute utilisation par une personne physique ou morale autre que le ministère de
+l'Intérieur et ses services requiert l'autorisation écrite préalable de l'auteur.
+
+
+6. DROIT APPLICABLE
+-------------------
+La présente licence est régie par le droit français. Tout litige relatif à son
+interprétation ou à son exécution relève de la compétence des juridictions
+françaises.
+
+
+Contact — titulaire des droits : Mickaël MONESTIER (Mle 110.480).

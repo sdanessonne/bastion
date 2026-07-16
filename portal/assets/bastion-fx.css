@@ -1,0 +1,23 @@
+/* Bastion — © 2026 Mickaël MONESTIER (Mle 110.480). Tous droits réservés. Voir LICENCE.txt. */
+/* Fond dynamique partagé (portail login / intranet / mon compte).
+   Se place DERRIÈRE le contenu (z-index négatif) : aucune retouche du contenu nécessaire. */
+.bg{position:fixed;inset:0;z-index:-2;overflow:hidden;pointer-events:none}
+.bg .aurora{position:absolute;inset:-35%;opacity:.42;filter:blur(70px);animation:bfxSpin 42s linear infinite;
+  background:conic-gradient(from 0deg at 50% 50%,rgba(14,165,233,.35),rgba(30,58,95,0) 25%,rgba(56,189,248,.35) 50%,rgba(15,23,42,0) 75%,rgba(14,165,233,.35))}
+.bg .blob{position:absolute;border-radius:50%;filter:blur(64px);opacity:.42;mix-blend-mode:screen}
+.bg .b1{width:44vmax;height:44vmax;left:-12vmax;top:-14vmax;background:radial-gradient(circle,#0ea5e9,transparent 62%);animation:bfxF1 19s ease-in-out infinite}
+.bg .b2{width:36vmax;height:36vmax;right:-10vmax;top:8vmax;background:radial-gradient(circle,#2563eb,transparent 60%);animation:bfxF2 25s ease-in-out infinite}
+.bg .b3{width:32vmax;height:32vmax;left:22vmax;bottom:-14vmax;background:radial-gradient(circle,#22d3ee,transparent 60%);animation:bfxF3 22s ease-in-out infinite}
+.bg .grid{position:absolute;inset:-2px;background-image:linear-gradient(rgba(56,189,248,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,.05) 1px,transparent 1px);
+  background-size:46px 46px;-webkit-mask-image:radial-gradient(circle at 50% 28%,#000 40%,transparent 82%);mask-image:radial-gradient(circle at 50% 28%,#000 40%,transparent 82%);animation:bfxDrift 32s linear infinite}
+#fx{position:fixed;inset:0;z-index:-1;pointer-events:none}
+@keyframes bfxSpin{to{transform:rotate(360deg)}}
+@keyframes bfxDrift{to{background-position:46px 46px}}
+@keyframes bfxF1{50%{transform:translate(6vmax,4vmax) scale(1.1)}}
+@keyframes bfxF2{50%{transform:translate(-5vmax,6vmax) scale(1.08)}}
+@keyframes bfxF3{50%{transform:translate(4vmax,-5vmax) scale(1.12)}}
+/* Thème clair : les halos en « screen » disparaissent → passer en « multiply » atténué. */
+:root[data-theme="light"] .bg .blob{mix-blend-mode:multiply;opacity:.2}
+:root[data-theme="light"] .bg .aurora{opacity:.22}
+:root[data-theme="light"] .bg .grid{background-image:linear-gradient(rgba(30,58,95,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(30,58,95,.06) 1px,transparent 1px)}
+@media (prefers-reduced-motion:reduce){.bg *{animation:none!important}}

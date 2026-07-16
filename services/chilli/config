@@ -1,0 +1,45 @@
+# Bastion — CoovaChilli (généré depuis provisioning/config.env)
+# /etc/chilli/config
+# Documentation des directives : man chilli.conf
+
+# ── Interfaces ───────────────────────────────────────────────────────────────
+# Interface LAN où sont les clients à authentifier (DHCP géré par chilli).
+HS_LANIF=${LAN_IF}
+# Interface WAN vers Internet.
+HS_WANIF=${WAN_IF}
+
+# ── Réseau clients ──────────────────────────────────────────────────────────
+HS_NETWORK=${LAN_NET}
+HS_NETMASK=${LAN_MASK}
+HS_UAMLISTEN=${LAN_IP}          # IP de la passerelle vue par les clients
+HS_UAMPORT=${UAM_PORT}          # port d'interception HTTP
+HS_UAMUIPORT=${UAM_UIPORT}
+
+# ── DHCP / DNS ──────────────────────────────────────────────────────────────
+HS_DYNIP=${DHCP_START}-${DHCP_END}
+HS_LEASE=3600
+HS_DNS1=${LAN_IP}               # les clients résolvent via dnsmasq local
+HS_DNS2=${DNS_UPSTREAM_1}
+
+# ── RADIUS (FreeRADIUS en localhost) ────────────────────────────────────────
+HS_RADIUS=127.0.0.1
+HS_RADIUS2=127.0.0.1
+HS_RADSECRET=${RADIUS_SECRET}
+HS_RADAUTHPORT=1812
+HS_RADACCTPORT=1813
+HS_NASID=proxyfibre
+HS_RADNASIP=${LAN_IP}
+
+# ── Portail (UAM) ───────────────────────────────────────────────────────────
+HS_UAMSERVER=http://${PORTAL_FQDN}/index.php
+HS_UAMSECRET=${UAM_SECRET}
+
+# Domaines/hôtes accessibles SANS authentification (walled garden) :
+# le portail lui-même + résolveurs. Le filtrage complet arrive en phase 3.
+HS_UAMALLOW=${PORTAL_FQDN},${LAN_IP},${DNS_UPSTREAM_1},${DNS_UPSTREAM_2}
+
+# ── Divers ──────────────────────────────────────────────────────────────────
+HS_ANYIP=off
+HS_MACAUTH=off                  # pas d'auth par MAC en phase 1
+HS_SSID=Bastion
+HS_COAPORT=3799                 # Change-of-Authorization (déconnexion à distance)

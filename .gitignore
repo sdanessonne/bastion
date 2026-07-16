@@ -1,0 +1,30 @@
+# ── SECRETS — ne jamais publier ──────────────────────────────────────────────
+# provisioning/config.env contient les mots de passe RÉELS de l'installation
+# (console d'administration, base de données, secret RADIUS). Le modèle à recopier
+# est provisioning/config.env.example.
+# RAPPEL : un secret poussé une seule fois reste dans l'historique Git même après
+# suppression du fichier — il doit être considéré comme compromis et changé.
+provisioning/config.env
+provisioning/config.local.env
+**/secrets.env
+*.local
+
+# Clés et certificats : engendrés à l'installation, propres à chaque site.
+*.key
+*.pem
+*.p12
+
+# ── ARTEFACTS LOURDS ─────────────────────────────────────────────────────────
+# Images système : plusieurs gigaoctets, et GitHub refuse au-delà de 100 Mo.
+*.iso
+*.wim
+*.img
+services/tftp/ipxe-build/
+
+# ── DIVERS ───────────────────────────────────────────────────────────────────
+*.log
+*.swp
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db

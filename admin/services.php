@@ -1,0 +1,246 @@
+<?php
+// Bastion — © 2026 Mickaël MONESTIER (Mle 110.480). Tous droits réservés. Voir LICENCE.txt.
+/** Bastion Admin — état et pilotage des services système (liste blanche). */
+require_once __DIR__ . '/inc/auth.php';
+require_once __DIR__ . '/inc/layout.php';
+
+// Services gérés : unit systemd => [nom, rôle, type].
+//   type 'daemon'  : service permanent (état = actif/inactif)
+//   type 'oneshot' : tâche ponctuelle (état = dernier résultat)
+$SVCS = [
+    'opennds'                  => ['Portail captif',        'OpenNDS — authentification & pare-feu client', 'daemon'],
+    'freeradius'               => ['Authentification',      'FreeRADIUS — validation des comptes',          'daemon'],
+    'mariadb'                  => ['Base de données',       'MariaDB — comptes, journaux, réglages',        'daemon'],
+    'apache2'                  => ['Serveur web',           'Portail + console admin (PHP)',                'web'],
+    'dnsmasq'                  => ['DHCP / DNS / PXE',      'Adressage LAN, résolution, amorçage réseau',   'daemon'],
+    'chrony'                   => ['Serveur de temps',      'NTP — horloge de référence du réseau',         'daemon'],
+    'proxyfibre-weblog'        => ['Historique navigation', 'Journalise les visites DNS des utilisateurs',  'daemon'],
+    'samba-ad-dc'              => ['Active Directory',     'Contrôleur de domaine (Samba)',                'daemon'],
+    'proxyfibre-kms'           => ['Activation KMS',       'Activation Windows / Office (vlmcsd)',          'daemon'],
+    'clamav-daemon'            => ['Antivirus',            'Moteur ClamAV temps réel',                     'daemon'],
+    'proxyfibre-walledgarden'  => ['Walled garden',        'Ouvre les serveurs de mise à jour / NTP',      'oneshot'],
+];
+
+$flash = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['alert_email'])) {
+    csrf_check();
+    $mail = trim((string) $_POST['alert_email']);
+    if ($mail !== '' && !filter_var($mail, FILTER_VALIDATE_EMAIL)) {
+        $flash = ['Adresse électronique invalide.', 'err'];
+    } else {
+        pf_db()->prepare("INSERT INTO pf_settings (k,v) VALUES ('alert_email',?) ON DUPLICATE KEY UPDATE v=VALUES(v)")
+               ->execute([$mail]);
+        $flash = [$mail === '' ? 'Notification par courriel désactivée.' : "Les alertes seront envoyées à {$mail}.", 'ok'];
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
+    $svc    = (string) ($_POST['svc'] ?? '');
+    $action = (string) ($_POST['do'] ?? '');
+    if (!isset($SVCS[$svc])) {
+        $flash = ['Service inconnu.', 'err'];
+    } elseif (!in_array($action, ['start', 'stop', 'restart', 'reload'], true)) {
+        $flash = ['Action invalide.', 'err'];
+    } else {
+        $out = shell_exec('sudo /usr/local/sbin/proxyfibre-service '
+            . escapeshellarg($action) . ' ' . escapeshellarg($svc) . ' 2>&1');
+        $verb = ['start' => 'démarré', 'stop' => 'arrêté', 'restart' => 'redémarré', 'reload' => 'rechargé'][$action];
+        if ($svc === 'apache2') {
+            $flash = ['Serveur web : redémarrage planifié (~2 s). La page va se recharger…', 'ok'];
+        } else {
+            $flash = ["Service « {$SVCS[$svc][0]} » {$verb}." . (trim((string) $out) !== '' ? ' — ' . trim((string) $out) : ''), 'ok'];
+        }
+    }
+}
+
+// ── Lecture de l'état courant ────────────────────────────────────────────────
+function svc_state(string $unit, string $type): array {
+    if ($type === 'oneshot') {
+        $res = trim((string) shell_exec('systemctl show -p Result --value ' . escapeshellarg($unit) . ' 2>/dev/null'));
+        $ok  = ($res === 'success' || $res === '');
+        return [$ok ? 'ok' : 'ko', $ok ? 'Exécuté' : 'Échec', false];
+    }
+    $active = trim((string) shell_exec('systemctl is-active ' . escapeshellarg($unit) . ' 2>/dev/null'));
+    if ($active === 'active')     { return ['ok', 'Actif', true]; }
+    if ($active === 'activating') { return ['warn', 'Démarrage…', true]; }
+    if ($active === 'failed')     { return ['ko', 'En échec', false]; }
+    return ['ko', 'Arrêté', false];
+}
+function svc_enabled(string $unit): string {
+    $e = trim((string) shell_exec('systemctl is-enabled ' . escapeshellarg($unit) . ' 2>/dev/null'));
+    return $e ?: 'inconnu';
+}
+$uptime = trim((string) shell_exec('uptime -p 2>/dev/null'));
+$load   = trim((string) shell_exec("cat /proc/loadavg 2>/dev/null | awk '{print $1\", \"$2\", \"$3}'"));
+
+$states = [];
+$nbOk = 0;
+foreach ($SVCS as $unit => [$name, $role, $type]) {
+    $states[$unit] = svc_state($unit, $type);
+    if ($states[$unit][0] === 'ok') { $nbOk++; }
+}
+$total = count($SVCS);
+
+// Actualisation automatique (JS) + consultation du journal d'un service.
+$auto     = ($_GET['auto'] ?? '') === '1';
+$logsUnit = (string) ($_GET['logs'] ?? '');
+if ($logsUnit !== '' && !isset($SVCS[$logsUnit])) { $logsUnit = ''; }
+$logsTxt = '';
+if ($logsUnit !== '') {
+    $logsTxt = (string) shell_exec('sudo /usr/local/sbin/proxyfibre-service logs ' . escapeshellarg($logsUnit) . ' 80 2>&1');
+    if (trim($logsTxt) === '') { $logsTxt = '(journal vide)'; }
+}
+
+pf_header('Services', 'services.php');
+if ($flash) { pf_flash($flash[0], $flash[1]); }
+$badge = fn(string $s) => $s === 'ok' ? 'on' : ($s === 'warn' ? 'warn' : 'off');
+?>
+<style>
+  .svc-badge.warn{background:rgba(234,179,8,.15);color:#eab308;border-color:rgba(234,179,8,.35)}
+  .svc-actions{display:flex;gap:.4rem;justify-content:flex-end;flex-wrap:wrap}
+  .svc-meta{font-family:ui-monospace,monospace;font-size:.72rem}
+</style>
+
+<?php if ($auto && $logsUnit === ''): ?>
+<script>setTimeout(function(){location.href='services.php?auto=1';}, 10000);</script>
+<?php endif; ?>
+
+<?php if ($logsUnit !== ''): ?>
+<section class="panel">
+  <div class="panel-head"><h2>📄 Journal — <?= e($SVCS[$logsUnit][0]) ?>
+    <span class="muted svc-meta"><?= e($logsUnit) ?></span></h2>
+    <span style="display:flex;gap:.4rem">
+      <a class="btn-sm" href="services.php?logs=<?= urlencode($logsUnit) ?>">↻ Rafraîchir</a>
+      <a class="btn-sm" href="services.php">✕ Fermer</a>
+    </span>
+  </div>
+  <div style="padding:1.2rem">
+    <pre style="margin:0;padding:1rem;background:#0b1120;color:#cbd5e1;border:1px solid var(--line);
+      border-radius:10px;overflow:auto;max-height:420px;font-family:ui-monospace,monospace;
+      font-size:.76rem;line-height:1.5"><?= e($logsTxt) ?></pre>
+  </div>
+</section>
+<?php endif; ?>
+
+<section class="cards">
+  <div class="kpi"><div class="kpi-val"><?= $nbOk ?>/<?= $total ?></div><div class="kpi-lbl">Services opérationnels</div></div>
+  <div class="kpi"><div class="kpi-val" style="font-size:1.05rem;line-height:1.5"><?= e($uptime ?: '—') ?></div><div class="kpi-lbl">Disponibilité</div></div>
+  <div class="kpi"><div class="kpi-val" style="font-size:1.05rem"><?= e($load ?: '—') ?></div><div class="kpi-lbl">Charge (1/5/15 min)</div></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>État des services</h2>
+    <span style="display:flex;align-items:center;gap:.9rem">
+      <label class="muted small" style="display:inline-flex;align-items:center;gap:.4rem;cursor:pointer">
+        <input type="checkbox" onchange="location.href='services.php?auto='+(this.checked?1:0)" <?= $auto ? 'checked' : '' ?>>
+        Actualisation auto (10 s)
+      </label>
+      <a class="btn-sm" href="services.php<?= $auto ? '?auto=1' : '' ?>">↻ Actualiser</a>
+    </span>
+  </div>
+  <div class="table-wrap">
+  <table class="grid-table">
+    <thead><tr><th>Service</th><th>État</th><th>Démarrage auto</th><th>Rôle</th><th></th></tr></thead>
+    <tbody>
+    <?php foreach ($SVCS as $unit => [$name, $role, $type]):
+        [$st, $lbl, $isActive] = $states[$unit];
+        $en = svc_enabled($unit); ?>
+      <tr>
+        <td><strong><?= e($name) ?></strong><br><span class="muted svc-meta"><?= e($unit) ?></span></td>
+        <td><span class="badge svc-badge <?= $badge($st) ?>"><?= e($lbl) ?></span></td>
+        <td><span class="muted svc-meta"><?= e($en) ?></span></td>
+        <td class="muted"><?= e($role) ?></td>
+        <td>
+          <div class="svc-actions">
+            <a class="btn-sm" href="services.php?logs=<?= urlencode($unit) ?>" title="Voir le journal">📄 Journal</a>
+            <?php if ($type === 'oneshot'): ?>
+              <?= svc_btn($unit, 'start', '▶ Relancer') ?>
+            <?php elseif ($type === 'web'): ?>
+              <?= svc_btn($unit, 'restart', '↻ Redémarrer', 'Redémarrer le serveur web ? La console sera brièvement indisponible.') ?>
+            <?php else: ?>
+              <?= svc_btn($unit, 'restart', '↻ Redémarrer') ?>
+              <?php if ($isActive): ?>
+                <?= svc_btn($unit, 'stop', '■ Arrêter', "Arrêter « {$name} » ? Cette fonction sera interrompue.", true) ?>
+              <?php else: ?>
+                <?= svc_btn($unit, 'start', '▶ Démarrer') ?>
+              <?php endif; ?>
+            <?php endif; ?>
+          </div>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small" style="padding:0 1.2rem 1rem">
+    Actions autorisées uniquement pour ces services (liste blanche côté serveur).
+    Le redémarrage du <strong>serveur web</strong> est différé de 2 s pour ne pas couper la console.
+  </p>
+</section>
+
+<?php
+// Surveillance hors console : le bandeau du tableau de bord ne sert à rien si
+// personne ne regarde l'écran. proxyfibre-watchdog.timer contrôle chaque minute et
+// historise ici ; l'adresse ci-dessous reçoit en plus un courriel.
+$alertMail = '';
+$hist      = [];
+$wdOn      = trim((string) shell_exec('systemctl is-active proxyfibre-watchdog.timer 2>/dev/null')) === 'active';
+try {
+    $alertMail = (string) (pf_db()->query("SELECT v FROM pf_settings WHERE k='alert_email'")->fetchColumn() ?: '');
+    $hist = pf_db()->query("SELECT lvl,txt,opened_at,closed_at FROM pf_alerts ORDER BY id DESC LIMIT 8")->fetchAll();
+} catch (Throwable $e) { /* table absente tant que le watchdog n'a pas tourné */ }
+$hasMta = is_executable('/usr/sbin/sendmail');
+?>
+<section class="panel">
+  <div class="panel-head"><h2>🔔 Surveillance et alertes</h2>
+    <span class="badge <?= $wdOn ? 'on' : 'off' ?>"><?= $wdOn ? 'active — contrôle chaque minute' : 'inactive' ?></span>
+  </div>
+  <div style="padding:1.2rem">
+    <form method="post" style="display:flex;gap:.6rem;align-items:flex-end;flex-wrap:wrap">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <label class="field" style="flex:1;min-width:18rem;margin:0">Adresse à prévenir en cas d'anomalie
+        <input type="email" name="alert_email" value="<?= e($alertMail) ?>" placeholder="chef.poste@interieur.gouv.fr">
+      </label>
+      <button class="btn">Enregistrer</button>
+    </form>
+    <p class="hint" style="margin:.5rem 0 0">Laisser vide pour ne pas envoyer de courriel. Les anomalies restent de toute
+      façon historisées ici et écrites dans le journal système (<code>bastion-watchdog</code>), collectable par une
+      supervision de site.
+      <?php if (!$hasMta): ?><br><strong>Aucun agent de messagerie n'est installé sur cette passerelle</strong> :
+      l'envoi de courriel est sans effet tant qu'un MTA (par exemple <code>msmtp-mta</code>) n'est pas configuré.<?php endif; ?>
+    </p>
+
+    <h3 style="margin:1.4rem 0 .6rem;font-size:.95rem">Dernières anomalies</h3>
+    <?php if (!$hist): ?>
+      <p class="muted small" style="margin:0">Aucune anomalie enregistrée — tout va bien depuis la mise en service.</p>
+    <?php else: ?>
+    <div class="table-wrap">
+      <table class="grid-table">
+        <thead><tr><th>Niveau</th><th>Anomalie</th><th>Début</th><th>Fin</th></tr></thead>
+        <tbody>
+        <?php foreach ($hist as $h): ?>
+          <tr>
+            <td><span class="badge <?= $h['lvl'] === 'danger' ? 'off' : 'warn' ?>"><?= $h['lvl'] === 'danger' ? 'Alerte' : 'Avertis.' ?></span></td>
+            <td><?= e($h['txt']) ?></td>
+            <td class="muted small"><?= e(date('d/m/Y H:i', strtotime($h['opened_at']))) ?></td>
+            <td class="muted small"><?= $h['closed_at']
+                  ? e(date('d/m/Y H:i', strtotime($h['closed_at'])))
+                  : '<strong style="color:#f87171">en cours</strong>' ?></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php endif; ?>
+  </div>
+</section>
+<?php
+function svc_btn(string $unit, string $do, string $label, string $confirm = '', bool $danger = false): string {
+    $cls = 'btn-sm' . ($danger ? ' btn-danger' : '');
+    $onsub = $confirm !== '' ? ' onsubmit="return confirm(' . htmlspecialchars(json_encode($confirm), ENT_QUOTES) . ')"' : '';
+    return '<form method="post" style="margin:0"' . $onsub . '>'
+        . '<input type="hidden" name="csrf" value="' . e(csrf_token()) . '">'
+        . '<input type="hidden" name="svc" value="' . e($unit) . '">'
+        . '<input type="hidden" name="do" value="' . e($do) . '">'
+        . '<button class="' . $cls . '">' . e($label) . '</button></form>';
+}
+pf_footer();

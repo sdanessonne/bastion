@@ -1,0 +1,15 @@
+[Unit]
+Description=Bastion — scellement quotidien des journaux
+
+[Timer]
+# 00h20 : après minuit (le jour est clos) et assez tôt pour qu'un dossier de
+# réquisition demandé le matin porte déjà sur des journaux scellés.
+OnCalendar=*-*-* 00:20:00
+# Rattrape le scellement si la passerelle était éteinte à l'heure dite : un jour
+# non scellé laisserait un trou dans la chaîne.
+Persistent=true
+RandomizedDelaySec=5min
+Unit=proxyfibre-logseal.service
+
+[Install]
+WantedBy=timers.target

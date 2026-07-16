@@ -1,0 +1,12 @@
+[Unit]
+Description=Bastion — serveur d'activation KMS (vlmcsd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/sbin/proxyfibre-vlmcsd -D -e
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

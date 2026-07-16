@@ -1,0 +1,15 @@
+[Unit]
+# Bastion — surveillance hors console : historise les anomalies et prévient par courriel.
+# Le bandeau du tableau de bord ne sert à rien si personne ne regarde l'écran.
+Description=Bastion — surveillance des services et des ressources
+After=mariadb.service
+Wants=mariadb.service
+
+[Service]
+Type=oneshot
+# Doit voir l'état systemd des services et lire la base : root.
+ExecStart=/usr/bin/php /var/www/admin/watchdog.php
+# Une passerelle qui n'a pas de MTA, ou une base momentanément indisponible, ne
+# doivent pas transformer la surveillance en service en échec (ce qui déclencherait
+# à son tour une alerte : boucle inutile).
+SuccessExitStatus=0 1

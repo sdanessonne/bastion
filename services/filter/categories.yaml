@@ -1,0 +1,47 @@
+# Bastion — catégories de filtrage de contenu (listes de domaines par thème).
+# Activez/désactivez chaque catégorie depuis la console admin (onglet Filtrage).
+# Ajoutez vos propres domaines : un « - domaine » par ligne sous « domains ».
+
+adulte:
+  label: "Contenu adulte"
+  domains:
+    - pornhub.com
+    - xvideos.com
+    - xnxx.com
+    - youporn.com
+    - redtube.com
+    - xhamster.com
+
+jeux-argent:
+  label: "Jeux d'argent & paris"
+  domains:
+    - winamax.fr
+    - pokerstars.com
+    - betclic.fr
+    - unibet.fr
+    - pmu.fr
+    - bwin.fr
+
+reseaux-sociaux:
+  label: "Réseaux sociaux"
+  domains:
+    - facebook.com
+    - instagram.com
+    - tiktok.com
+    - twitter.com
+    - x.com
+    - snapchat.com
+
+streaming:
+  label: "Streaming vidéo"
+  domains:
+    - netflix.com
+    - twitch.tv
+    - dailymotion.com
+    - disneyplus.com
+
+malware:
+  label: "Malwares & hameçonnage"
+  domains:
+    - malware.testcategory.test
+    - phishing.testcategory.test
