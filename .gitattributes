@@ -1,0 +1,47 @@
+# Bastion — fins de ligne et types de fichiers.
+#
+# POURQUOI CE FICHIER EST INDISPENSABLE : le développement se fait sous Windows, mais
+# la passerelle CLONE ce dépôt et EXÉCUTE ces scripts sous Debian. Sans consigne, Git
+# convertit les fins de ligne en CRLF au passage sur Windows ; un script shell en CRLF
+# donne alors sous Linux « bad interpreter: /usr/bin/env bash^M » et rien ne démarre.
+# On impose donc LF dans le dépôt pour tout ce qui est exécuté côté serveur.
+
+# Par défaut : texte normalisé en LF dans le dépôt.
+* text=auto eol=lf
+
+# Exécutés sous Linux — LF OBLIGATOIRE.
+*.sh      text eol=lf
+*.php     text eol=lf
+*.py      text eol=lf
+*.conf    text eol=lf
+*.service text eol=lf
+*.timer   text eol=lf
+*.nft     text eol=lf
+*.ipxe    text eol=lf
+*.uci     text eol=lf
+*.sql     text eol=lf
+*.yaml    text eol=lf
+*.env     text eol=lf
+*.example text eol=lf
+
+# Fichiers Windows : le batch EXIGE des CRLF. services/tftp/startnet.cmd est de toute
+# façon renormalisé par setup-pxe.sh avant injection dans boot.wim, mais autant que le
+# dépôt soit juste.
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.ini  text eol=crlf
+*.xml  text eol=crlf
+
+# BINAIRES — surtout ne pas y toucher : une conversion de fin de ligne les CORROMPRAIT
+# silencieusement (l'iPXE compilé ne démarrerait plus, l'image de fond serait illisible).
+*.pxe    binary
+*.kpxe   binary
+*.kkpxe  binary
+*.png    binary
+*.jpg    binary
+*.ico    binary
+*.gz     binary
+*.zip    binary
+*.pdf    binary
+*.wim    binary
+*.iso    binary
