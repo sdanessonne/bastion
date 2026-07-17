@@ -69,9 +69,14 @@ switch ($action) {
 
         if ($demande === '') {
             $liste = [];
+            $bloques = [];
             foreach ($permis as $f) {
                 $p = $dir . '/' . $f;
-                if (!is_file($p) || !is_readable($p)) { continue; }
+                if (!is_file($p)) { continue; }
+                // Un fichier présent mais illisible n'est PAS un fichier absent : c'est un
+                // problème de droits sur /var/lib/clamav, et il se règle en une commande.
+                // Les confondre enverrait l'exploitant réinstaller ClamAV pour rien.
+                if (!is_readable($p)) { $bloques[] = $f; continue; }
                 $liste[] = [
                     'nom'    => $f,
                     'taille' => (int) filesize($p),
@@ -82,7 +87,15 @@ switch ($action) {
                     'sha256' => hash_file('sha256', $p),
                 ];
             }
-            jout(['ok' => true, 'base' => $liste, 'date_base' => $liste ? max(array_column($liste, 'date')) : 0]);
+            jout([
+                'ok'         => true,
+                'base'       => $liste,
+                'date_base'  => $liste ? max(array_column($liste, 'date')) : 0,
+                'illisibles' => $bloques,
+                'motif'      => $liste ? null : ($bloques
+                    ? 'Base présente mais illisible par le serveur web : vérifiez les droits sur ' . $dir
+                    : 'Aucune base ClamAV sur la passerelle : lancez provisioning/setup-antivirus.sh'),
+            ]);
         }
 
         if (!in_array($demande, $permis, true)) { jout(['error' => 'fichier inconnu'], 404); }

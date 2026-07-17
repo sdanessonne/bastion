@@ -78,22 +78,33 @@ public sealed class MoteurClamav : IMoteur
         return null;
     }
 
+    // La version demande de LANCER clamscan. LireEtat() est appelé à chaque affichage,
+    // chaque analyse et chaque remontée, sur le fil de l'interface : sans mémorisation, la
+    // borne se figerait le temps d'un démarrage de processus à chaque fois. La version d'un
+    // exécutable ne change pas en cours de session ; la date des signatures, si — elle est
+    // relue à chaque appel, plus bas, et ne coûte qu'un accès disque.
+    private static string? _version;
+
     public EtatMoteur LireEtat()
     {
         var exe = TrouverExe();
         if (exe == null) return new EtatMoteur(false, null, "", int.MaxValue);
 
-        var version = "ClamAV";
-        try
+        if (_version == null)
         {
-            // « --version » rend « ClamAV 1.5.3/27890/Thu Jul 17 08:00:00 2026 ». On ne
-            // garde que le premier champ : la date qui suit dépend de la base que ClamAV
-            // trouve LUI-MÊME, pas de la nôtre. Elle mentirait sur ce qu'on utilise.
-            var s = Executer(exe, "--version", TimeSpan.FromSeconds(10));
-            var m = Regex.Match(s, @"ClamAV\s+([0-9][0-9.\-a-z]*)", RegexOptions.IgnoreCase);
-            if (m.Success) version = "ClamAV " + m.Groups[1].Value;
+            _version = "ClamAV";
+            try
+            {
+                // « --version » rend « ClamAV 1.5.3/27890/Thu Jul 17 08:00:00 2026 ». On ne
+                // garde que le premier champ : la date qui suit dépend de la base que ClamAV
+                // trouve LUI-MÊME, pas de la nôtre. Elle mentirait sur ce qu'on utilise.
+                var s = Executer(exe, "--version", TimeSpan.FromSeconds(10));
+                var m = Regex.Match(s, @"ClamAV\s+([0-9][0-9.\-a-z]*)", RegexOptions.IgnoreCase);
+                if (m.Success) _version = "ClamAV " + m.Groups[1].Value;
+            }
+            catch { }
         }
-        catch { }
+        var version = _version;
 
         // La date des signatures est celle des fichiers que NOUS avons téléchargés. On
         // préserve à la copie la date qu'ils ont sur la passerelle : elle reflète donc la

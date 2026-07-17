@@ -75,12 +75,17 @@ public sealed class BastionApi
                 e.GetProperty("taille").GetInt64(),
                 e.GetProperty("date").GetInt64(),
                 e.GetProperty("sha256").GetString() ?? "")).ToList();
+
+            // La passerelle sait POURQUOI elle n'a rien à donner (ClamAV absent, ou base
+            // illisible par Apache). Reprendre son motif épargne à l'exploitant de fouiller
+            // deux machines pour un problème qui se règle en une commande sur la première.
+            if (inventaire.Count == 0)
+                return (false, doc.RootElement.TryGetProperty("motif", out var mo) && mo.ValueKind == JsonValueKind.String
+                    ? mo.GetString()!
+                    : "La passerelle n'a aucune base virale à fournir — ClamAV y est-il installé ?");
         }
         catch (TaskCanceledException) { return (false, "Passerelle injoignable (délai dépassé) : base virale inchangée."); }
         catch (Exception ex) { return (false, "Passerelle injoignable : base virale inchangée. " + ex.Message); }
-
-        if (inventaire.Count == 0)
-            return (false, "La passerelle n'a aucune base virale à fournir — ClamAV y est-il installé ?");
 
         Directory.CreateDirectory(dossier);
         int recus = 0;
