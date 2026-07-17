@@ -16,6 +16,7 @@ static class Program
 
         if (args.Length > 1 && args[0] == "--capture") return Capture(args[1], args.Contains("--demo"));
         if (args.Length > 1 && args[0] == "--capture-reglages") return CaptureReglages(args[1]);
+        if (args.Length > 1 && args[0] == "--capture-fermeture") return CaptureFermeture(args[1]);
 
         var cfg = Config.Charger();
         cfg.EcrireModeleSiAbsent();   // pour que l'exploitant trouve un fichier à remplir
@@ -23,6 +24,21 @@ static class Program
 
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm(cfg));
+        return 0;
+    }
+
+    /// <summary>Même chose pour l'écran de fermeture.</summary>
+    private static int CaptureFermeture(string chemin)
+    {
+        ApplicationConfiguration.Initialize();
+        var f = new FermetureForm(new BastionApi(new Config { Passerelle = "https://x", Jeton = "x" }));
+        f.Show();
+        Application.DoEvents();
+        using var bmp = new Bitmap(f.Width, f.Height);
+        f.DrawToBitmap(bmp, new Rectangle(0, 0, f.Width, f.Height));
+        bmp.Save(chemin, System.Drawing.Imaging.ImageFormat.Png);
+        f.Dispose();
+        Console.WriteLine("capture -> " + chemin);
         return 0;
     }
 

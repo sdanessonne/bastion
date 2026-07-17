@@ -20,7 +20,8 @@ public sealed class MainForm : Form
     private readonly PictureBox _logo = new();
     private readonly ProgressBar _barre = new();
     private readonly ListBox _menaces = new();
-    private readonly Button _btnAnalyser = new(), _btnRapport = new(), _btnEteindre = new(), _btnMaj = new();
+    private readonly Button _btnAnalyser = new(), _btnRapport = new(), _btnEteindre = new(),
+                            _btnMaj = new(), _btnFermer = new();
     private readonly ComboBox _supports = new();
     private readonly System.Windows.Forms.Timer _majPeriodique = new();
 
@@ -30,6 +31,7 @@ public sealed class MainForm : Form
     private Verdict? _dernier;
     private Support? _cible;
     private bool _analyseEnCours;
+    private bool _fermetureEnCours;
 
     private static readonly Color Fond = Color.FromArgb(11, 17, 32);
     private static readonly Color Encre = Color.FromArgb(226, 232, 240);
@@ -78,15 +80,14 @@ public sealed class MainForm : Form
 
         Construire();
 
-        // Sortie de secours pour l'exploitant : sans elle, une borne en plein écran ne se
-        // referme plus qu'en éteignant le poste. Volontairement peu découvrable.
         KeyDown += (_, e) =>
         {
-            // Le drapeau est INDISPENSABLE : sans lui, le FormClosing ci-dessous annule
-            // cette fermeture comme il annule Alt+F4, et la borne devient inquittable.
-            if (e.Control && e.Shift && e.KeyCode == Keys.Q) { _sortieDemandee = true; _annule?.Cancel(); Close(); }
-            // Réglages : même logique que la sortie de secours. Une borne n'expose pas de
-            // bouton « configurer » à l'agent qui vient analyser sa clé.
+            // Ctrl+Shift+Q passe par la MÊME porte que le bouton. Le laisser fermer sans
+            // rien demander ferait du bouton protégé un décor : il suffirait de connaître
+            // le raccourci. Une protection qu'un raccourci contourne n'en est pas une.
+            if (e.Control && e.Shift && e.KeyCode == Keys.Q) DemanderFermeture();
+            // Réglages : peu découvrable, comme le reste. Une borne n'expose pas de bouton
+            // « configurer » à l'agent qui vient analyser sa clé.
             if (e.Control && e.Shift && e.KeyCode == Keys.R) OuvrirReglages();
         };
         // Alt+F4 ne doit pas fermer une borne par mégarde ; la sortie de secours reste.
@@ -193,8 +194,15 @@ public sealed class MainForm : Form
         _btnEteindre.Click += (_, _) => Eteindre();
         _btnEteindre.Visible = _cfg.BoutonEteindre;
 
+        // Sobre et à part : fermer la station n'est pas un geste d'agent. « Éteindre » est
+        // pour lui ; celui-ci est pour l'exploitant, et il demande des identifiants.
+        Bouton(_btnFermer, "🔒 Fermer", Color.FromArgb(30, 41, 59));
+        _btnFermer.ForeColor = Grise;
+        _btnFermer.Click += (_, _) => DemanderFermeture();
+
         Controls.AddRange(new Control[] { _logo, _titre, sous, _moteur, _bandeau, _barre, lblM, _menaces,
-                                          _trace, _supports, _btnAnalyser, _btnRapport, _btnMaj, _btnEteindre });
+                                          _trace, _supports, _btnAnalyser, _btnRapport, _btnMaj,
+                                          _btnFermer, _btnEteindre });
         Resize += (_, _) => Disposer();
         Shown += (_, _) => Disposer();
     }
@@ -219,7 +227,7 @@ public sealed class MainForm : Form
         _menaces.SetBounds(m, 346, l - 2 * m, Math.Max(60, h - 346 - 96));
         _trace.SetBounds(m + 2, h - 88, l - 2 * m, 18);
 
-        const int E = 150, MAJ = 150, RAP = 130, AN = 150, G = 14;
+        const int E = 150, F = 110, MAJ = 150, RAP = 130, AN = 150, G = 14;
         int y = h - 63;
         int droite = l - m;
         if (_btnEteindre.Visible)
@@ -227,6 +235,7 @@ public sealed class MainForm : Form
             _btnEteindre.SetBounds(droite - E, y, E, 32);
             droite -= E + G * 2;   // respiration avant le bouton rouge : on n'éteint pas par erreur
         }
+        _btnFermer.SetBounds(droite - F, y, F, 32); droite -= F + G;
         _btnMaj.SetBounds(droite - MAJ, y, MAJ, 32); droite -= MAJ + G;
         _btnRapport.SetBounds(droite - RAP, y, RAP, 32); droite -= RAP + G;
         _btnAnalyser.SetBounds(droite - AN, y, AN, 32); droite -= AN + G;
@@ -327,6 +336,43 @@ public sealed class MainForm : Form
     /// Met à jour les signatures de chaque moteur. ClamAV les tire de la passerelle,
     /// Defender de Windows Update : deux chaînes indépendantes, donc deux verdicts.
     /// </summary>
+    /// <summary>
+    /// Demande les identifiants d'un administrateur, puis ferme si la passerelle les
+    /// accepte. Seule voie de sortie : bouton et raccourci y passent tous les deux.
+    /// </summary>
+    private void DemanderFermeture()
+    {
+        if (_fermetureEnCours) return;   // double clic, ou raccourci pendant que la boîte est ouverte
+        _fermetureEnCours = true;
+        var etaitDevant = TopMost;
+        TopMost = false;   // sinon la borne passe DEVANT la boîte de dialogue
+        try
+        {
+            // Station jamais configurée : il n'y a personne à qui demander. L'enfermer
+            // serait un piège — l'exploitant vient de la déballer et ne pourrait plus en
+            // sortir. Rien n'est protégé à ce stade de toute façon.
+            if (!_cfg.RemonteeActive)
+            {
+                var r = MessageBox.Show(this,
+                    "Aucune passerelle n'est configurée : les identifiants ne peuvent pas être vérifiés.\n\n"
+                    + "Fermer la station quand même ?",
+                    "Fermer la station", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2);
+                if (r != DialogResult.Yes) return;
+            }
+            else
+            {
+                using var f = new FermetureForm(_api);
+                if (f.ShowDialog(this) != DialogResult.OK) return;
+            }
+
+            _sortieDemandee = true;
+            _annule?.Cancel();
+            Close();
+        }
+        finally { TopMost = etaitDevant; _fermetureEnCours = false; }
+    }
+
     /// <summary>
     /// Ouvre les réglages et prend en compte ce qui en sort, sans redémarrer la station.
     /// </summary>

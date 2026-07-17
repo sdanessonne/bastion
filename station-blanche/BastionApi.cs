@@ -175,6 +175,47 @@ public sealed class BastionApi
     }
 
     /// <summary>
+    /// Demande à la passerelle si ces identifiants autorisent la fermeture de la station.
+    ///
+    /// La vérification se fait sur la PASSERELLE, jamais ici : la station est un poste en
+    /// libre accès, et tout secret qu'elle porterait finirait par être lu. Elle ne connaît
+    /// aucun mot de passe, elle pose une question et reçoit oui ou non.
+    ///
+    /// « exige2fa » rend vrai quand le compte réclame un code : l'écran peut alors le
+    /// demander sans l'imposer aux comptes qui n'en ont pas.
+    /// </summary>
+    public async Task<(bool ok, string message, bool exige2fa)> AuthentifierAsync(
+        string utilisateur, string motDePasse, string code, CancellationToken jeton)
+    {
+        if (!_cfg.RemonteeActive)
+            return (false, "Aucune passerelle configurée : impossible de vérifier des identifiants.", false);
+
+        var champs = Champs("station.auth");
+        champs["user"] = utilisateur;
+        champs["pass"] = motDePasse;
+        champs["code"] = code;
+        champs["poste"] = Environment.MachineName;   // pour le journal d'audit de la passerelle
+
+        try
+        {
+            using var rep = await _http.PostAsync(_cfg.Passerelle.TrimEnd('/') + "/api.php",
+                new FormUrlEncodedContent(champs), jeton);
+            var corps = await rep.Content.ReadAsStringAsync(jeton);
+            using var doc = JsonDocument.Parse(corps);
+
+            if (doc.RootElement.TryGetProperty("ok", out var ok) && ok.GetBoolean())
+                return (true, "", false);
+
+            var msg = doc.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String
+                ? e.GetString()! : "Identifiants refusés.";
+            var deux = doc.RootElement.TryGetProperty("totp", out var t) && t.ValueKind == JsonValueKind.True;
+            return (false, msg, deux);
+        }
+        catch (TaskCanceledException) { return (false, "Passerelle injoignable : impossible de vérifier les identifiants.", false); }
+        catch (Exception ex) { return (false, "Passerelle injoignable : " + ex.Message, false); }
+    }
+
+    /// <summary>
     /// Éprouve la passerelle et le jeton, sans rien enregistrer.
     ///
     /// Indispensable à l'écran de réglages : un jeton mal recopié ne se verrait autrement

@@ -234,6 +234,35 @@ s'enfermer dedans.
 > désignant cet exécutable comme interface unique de la session. La station coopère avec
 > ces mécanismes ; elle ne les remplace pas. Sans eux, un agent déterminé sort de l'écran.
 
+## Fermer la station
+
+La station se ferme par le bouton **🔒 Fermer**, ou par **Ctrl+Shift+Q** — les deux passent
+par la même porte : un écran qui demande **l'identifiant, le mot de passe et le code à deux
+facteurs d'un administrateur Bastion**. Sans cela, le bouton protégé ne serait qu'un décor,
+qu'un raccourci connu suffirait à contourner.
+
+**La station ne connaît aucun mot de passe.** Elle envoie les identifiants à la passerelle
+(`station.auth`), qui répond oui ou non. Un poste en libre accès dans un couloir ne doit
+rien porter qui puisse être lu — et un compte révoqué depuis la console est refusé partout
+à l'instant même, sans qu'on ait à toucher les stations.
+
+- Le **2FA est obligatoire** pour les comptes qui l'ont activé : cette porte n'est pas un
+  moyen de contourner l'authentification forte de la console.
+- Les tentatives sont **limitées** — 5 échecs par quart d'heure et par IP, **et** 10 par
+  compte cible quelle que soit l'IP (un attaquant sur le LAN fait tourner ses adresses
+  sources trivialement ; seul un plafond par compte l'arrête). Le comptage est sérialisé
+  par un verrou : sans lui, une rafale simultanée franchissait le plafond avant que le
+  premier échec ne soit enregistré. La console de connexion, elle, n'a aucune de ces
+  limites.
+- Chaque tentative, **réussie comme échouée**, est journalisée sur la passerelle
+  (`pf_station_auth`) : sur un matériel de service, on doit pouvoir dire qui a fermé une
+  station, et quand.
+- Le bouton **Éteindre** reste, lui, libre d'accès : couper le courant n'est pas un
+  privilège, et bloquer l'extinction ne protégerait rien tout en piégeant l'exploitant.
+
+Si aucune passerelle n'est configurée (station jamais réglée), la fermeture demande une
+simple confirmation : il n'y a personne à interroger, et rien n'est encore protégé.
+
 ## Réglages
 
 **Au premier lancement, la station ouvre son écran de réglages toute seule.** C'est le seul

@@ -43,11 +43,167 @@ $action = (string) ($_GET['action'] ?? $_POST['action'] ?? '');
 
 // Une station ne peut appeler QUE ces deux actions. Sans ce garde-fou, le jeton « limité »
 // ouvrirait toute l'API : la limitation ne serait qu'une intention.
-$actionsStation = ['station.report', 'station.clamdb'];
+$actionsStation = ['station.report', 'station.clamdb', 'station.auth'];
 if ($estStation && !$estAdmin && !in_array($action, $actionsStation, true)) { jout(['error' => 'forbidden'], 403); }
 $active = fn(string $u) => trim((string) shell_exec('systemctl is-active ' . escapeshellarg($u) . ' 2>/dev/null'));
 
 switch ($action) {
+    /**
+     * Déverrouillage de la fermeture d'une station blanche.
+     *
+     * ── LE 2FA EST OBLIGATOIRE ICI, ET CE N'EST PAS NÉGOCIABLE ─────────────────
+     * La console impose une authentification à deux facteurs aux comptes qui l'ont
+     * activée. Si cette action s'en dispensait, elle deviendrait le maillon faible : il
+     * suffirait d'une station et d'un mot de passe volé pour contourner le second facteur
+     * de toute la console. Une porte dérobée n'a pas besoin d'être voulue pour en être une.
+     *
+     * ── CE QUE CETTE ACTION N'EST PAS ──────────────────────────────────────────
+     * Elle n'ouvre PAS de session d'administration. Elle répond « oui » ou « non » à une
+     * seule question : « ces identifiants permettent-ils de fermer la station ? ». Aucun
+     * jeton, aucun cookie, rien à rejouer.
+     */
+    case 'station.auth': {
+        require_once __DIR__ . '/inc/totp.php';
+
+        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        $u  = substr(trim((string) ($_POST['user'] ?? '')), 0, 64);
+        $p  = (string) ($_POST['pass'] ?? '');
+        $c  = preg_replace('/\D/', '', (string) ($_POST['code'] ?? ''));
+        $poste = substr(trim((string) ($_POST['poste'] ?? '')), 0, 64);
+
+        try {
+            $db->exec('CREATE TABLE IF NOT EXISTS pf_station_auth (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY, ts DATETIME NOT NULL,
+                ip VARCHAR(45) NOT NULL DEFAULT \'\', poste VARCHAR(64) NOT NULL DEFAULT \'\',
+                username VARCHAR(64) NOT NULL DEFAULT \'\', ok TINYINT(1) NOT NULL DEFAULT 0,
+                motif VARCHAR(64) NOT NULL DEFAULT \'\', INDEX(ts), INDEX(ip))');
+        } catch (Throwable $e) {}
+
+        if ($u === '' || $p === '') { jout(['error' => 'Identifiant et mot de passe requis.'], 400); }
+
+        // ── LIMITATION DES TENTATIVES ──────────────────────────────────────────────
+        // La console de connexion, elle, n'en a AUCUNE — ce n'est pas une raison pour
+        // ouvrir une seconde porte sans serrure. Deux pièges, tous deux relevés par un
+        // audit adversarial et corrigés ici :
+        //
+        // 1) TOCTOU. Compter les échecs PUIS enregistrer le nouveau n'est pas atomique :
+        //    entre les deux se glisse le bcrypt (~370 ms). Une rafale concurrente lit
+        //    toutes « compte < seuil » avant que le premier échec ne soit écrit, et franchit
+        //    le plafond en masse. On sérialise donc « compter + réserver » sous un verrou
+        //    nommé, et l'on RÉSERVE la tentative (ligne ok=0) AVANT le bcrypt — ainsi la
+        //    tentative suivante, sous le même verrou, la voit déjà.
+        //
+        // 2) Plafond par IP seul. $ip = REMOTE_ADDR : sur un LAN, l'attaquant fait tourner
+        //    ses adresses sources et repart d'un compteur neuf à chaque fois. On plafonne
+        //    donc AUSSI par compte cible (username), indépendant de l'IP.
+        //
+        // Le verrou n'est tenu que le temps du comptage et de la réservation (quelques
+        // millisecondes) ; le bcrypt coûteux se fait hors verrou, sans goulot pour l'usage
+        // légitime. La connexion PDO n'étant pas persistante, le verrou est de toute façon
+        // relâché à la fin du script, même sur un exit imprévu.
+        $reserveId = null;
+        try {
+            $lk = $db->prepare('SELECT GET_LOCK(?, 5)');
+            $lk->execute(['pf_station_auth']);
+            if ((int) $lk->fetchColumn() !== 1) {
+                jout(['error' => 'Service occupé, réessayez dans un instant.'], 503);
+            }
+
+            $st = $db->prepare('SELECT
+                COALESCE(SUM(username = ?), 0) AS par_compte,
+                COALESCE(SUM(ip = ?), 0)       AS par_ip
+                FROM pf_station_auth
+                WHERE ok = 0 AND ts > NOW() - INTERVAL 15 MINUTE');
+            $st->execute([$u, $ip]);
+            $r = $st->fetch();
+            if ((int) $r['par_compte'] >= 10 || (int) $r['par_ip'] >= 5) {
+                // Tracé avec ok=2 (ni succès, ni échec de mot de passe) : un blocage NE
+                // DOIT PAS compter comme un échec, sinon marteler la porte prolongerait
+                // indéfiniment la fenêtre de 15 minutes.
+                $db->prepare('INSERT INTO pf_station_auth (ts,ip,poste,username,ok,motif) VALUES (NOW(),?,?,?,2,?)')
+                   ->execute([$ip, $poste, $u, 'trop de tentatives']);
+                $db->prepare('SELECT RELEASE_LOCK(?)')->execute(['pf_station_auth']);
+                jout(['error' => 'Trop de tentatives. Réessayez dans 15 minutes.'], 429);
+            }
+
+            // Réservation : la tentative COMPTE dès maintenant, avant le bcrypt. C'est ce
+            // qui ferme le TOCTOU. Elle sera finalisée en succès (ok=1) ou laissée en
+            // échec (ok=0) selon le résultat.
+            $db->prepare('INSERT INTO pf_station_auth (ts,ip,poste,username,ok,motif) VALUES (NOW(),?,?,?,0,?)')
+               ->execute([$ip, $poste, $u, 'en cours']);
+            $reserveId = (int) $db->lastInsertId();
+            $db->prepare('SELECT RELEASE_LOCK(?)')->execute(['pf_station_auth']);
+        } catch (Throwable $e) {
+            // La limite s'appuie sur la table du journal : si on ne peut ni compter ni
+            // tracer, on REFUSE plutôt que d'ouvrir sans garde-fou. Le poste reste
+            // utilisable (analyse des clés) et le bouton Éteindre demeure.
+            try { $db->prepare('SELECT RELEASE_LOCK(?)')->execute(['pf_station_auth']); } catch (Throwable $e2) {}
+            jout(['error' => 'Journal d\'authentification indisponible : fermeture impossible pour le moment.'], 503);
+        }
+
+        // Finalise la ligne réservée : succès (ok=1) ou motif d'échec (la ligne reste ok=0
+        // et continue donc de compter dans le plafond). On met à jour, on n'insère pas :
+        // une seule ligne par tentative, celle qui a servi au comptage.
+        $trace = function (bool $ok, string $motif) use ($db, $reserveId) {
+            try {
+                if ($reserveId) {
+                    $db->prepare('UPDATE pf_station_auth SET ok=?, motif=? WHERE id=?')
+                       ->execute([$ok ? 1 : 0, $motif, $reserveId]);
+                }
+            } catch (Throwable $e) {}
+        };
+
+        $row = null;
+        try {
+            $st = $db->prepare('SELECT password_hash, totp_secret, totp_enabled FROM pf_admins WHERE username = ?');
+            $st->execute([$u]);
+            $row = $st->fetch();
+        } catch (Throwable $e) {}
+
+        // ── ÉNUMÉRATION DES COMPTES ────────────────────────────────────────────────
+        // Compte inconnu : on vérifie quand même le mot de passe, contre un LEURRE. Sans
+        // cela, la réponse revient bien plus vite pour un identifiant qui n'existe pas, et
+        // l'on énumère les comptes au chronomètre sans jamais deviner un mot de passe.
+        //
+        // Le leurre est un VRAI hash pris dans la table, et pas une constante écrite ici :
+        // MESURÉ, un hash en coût 10 face aux hash en coût 12 que produit PHP aujourd'hui
+        // donnait 81 ms contre 372 ms — 78 % d'écart, soit exactement la fuite qu'on
+        // prétendait boucher. Un hash de la base a forcément le même coût que les autres,
+        // quelle que soit la version de PHP qui les a créés.
+        $hash = $row['password_hash'] ?? null;
+        if ($hash === null) {
+            try { $hash = (string) $db->query('SELECT password_hash FROM pf_admins LIMIT 1')->fetchColumn(); }
+            catch (Throwable $e) { $hash = ''; }
+        }
+        // password_verify sur une chaîne vide rend false sans calculer : sans compte en
+        // base il n'y a de toute façon rien à énumérer.
+        $bon = $hash !== '' && $hash !== false && password_verify($p, $hash) && !empty($row);
+
+        if (!$bon) {
+            // Message IDENTIQUE pour un identifiant inconnu et un mot de passe faux :
+            // distinguer les deux revient à confirmer l'existence d'un compte.
+            $trace(false, 'identifiants refusés');
+            jout(['error' => 'Identifiant ou mot de passe incorrect.'], 401);
+        }
+
+        if (!empty($row['totp_enabled'])) {
+            $sec = (string) ($row['totp_secret'] ?? '');
+            if ($c === '') {
+                // On le dit APRÈS avoir validé le mot de passe : annoncer « ce compte a un
+                // 2FA » avant renseignerait un attaquant qui n'a pas le mot de passe.
+                $trace(false, 'code 2FA manquant');
+                jout(['error' => 'Ce compte exige un code à deux facteurs.', 'totp' => true], 401);
+            }
+            if ($sec === '' || !totp_verify($sec, $c)) {
+                $trace(false, 'code 2FA refusé');
+                jout(['error' => 'Code à deux facteurs incorrect.', 'totp' => true], 401);
+            }
+        }
+
+        $trace(true, 'fermeture autorisée');
+        jout(['ok' => true, 'user' => $u]);
+    }
+
     /**
      * Base virale ClamAV servie aux stations blanches.
      *
