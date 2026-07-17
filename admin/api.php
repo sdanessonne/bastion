@@ -65,7 +65,9 @@ switch ($action) {
         // pas les caractères dangereux, on n'accepte que des noms connus — c'est la seule
         // approche qui ne se fait pas contourner.
         $permis = ['main.cvd', 'main.cld', 'daily.cvd', 'daily.cld', 'bytecode.cvd', 'bytecode.cld'];
-        $demande = (string) ($_GET['file'] ?? '');
+        // POST accepté : les stations passent par là pour que leur jeton reste hors de
+        // l'URL — une chaîne de requête finit dans les journaux d'accès d'Apache.
+        $demande = (string) ($_POST['file'] ?? $_GET['file'] ?? '');
 
         if ($demande === '') {
             $liste = [];

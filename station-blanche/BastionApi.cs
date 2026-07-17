@@ -43,9 +43,31 @@ public sealed class BastionApi
             h.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
         }
         var c = new HttpClient(h) { Timeout = delai };
+        // En-tête conservé parce que c'est la façon correcte de faire — mais il NE SUFFIT
+        // PAS : voir Champs(). Il sert le jour où le vhost sera corrigé.
         c.DefaultRequestHeaders.Add("Authorization", "Bearer " + cfg.Jeton);
         return c;
     }
+
+    /// <summary>
+    /// Champs de base de toute requête, jeton compris.
+    ///
+    /// ── POURQUOI LE JETON VOYAGE DANS LE CORPS, ET PAS SEULEMENT EN EN-TÊTE ─────
+    /// MESURÉ contre la vraie passerelle : « Authorization: Bearer <jeton> » rend 401,
+    /// « token=<jeton> » rend 200. Apache ne transmet pas l'en-tête Authorization à PHP
+    /// sans directive explicite (CGIPassAuth / SetEnvIf), et le vhost de Bastion n'en a
+    /// aucune. Un client qui ne s'appuierait que sur l'en-tête échouerait sur TOUTES les
+    /// passerelles déjà installées — ce qui était le cas de celui-ci.
+    ///
+    /// Le jeton part en POST et jamais dans l'URL : une chaîne de requête atterrit dans les
+    /// journaux d'accès d'Apache, dans ceux des mandataires, et y reste. Un corps de POST,
+    /// non.
+    /// </summary>
+    private Dictionary<string, string> Champs(string action) => new()
+    {
+        ["action"] = action,
+        ["token"]  = _cfg.Jeton,
+    };
 
     private readonly HttpClient _telechargement;
 
@@ -60,11 +82,12 @@ public sealed class BastionApi
         if (!_cfg.RemonteeActive)
             return (false, "Aucune passerelle configurée : la base virale ne peut pas être mise à jour.");
 
-        var url = _cfg.Passerelle.TrimEnd('/') + "/api.php?action=station.clamdb";
+        var url = _cfg.Passerelle.TrimEnd('/') + "/api.php";
         List<FichierBase> inventaire;
         try
         {
-            using var rep = await _telechargement.GetAsync(url, jeton);
+            using var rep = await _telechargement.PostAsync(url,
+                new FormUrlEncodedContent(Champs("station.clamdb")), jeton);
             if (!rep.IsSuccessStatusCode)
                 return (false, $"La passerelle a répondu {(int) rep.StatusCode} : base virale inchangée.");
             using var doc = JsonDocument.Parse(await rep.Content.ReadAsStringAsync(jeton));
@@ -100,8 +123,20 @@ public sealed class BastionApi
             var tmp = cible + ".part";
             try
             {
-                using (var rep = await _telechargement.GetAsync(url + "&file=" + Uri.EscapeDataString(f.nom),
-                           HttpCompletionOption.ResponseHeadersRead, jeton))
+                // « file » reste dans l'URL, seul le JETON passe par le corps.
+                //
+                // Ce n'est pas un détail de style : les passerelles déjà installées ne lisent
+                // « file » qu'en GET. Le poster faisait retomber la requête sur l'inventaire —
+                // 468 octets de JSON au lieu de 89 Mo — et la station annonçait « fichier
+                // arrivé abîmé », ce qui envoyait chercher un problème de réseau inexistant.
+                // Un nom de fichier n'est pas un secret ; le jeton, si. Seul lui doit rester
+                // hors des journaux d'accès.
+                var corps = new FormUrlEncodedContent(new Dictionary<string, string> { ["token"] = _cfg.Jeton });
+                var lien = url + "?action=station.clamdb&file=" + Uri.EscapeDataString(f.nom);
+                // « ResponseHeadersRead » : on écrit au fil de l'eau plutôt que de charger
+                // 89 Mo en mémoire avant d'ouvrir le fichier de destination.
+                using var req = new HttpRequestMessage(HttpMethod.Post, lien) { Content = corps };
+                using (var rep = await _telechargement.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, jeton))
                 {
                     if (!rep.IsSuccessStatusCode)
                         return (false, $"Téléchargement de {f.nom} refusé ({(int) rep.StatusCode}) : base virale incomplète.");
@@ -167,9 +202,9 @@ public sealed class BastionApi
         })));
         var detail = string.Join("\n", lignes);
 
-        var champs = new Dictionary<string, string>
+        var champs = Champs("station.report");
+        foreach (var (k, v) in new Dictionary<string, string>
         {
-            ["action"]    = "station.report",
             ["poste"]     = Environment.MachineName,
             ["operateur"] = Environment.UserName,
             ["support"]   = $"{s.Lettre} {s.Materiel} {(string.IsNullOrWhiteSpace(s.Nom) ? "" : "« " + s.Nom + " »")} ({Support.Fmt(s.Taille)})".Trim(),
@@ -177,7 +212,7 @@ public sealed class BastionApi
             ["fichiers"]  = nbFichiers.ToString(),
             ["abouti"]    = r.Abouti ? "1" : "0",
             ["detail"]    = detail,
-        };
+        }) champs[k] = v;
 
         try
         {
