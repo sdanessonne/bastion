@@ -34,4 +34,13 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- WMI. Retiré du socle depuis .NET Core, il faut le déclarer explicitement.
+         Indispensable ici : seul Win32_DiskDrive.InterfaceType distingue une clé USB d'un
+         disque interne. Sans lui, la station proposerait d'analyser le disque système
+         secondaire — vécu sur le poste de développement : un NVMe de 1,9 To présenté
+         comme une clé. -->
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
 </Project>
