@@ -32,7 +32,19 @@
          ne vaut pas une panne à l'exécution, impossible à voir à la compilation. -->
     <PublishTrimmed>false</PublishTrimmed>
     <DebugType>none</DebugType>
+
+    <!-- Icône de l'exécutable (explorateur, barre des tâches, Alt+Tab). On pointe l'asset
+         partagé du portail plutôt que d'en garder une copie ici : une seconde copie finit
+         toujours par diverger de la première. -->
+    <ApplicationIcon>..\portal\assets\favicon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Le même fichier, embarqué cette fois DANS l'exécutable : la station est un .exe
+         autonome que l'on copie seul sur un poste, sans dossier d'accompagnement. Un logo
+         chargé depuis le disque manquerait à l'appel. -->
+    <EmbeddedResource Include="..\portal\assets\favicon.ico" LogicalName="bastion.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- WMI. Retiré du socle depuis .NET Core, il faut le déclarer explicitement.

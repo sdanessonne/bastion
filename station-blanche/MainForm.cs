@@ -17,6 +17,7 @@ public sealed class MainForm : Form
 
     private readonly Label _titre = new(), _etat = new(), _detail = new(), _moteur = new(), _trace = new();
     private readonly Panel _bandeau = new();
+    private readonly PictureBox _logo = new();
     private readonly ProgressBar _barre = new();
     private readonly ListBox _menaces = new();
     private readonly Button _btnAnalyser = new(), _btnRapport = new(), _btnEteindre = new(), _btnMaj = new();
@@ -42,6 +43,9 @@ public sealed class MainForm : Form
         _api = new BastionApi(cfg);
 
         Text = "Bastion — Station blanche";
+        // Icône de la fenêtre (barre de titre, Alt+Tab). Un logo manquant ne doit pas
+        // empêcher une station d'analyser une clé : on s'en passe plutôt que d'échouer.
+        try { Icon = Marque.Icone(32); } catch { }
         BackColor = Fond; ForeColor = Encre;
         Font = new Font("Segoe UI", 11F);
         KeyPreview = true;   // pour intercepter la sortie de secours avant les contrôles
@@ -89,17 +93,24 @@ public sealed class MainForm : Form
 
     private void Construire()
     {
+        // Le logo dit à l'agent, sans un mot, que ce poste appartient au dispositif du
+        // service — et pas à un utilitaire quelconque installé là par hasard. Sous garde :
+        // une station qui refuserait de démarrer à cause d'une image serait absurde.
+        try { _logo.Image = Marque.Logo(52); } catch { }
+        _logo.SizeMode = PictureBoxSizeMode.AutoSize;
+        _logo.SetBounds(36, 26, 52, 52);
+
         _titre.Text = "Station blanche";
         _titre.Font = new Font("Segoe UI", 26F, FontStyle.Bold);
         _titre.ForeColor = Color.White;
-        _titre.SetBounds(36, 26, 600, 46);
+        _titre.SetBounds(102, 26, 600, 46);
 
         var sous = new Label
         {
             Text = "Analyse d'une clé USB avant tout usage sur le réseau du service.",
             ForeColor = Grise, AutoSize = false,
         };
-        sous.SetBounds(38, 74, 800, 24);
+        sous.SetBounds(104, 74, 800, 24);
 
         _moteur.SetBounds(38, 102, 1100, 22);
         _moteur.ForeColor = Grise;
@@ -170,7 +181,7 @@ public sealed class MainForm : Form
         _btnEteindre.Click += (_, _) => Eteindre();
         _btnEteindre.Visible = _cfg.BoutonEteindre;
 
-        Controls.AddRange(new Control[] { _titre, sous, _moteur, _bandeau, _barre, lblM, _menaces,
+        Controls.AddRange(new Control[] { _logo, _titre, sous, _moteur, _bandeau, _barre, lblM, _menaces,
                                           _trace, _supports, _btnAnalyser, _btnRapport, _btnMaj, _btnEteindre });
         Resize += (_, _) => Disposer();
         Shown += (_, _) => Disposer();
