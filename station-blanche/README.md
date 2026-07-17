@@ -112,6 +112,43 @@ sur rien.
 > trouvée**. Recopier la logique de l'un sur l'autre ferait passer une clé infectée pour
 > un incident technique — ou une erreur pour une clé saine.
 
+### Un fichier infecté est compté une fois, pas une fois par moteur
+
+Les deux moteurs nomment différemment la même chose. Mesuré sur EICAR : ClamAV rend
+`Bastion-Test-EICAR.UNOFFICIAL`, Defender `Virus:DOS/EICAR_Test_File`. Le regroupement se
+fait donc **par fichier**, pas par couple fichier + signature — sans quoi la station
+annoncerait « 2 menaces » là où il n'y a qu'un fichier. Les deux appellations sont
+conservées et affichées : savoir que les deux moteurs sont d'accord vaut mieux que n'en
+montrer qu'un.
+
+### Protection temps réel : elle peut aveugler ClamAV
+
+L'erreur Windows **225** est `ERROR_VIRUS_INFECTED`. Quand la protection temps réel de
+Defender intercepte un fichier, elle en bloque l'ouverture par **tout** processus, ClamAV
+compris. Observé une fois sur EICAR :
+
+```
+Can't open file ...\eicar.txt: 225
+Scanned files: 1   Infected files: 0   Total errors: 1
+```
+
+PowerShell s'est vu refuser le même fichier au même instant : ce n'est pas une bizarrerie
+de ClamAV, c'est le système qui refuse.
+
+**Le cas ne s'est pas reproduit** : 12 écritures suivies d'une lecture immédiate ont toutes
+abouti, protection temps réel active. Le blocage est donc réel mais **intermittent** — sans
+doute la première rencontre avec un échantillon, le temps d'une interrogation du nuage.
+
+Ce qui compte : quand cela arrive, ClamAV n'annonce pas une menace, il **échoue à lire** —
+et son `Infected files: 0` ne veut alors rien dire. La station détecte ce cas et le dit,
+plutôt que de le confondre avec une erreur technique quelconque.
+
+> Sur une station destinée à examiner des pièces ou des scellés, **excluez les lecteurs
+> amovibles de la protection temps réel**. Cela sert deux fois : ClamAV lit alors tout ce
+> qu'il doit lire, et Windows cesse de pouvoir écrire sur un support qui doit rester
+> intact. Cette exclusion se règle côté Windows — aucun logiciel ne peut la poser à votre
+> place.
+
 ### Installer ClamAV sur la station
 
 ```powershell

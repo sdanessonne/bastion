@@ -61,6 +61,27 @@ public sealed class MoteurClamav : IMoteur
         }
     }
 
+    /// <summary>
+    /// Extensions de base virale reconnues par ClamAV.
+    ///
+    /// La passerelle sert des « .cvd » et « .cld » — mais s'en tenir à ces deux-là
+    /// interdirait à un exploitant de déposer ses propres signatures (.hdb, .ndb, .ldb),
+    /// ce que ClamAV sait parfaitement charger. La station déclarerait « base absente »
+    /// devant un dossier qui en contient une.
+    /// </summary>
+    private static readonly string[] Extensions =
+        { ".cvd", ".cld", ".cud", ".hdb", ".hsb", ".ndb", ".ldb", ".mdb", ".msb", ".sdb", ".cbc" };
+
+    private static bool BasePresente()
+    {
+        try
+        {
+            return Directory.Exists(DossierBase) && Directory.EnumerateFiles(DossierBase)
+                .Any(f => Extensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+        }
+        catch { return false; }
+    }
+
     public static string? TrouverExe()
     {
         foreach (var p in Emplacements) { if (File.Exists(p)) return p; }
@@ -136,7 +157,7 @@ public sealed class MoteurClamav : IMoteur
 
         // Sans base, clamscan sort en erreur — mais mieux vaut le dire clairement que de
         // laisser l'agent lire un message du moteur.
-        if (!Directory.Exists(DossierBase) || !Directory.EnumerateFiles(DossierBase, "*.c?d").Any())
+        if (!BasePresente())
             return new Resultat(false, 0, Array.Empty<Menace>(), debut.Elapsed, "",
                 "Base virale ClamAV absente : la station ne l'a jamais reçue de la passerelle.");
 
@@ -163,6 +184,15 @@ public sealed class MoteurClamav : IMoteur
             // deux moteurs cohabitent dans ce logiciel : recopier la logique de l'un sur
             // l'autre ferait passer une clé infectée pour un incident technique, ou pire,
             // une erreur pour une clé saine.
+            // Fichiers que ClamAV n'a PAS PU LIRE parce que Windows les lui a refusés.
+            // Ce cas n'est pas un détail : voir Bloques().
+            var bloques = Bloques(sortie);
+            if (bloques > 0)
+                return new Resultat(false, menaces.Count, menaces, debut.Elapsed, sortie,
+                    $"Windows Defender a interdit à ClamAV de lire {bloques} fichier(s) — ce sont "
+                  + "précisément ceux qu'il juge dangereux. Excluez les lecteurs amovibles de la "
+                  + "protection temps réel, sinon ClamAV reste aveugle sur ce qui compte (voir la notice).");
+
             if (code == 2)
                 return new Resultat(false, menaces.Count, menaces, debut.Elapsed, sortie,
                     "ClamAV a rencontré une erreur : " + (PremiereErreur(sortie) ?? "cause inconnue") + ".");
@@ -190,9 +220,39 @@ public sealed class MoteurClamav : IMoteur
         return l;
     }
 
+    /// <summary>
+    /// Nombre de fichiers que Windows a REFUSÉ d'ouvrir à ClamAV.
+    ///
+    /// L'erreur Windows 225 est ERROR_VIRUS_INFECTED : « impossible de terminer
+    /// l'opération, car le fichier contient un virus ». Quand la protection temps réel de
+    /// Defender intercepte un fichier, elle en bloque l'ouverture par TOUT processus —
+    /// ClamAV compris.
+    ///
+    /// CE QUI A ÉTÉ MESURÉ, exactement : une fois, sur EICAR, ClamAV a rendu
+    ///     Can't open file …\eicar.txt: 225
+    ///     Scanned files: 1   Infected files: 0   Total errors: 1
+    /// et PowerShell s'est vu refuser le même fichier au même instant — ce n'est donc pas
+    /// une bizarrerie de ClamAV, c'est le système qui refuse. Mais le cas ne s'est PAS
+    /// reproduit : 12 écritures suivies d'une lecture immédiate ont toutes abouti, avec la
+    /// protection temps réel active. Le blocage est donc réel mais INTERMITTENT — sans
+    /// doute la première rencontre avec un échantillon, le temps d'une interrogation du
+    /// nuage, les suivantes étant servies par un cache local.
+    ///
+    /// Ce qui compte pour nous : quand cela arrive, ClamAV n'annonce pas une menace, il
+    /// échoue à LIRE — et son « Infected files: 0 » ne veut alors rien dire. Le prendre
+    /// pour une erreur technique banale serait un contresens. D'où le message dédié, et
+    /// l'exclusion des lecteurs amovibles conseillée dans la notice.
+    ///
+    /// Ces lignes sont des « Warning », pas des « Error » : le filtre sur ERROR ne les
+    /// voyait pas, et le message rendu était « cause inconnue ».
+    /// </summary>
+    private static int Bloques(string sortie) =>
+        Regex.Matches(sortie, @"Can't open file .+?: 225\b").Count;
+
     private static string? PremiereErreur(string sortie)
     {
-        var m = Regex.Match(sortie, @"^(?:ERROR|LibClamAV Error):\s*(?<m>.+)$", RegexOptions.Multiline);
+        var m = Regex.Match(sortie, @"^(?:ERROR|LibClamAV (?:Error|Warning)|WARNING):\s*(?<m>.+)$",
+            RegexOptions.Multiline);
         return m.Success ? m.Groups["m"].Value.Trim() : null;
     }
 

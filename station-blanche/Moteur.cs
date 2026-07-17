@@ -32,13 +32,26 @@ public interface IMoteur
 public sealed record Verdict(
     IReadOnlyList<(IMoteur moteur, Resultat resultat)> Analyses)
 {
-    /// <summary>Menaces de tous les moteurs, dédoublonnées par fichier + nom de signature.</summary>
+    /// <summary>
+    /// Menaces de tous les moteurs, regroupées PAR FICHIER.
+    ///
+    /// Le regroupement se fait sur le fichier seul, pas sur le couple fichier + signature :
+    /// deux moteurs nomment DIFFÉREMMENT la même chose. MESURÉ sur EICAR — ClamAV rend
+    /// « Bastion-Test-EICAR.UNOFFICIAL », Defender « Virus:DOS/EICAR_Test_File ». Compter
+    /// les couples annonçait « 2 menaces » là où il n'y a qu'UN fichier infecté.
+    ///
+    /// Les deux appellations sont conservées et affichées : savoir que les deux moteurs
+    /// sont d'accord vaut mieux que n'en montrer qu'un.
+    /// </summary>
     public IReadOnlyList<Menace> Menaces => Analyses
         .SelectMany(a => a.resultat.Menaces)
-        .GroupBy(m => m.Fichier.ToLowerInvariant() + "|" + m.Nom)
-        .Select(g => g.First())
+        .GroupBy(m => m.Fichier.Trim().ToLowerInvariant())
+        .Select(g => new Menace(
+            string.Join(" · ", g.Select(m => m.Nom).Distinct()),
+            g.First().Fichier))
         .ToList();
 
+    /// <summary>Nombre de FICHIERS infectés — pas de signatures relevées.</summary>
     public int NbMenaces => Menaces.Count;
 
     /// <summary>
