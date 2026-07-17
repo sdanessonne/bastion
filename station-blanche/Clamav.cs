@@ -214,15 +214,18 @@ public sealed class MoteurClamav : IMoteur
 
         if (_version == null)
         {
-            _version = "ClamAV";
+            _version = "";
             try
             {
-                // « --version » rend « ClamAV 1.5.3/27890/Thu Jul 17 08:00:00 2026 ». On ne
-                // garde que le premier champ : la date qui suit dépend de la base que ClamAV
-                // trouve LUI-MÊME, pas de la nôtre. Elle mentirait sur ce qu'on utilise.
+                // « --version » rend « ClamAV 1.5.3/27890/Thu Jul 17 08:00:00 2026 », ou
+                // « ClamAV 1.5.3 » tout court quand il ne trouve pas de base là où il la
+                // cherche par défaut. On ne garde que le NUMÉRO : le nom du moteur est déjà
+                // ajouté par l'affichage (sinon « ClamAV ClamAV 1.5.3 »), et la date qui
+                // suit porte sur la base que ClamAV trouve lui-même — pas la nôtre. Elle
+                // mentirait sur les signatures réellement utilisées.
                 var s = Executer(exe, "--version", TimeSpan.FromSeconds(10));
                 var m = Regex.Match(s, @"ClamAV\s+([0-9][0-9.\-a-z]*)", RegexOptions.IgnoreCase);
-                if (m.Success) _version = "ClamAV " + m.Groups[1].Value;
+                if (m.Success) _version = m.Groups[1].Value;
             }
             catch { }
         }

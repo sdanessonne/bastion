@@ -206,6 +206,9 @@ public sealed class MainForm : Form
     private void Disposer()
     {
         int l = ClientSize.Width, h = ClientSize.Height, m = 36;
+        // Le libellé des moteurs avait une largeur fixe : il se coupait sur une fenêtre
+        // étroite, et c'est la ligne qui dit à l'agent si le verdict est digne de foi.
+        _moteur.SetBounds(38, 102, l - 2 * m, 22);
         _bandeau.SetBounds(m, 136, l - 2 * m, 150);
         _etat.Width = _bandeau.Width - 52;
         _detail.Width = _bandeau.Width - 56;
