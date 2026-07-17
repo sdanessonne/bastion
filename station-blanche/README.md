@@ -234,34 +234,65 @@ s'enfermer dedans.
 > désignant cet exécutable comme interface unique de la session. La station coopère avec
 > ces mécanismes ; elle ne les remplace pas. Sans eux, un agent déterminé sort de l'écran.
 
-## Réglages — `station.json`
+## Réglages
 
-Écrit à côté de l'exécutable au premier lancement, à compléter :
+**Au premier lancement, la station ouvre son écran de réglages toute seule.** C'est le seul
+moment où quelqu'un est devant l'écran pour les remplir : attendre qu'il découvre un
+raccourci garantirait une borne qui ne trace rien et dont la base ne se met jamais à jour,
+sans que personne ne s'en aperçoive.
+
+Ensuite : **Ctrl+Shift+R**. Volontairement peu découvrable, comme la sortie de secours — une
+borne n'expose pas de bouton « configurer » à l'agent venu analyser sa clé.
+
+Deux valeurs à saisir, lues sur la console Bastion (**Antivirus → Stations blanches**) :
+
+| | |
+|---|---|
+| **Adresse de la console** | `https://192.168.182.1:8443` — le schéma est ajouté s'il manque |
+| **Jeton des stations** | 64 caractères, masqué à l'écran (bouton 👁 pour le relire) |
+
+Le bouton **« Éprouver la connexion »** interroge la passerelle avec ce qui est *à l'écran*,
+avant tout enregistrement. Sans lui, un jeton mal recopié ne se verrait qu'à la première clé
+insérée, des jours plus tard, sous la forme d'un « analyse non tracée » que personne ne
+relie à une faute de frappe. Il distingue les cas :
+
+- *« Jeton refusé »* — ce n'est pas le bon, ou c'est celui d'administration ;
+- *« Ce jeton n'autorise pas les stations »* — c'est bien celui d'administration ;
+- *« Passerelle joignable… mais aucune base virale »* — la passerelle n'a pas ClamAV ;
+- *« Passerelle injoignable »* — adresse ou réseau.
+
+> C'est le jeton des **stations**, jamais celui d'administration. Une station est un poste en
+> libre accès dans un couloir : si son jeton fuit, il ne doit ouvrir que le dépôt d'un
+> résultat et la base virale. L'API refuse tout le reste en 403 — **vérifié** : `status`,
+> `users.list` et `weblog.search` rendent bien 403 avec ce jeton.
+
+Sans passerelle ni jeton, la station fonctionne quand même : elle analyse et affiche, mais
+l'écran indique « analyses NON tracées » et la base ClamAV ne se met plus à jour.
+
+### Le fichier derrière
+
+Les réglages sont écrits dans `station.json`, à côté de l'exécutable — l'écran affiche son
+chemin exact. Un déploiement en masse peut donc le poser directement, sans passer par
+l'interface :
 
 ```json
 {
   "Passerelle": "https://192.168.182.1:8443",
-  "Jeton": "<pf_settings.station_token de la passerelle>",
+  "Jeton": "<le jeton des stations>",
   "Kiosque": true,
   "BoutonEteindre": true,
   "MajAuto": true,
+  "DefenderEnSecondAvis": true,
   "AccepterCertificatInterne": true
 }
 ```
 
-Le jeton se lit sur la passerelle :
+**Ne posez pas la station sous `Program Files`** : elle ne pourrait pas y écrire ses
+réglages. `C:\Bastion` convient. L'écran le dit s'il n'y arrive pas, plutôt que de perdre la
+saisie en silence.
 
-```sh
-sudo mysql proxyfibre -N -B -e "SELECT v FROM pf_settings WHERE k='station_token';"
-```
-
-C'est **`station_token`, jamais `api_token`**. Une station blanche est une machine en libre
-accès dans un couloir : si son jeton fuit, il ne doit ouvrir que le dépôt d'un résultat
-d'analyse — ni les comptes, ni les journaux. L'API refuse (403) toute autre action à ce
-jeton.
-
-Sans `Passerelle` ni `Jeton`, la station fonctionne quand même : elle analyse et affiche,
-mais l'écran indique « analyses NON tracées ».
+`station.json` porte le jeton : il est exclu du dépôt Git. Un secret poussé une fois y reste
+pour toujours, même supprimé — l'historique le garde.
 
 ## Mise à jour des signatures
 

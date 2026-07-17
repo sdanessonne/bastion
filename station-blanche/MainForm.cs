@@ -13,7 +13,7 @@ namespace Bastion.StationBlanche;
 public sealed class MainForm : Form
 {
     private readonly Config _cfg;
-    private readonly BastionApi _api;
+    private BastionApi _api;   // refaite quand le jeton change dans les réglages
 
     private readonly Label _titre = new(), _etat = new(), _detail = new(), _moteur = new(), _trace = new();
     private readonly Panel _bandeau = new();
@@ -85,6 +85,9 @@ public sealed class MainForm : Form
             // Le drapeau est INDISPENSABLE : sans lui, le FormClosing ci-dessous annule
             // cette fermeture comme il annule Alt+F4, et la borne devient inquittable.
             if (e.Control && e.Shift && e.KeyCode == Keys.Q) { _sortieDemandee = true; _annule?.Cancel(); Close(); }
+            // Réglages : même logique que la sortie de secours. Une borne n'expose pas de
+            // bouton « configurer » à l'agent qui vient analyser sa clé.
+            if (e.Control && e.Shift && e.KeyCode == Keys.R) OuvrirReglages();
         };
         // Alt+F4 ne doit pas fermer une borne par mégarde ; la sortie de secours reste.
         FormClosing += (_, e) =>
@@ -248,6 +251,12 @@ public sealed class MainForm : Form
         // retombent sur clamscan — lentes, mais justes.
         MoteurClamav.DemarrerDaemon();
         AfficherMoteur();
+
+        // Premier lancement : rien n'est configuré. On ouvre les réglages tout de suite —
+        // c'est le seul moment où quelqu'un est devant l'écran pour les remplir. Attendre
+        // qu'il découvre Ctrl+Shift+R garantirait une station qui ne trace rien et dont la
+        // base ne se met jamais à jour, sans que personne ne s'en aperçoive.
+        if (!_cfg.RemonteeActive) OuvrirReglages();
         _veille = new UsbWatcher(this);
         _veille.Insere += s => BeginInvoke(() => SurInsertion(s));
         _veille.Retire += l => BeginInvoke(() => SurRetrait(l));
@@ -318,6 +327,42 @@ public sealed class MainForm : Form
     /// Met à jour les signatures de chaque moteur. ClamAV les tire de la passerelle,
     /// Defender de Windows Update : deux chaînes indépendantes, donc deux verdicts.
     /// </summary>
+    /// <summary>
+    /// Ouvre les réglages et prend en compte ce qui en sort, sans redémarrer la station.
+    /// </summary>
+    private void OuvrirReglages()
+    {
+        if (_analyseEnCours) return;   // pas au milieu d'une analyse
+
+        // TopMost passerait DEVANT la boîte de dialogue en mode borne : l'exploitant
+        // verrait son écran de réglages disparaître derrière la station, sans comprendre.
+        var etaitDevant = TopMost;
+        TopMost = false;
+        try
+        {
+            using var f = new ReglagesForm(_cfg);
+            if (f.ShowDialog(this) != DialogResult.OK) return;
+        }
+        finally { TopMost = etaitDevant; }
+
+        // Le jeton a pu changer : l'API le tient à la construction, il faut la refaire.
+        _api = new BastionApi(_cfg);
+        _moteurs.Clear();
+        _moteurs.Add(new MoteurClamav(_api));
+        if (_cfg.DefenderEnSecondAvis) _moteurs.Add(new MoteurDefender());
+
+        _btnEteindre.Visible = _cfg.BoutonEteindre;
+        Disposer();
+        AfficherMoteur();
+        Rafraichir();
+        // Le mode borne ne bascule qu'au prochain lancement : passer une fenêtre en plein
+        // écran sans bordure à chaud produit des artefacts, et l'exploitant vient
+        // justement de configurer le poste — il le redémarrera.
+        _trace.ForeColor = Grise;
+        _trace.Text = "✓ Réglages enregistrés." + (_cfg.Kiosque != etaitDevant
+            ? " Le mode borne prendra effet au prochain démarrage." : "");
+    }
+
     private async Task MajAsync(bool manuel)
     {
         if (_analyseEnCours) return;   // jamais pendant une analyse : la base changerait sous les pieds du moteur

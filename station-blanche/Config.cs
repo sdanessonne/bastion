@@ -77,5 +77,32 @@ public sealed class Config
         catch { /* dossier en lecture seule : sans importance, les défauts suffisent */ }
     }
 
+    /// <summary>
+    /// Enregistre les réglages saisis dans l'écran de configuration.
+    ///
+    /// Rend le motif d'échec plutôt qu'une exception : le cas courant est un exécutable
+    /// posé sous « Program Files », où une borne n'a pas le droit d'écrire. L'exploitant
+    /// doit le savoir sur-le-champ, pas découvrir à la clé suivante que rien n'a été gardé.
+    /// </summary>
+    public string? Enregistrer()
+    {
+        try
+        {
+            File.WriteAllText(Chemin, JsonSerializer.Serialize(this,
+                new JsonSerializerOptions { WriteIndented = true }));
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return $"Écriture refusée dans {Path.GetDirectoryName(Chemin)}.\n\n"
+                 + "Déplacez la station hors de « Program Files » (par exemple C:\\Bastion), "
+                 + "ou lancez-la une fois en tant qu'administrateur.";
+        }
+        catch (Exception ex) { return "Enregistrement impossible : " + ex.Message; }
+    }
+
+    /// <summary>Emplacement du fichier, montré à l'exploitant dans l'écran de réglages.</summary>
+    public static string CheminAffiche => Chemin;
+
     public bool RemonteeActive => !string.IsNullOrWhiteSpace(Passerelle) && !string.IsNullOrWhiteSpace(Jeton);
 }

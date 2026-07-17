@@ -45,11 +45,30 @@ public sealed record Verdict(
     /// </summary>
     public IReadOnlyList<Menace> Menaces => Analyses
         .SelectMany(a => a.resultat.Menaces)
-        .GroupBy(m => m.Fichier.Trim().ToLowerInvariant())
+        .GroupBy(m => Cle(m.Fichier))
         .Select(g => new Menace(
             string.Join(" · ", g.Select(m => m.Nom).Distinct()),
             g.First().Fichier))
         .ToList();
+
+    /// <summary>
+    /// Clé de regroupement d'un fichier, indépendante de l'écriture du chemin.
+    ///
+    /// Comparer les chaînes brutes ne suffit pas : les moteurs ne rendent pas le chemin de
+    /// la même façon. OBSERVÉ — sur un même fichier, l'un a rendu « C:/…/e.txt » et l'autre
+    /// « C:\…\e.txt », et la station a compté DEUX menaces là où il n'y en avait qu'une.
+    /// Le décompte affiché à l'agent ne doit pas dépendre du style de barre oblique d'un
+    /// moteur.
+    /// </summary>
+    private static string Cle(string chemin)
+    {
+        var c = chemin.Trim().Replace('/', '\\');
+        // GetFullPath lève sur un chemin invalide (caractère interdit, chemin trop long) :
+        // on se rabat alors sur la forme normalisée, plutôt que de faire échouer l'affichage
+        // du verdict pour une histoire de nom de fichier.
+        try { c = Path.GetFullPath(c); } catch { }
+        return c.TrimEnd('\\').ToLowerInvariant();
+    }
 
     /// <summary>Nombre de FICHIERS infectés — pas de signatures relevées.</summary>
     public int NbMenaces => Menaces.Count;

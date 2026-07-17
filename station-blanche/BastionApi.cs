@@ -174,6 +174,52 @@ public sealed class BastionApi
             : (true, $"Base virale mise à jour depuis Bastion : {recus} fichier(s), signatures du {quand:dd/MM/yyyy HH:mm}.");
     }
 
+    /// <summary>
+    /// Éprouve la passerelle et le jeton, sans rien enregistrer.
+    ///
+    /// Indispensable à l'écran de réglages : un jeton mal recopié ne se verrait autrement
+    /// qu'à la première clé insérée, des jours plus tard, sous la forme d'un « analyse non
+    /// tracée » que personne ne relie à une faute de frappe.
+    /// </summary>
+    public async Task<(bool ok, string message)> TesterAsync(CancellationToken jeton)
+    {
+        if (string.IsNullOrWhiteSpace(_cfg.Passerelle)) return (false, "Indiquez l'adresse de la passerelle.");
+        if (string.IsNullOrWhiteSpace(_cfg.Jeton)) return (false, "Indiquez le jeton.");
+
+        try
+        {
+            using var rep = await _http.PostAsync(_cfg.Passerelle.TrimEnd('/') + "/api.php",
+                new FormUrlEncodedContent(Champs("station.clamdb")), jeton);
+            var corps = await rep.Content.ReadAsStringAsync(jeton);
+
+            if (rep.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                return (false, "Jeton refusé. Vérifiez que vous avez copié celui des STATIONS "
+                             + "(console → Antivirus), et non celui d'administration.");
+            if (rep.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                return (false, "Ce jeton n'autorise pas les stations. C'est probablement le jeton "
+                             + "d'administration : prenez celui du panneau « Stations blanches ».");
+            if (!rep.IsSuccessStatusCode)
+                return (false, $"La passerelle a répondu {(int) rep.StatusCode}. Est-ce bien l'adresse de la console ?");
+
+            using var doc = JsonDocument.Parse(corps);
+            if (!doc.RootElement.TryGetProperty("base", out var arr))
+                return (false, "Réponse inattendue : cette adresse est-elle bien une console Bastion ?");
+
+            var n = arr.GetArrayLength();
+            if (n == 0)
+                return (true, "Passerelle joignable et jeton accepté — mais elle n'a AUCUNE base virale à "
+                            + "fournir. " + (doc.RootElement.TryGetProperty("motif", out var mo)
+                                && mo.ValueKind == JsonValueKind.String ? mo.GetString() : ""));
+
+            var d = doc.RootElement.TryGetProperty("date_base", out var db) && db.TryGetInt64(out var t) && t > 0
+                ? DateTimeOffset.FromUnixTimeSeconds(t).LocalDateTime.ToString("dd/MM/yyyy HH:mm")
+                : "date inconnue";
+            return (true, $"Passerelle joignable, jeton accepté. Base virale du {d} ({n} fichier(s)).");
+        }
+        catch (TaskCanceledException) { return (false, "Passerelle injoignable : délai dépassé. Vérifiez l'adresse et le réseau."); }
+        catch (Exception ex) { return (false, "Passerelle injoignable : " + ex.Message); }
+    }
+
     private static async Task<string> EmpreinteAsync(string chemin, CancellationToken jeton)
     {
         using var f = File.OpenRead(chemin);

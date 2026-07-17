@@ -30,6 +30,13 @@ public static class TestHarness
             Console.WriteLine($"DAEMON pret={pret} apres {t0.Elapsed.TotalSeconds:F1}s");
         }
 
+        // Exerce exactement ce que fait le bouton « Éprouver la connexion » des réglages.
+        if (a.Contains("--tester"))
+        {
+            var (ok, msg) = await api.TesterAsync(CancellationToken.None);
+            Console.WriteLine($"TEST CONNEXION ok={ok} : {msg}");
+        }
+
         if (a.Contains("--maj"))
         {
             foreach (var m in moteurs.Where(m => m.LireEtat().Present))

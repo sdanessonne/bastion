@@ -15,6 +15,7 @@ static class Program
             return TestHarness.Run(args).GetAwaiter().GetResult();
 
         if (args.Length > 1 && args[0] == "--capture") return Capture(args[1], args.Contains("--demo"));
+        if (args.Length > 1 && args[0] == "--capture-reglages") return CaptureReglages(args[1]);
 
         var cfg = Config.Charger();
         cfg.EcrireModeleSiAbsent();   // pour que l'exploitant trouve un fichier à remplir
@@ -22,6 +23,25 @@ static class Program
 
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm(cfg));
+        return 0;
+    }
+
+    /// <summary>Même chose pour l'écran de réglages.</summary>
+    private static int CaptureReglages(string chemin)
+    {
+        ApplicationConfiguration.Initialize();
+        var f = new ReglagesForm(new Config
+        {
+            Passerelle = "https://192.168.182.1:8443",
+            Jeton = new string('0', 64),   // jamais un vrai jeton dans une capture
+        });
+        f.Show();
+        Application.DoEvents();
+        using var bmp = new Bitmap(f.Width, f.Height);
+        f.DrawToBitmap(bmp, new Rectangle(0, 0, f.Width, f.Height));
+        bmp.Save(chemin, System.Drawing.Imaging.ImageFormat.Png);
+        f.Dispose();
+        Console.WriteLine("capture -> " + chemin);
         return 0;
     }
 
