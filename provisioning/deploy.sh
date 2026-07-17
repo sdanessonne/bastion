@@ -307,6 +307,8 @@ install -m755 "${REPO_DIR}/services/scripts/service-ctl.sh" /usr/local/sbin/prox
 install -m755 "${REPO_DIR}/services/scripts/apt-ctl.sh"     /usr/local/sbin/proxyfibre-apt
 install -m755 "${REPO_DIR}/services/scripts/selfupdate.sh"  /usr/local/sbin/proxyfibre-selfupdate
 install -m755 "${REPO_DIR}/services/scripts/update-conf.sh" /usr/local/sbin/proxyfibre-update-conf
+# Mesure de la ligne Internet : la passerelle ne peut pas connaître sa capacité autrement.
+install -m755 "${REPO_DIR}/services/scripts/speedtest-wan.sh" /usr/local/sbin/proxyfibre-speedtest
 # Dépôt Git de Bastion : renseigné depuis la console (Système → Mise à jour de Bastion).
 # 600 : le fichier peut contenir un jeton d'accès à un dépôt privé.
 [ -f /etc/proxyfibre/update.env ] || printf 'GIT_REPO=""\nGIT_BRANCH="main"\nGIT_TOKEN=""\n' > /etc/proxyfibre/update.env
@@ -331,6 +333,8 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-selfupdate state, /usr/
 # Écriture de la configuration du dépôt (URL, branche, jeton) : script dédié, jamais
 # un « tee » ou un « sh -c » générique, qui donneraient l'écriture de n'importe quel fichier.
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-update-conf
+# Mesure de la ligne. « _run » n'est PAS listé : lui seul sature réellement la liaison.
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-speedtest run, /usr/local/sbin/proxyfibre-speedtest state, /usr/local/sbin/proxyfibre-speedtest log
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-services
 

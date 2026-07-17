@@ -43,10 +43,16 @@ foreach ($clients as $c) {
 // Débit WAN instantané. Calculé à CHAQUE appel : c'est le sondage du tableau de bord
 // qui fournit les échantillons successifs, il n'y a pas de démon dédié à entretenir.
 $net = sys_net_rate();
+// Capacité mesurée de la ligne : sert à exprimer le débit en POURCENTAGE. Lue à chaque
+// appel — elle change quand l'administrateur relance une mesure, et la page ne doit pas
+// avoir à être rechargée pour s'en apercevoir.
+$wanCap = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-speedtest state 2>/dev/null'), true) ?: [];
 
 echo json_encode([
     'kpi'      => ['auth' => $kpiAuth, 'seen' => count($clients), 'down' => $kpiDown],
-    'net'      => ['down' => $net['down'], 'up' => $net['up'], 'if' => $net['if']],
+    'net'      => ['down' => $net['down'], 'up' => $net['up'], 'if' => $net['if'],
+                   'capD' => (int) ($wanCap['down'] ?? 0), 'capU' => (int) ($wanCap['up'] ?? 0),
+                   'test' => !empty($wanCap['en_cours'])],
     'cpu'      => ['pct' => sys_cpu_pct(), 'detail' => $cores . ' cœur(s)'],
     'mem'      => ['pct' => $mem['pct'], 'detail' => fmtBytes($mem['used']) . ' / ' . fmtBytes($mem['total'])],
     'disksys'  => $ds ? ['pct' => $ds['pct'], 'detail' => fmtBytes($ds['used']) . ' / ' . fmtBytes($ds['total']) . ' · ' . fmtBytes($ds['free']) . ' libres'] : null,

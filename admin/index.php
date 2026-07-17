@@ -16,6 +16,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'deaut
     header('Location: /index.php?msg=deauth'); exit;
 }
 
+// ── Mesure de la ligne Internet ──────────────────────────────────────────────
+$stFlash = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'speedtest') {
+    csrf_check();
+    $r = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-speedtest run 2>&1'));
+    $stFlash = str_starts_with($r, 'ERREUR') ? [$r, 'err']
+        : ($r === 'deja-en-cours' ? ['Une mesure est déjà en cours.', 'warn']
+           : ['Mesure lancée — la ligne va être saturée une vingtaine de secondes.', 'ok']);
+}
+$wan = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-speedtest state 2>/dev/null'), true) ?: [];
+
 $clients = nds_clients();
 $authCount = 0; $totalDown = 0;
 foreach ($clients as $c) {
@@ -161,23 +172,66 @@ $net0 = sys_net_rate();
   .net-lbl{color:var(--muted);font-size:.8rem;margin-top:.25rem}
   .net-fl{font-size:1.1rem;margin-right:.3rem}
 </style>
+<?php
+$wDown = (int) ($wan['down'] ?? 0);
+$wUp   = (int) ($wan['up'] ?? 0);
+$wAt   = (int) ($wan['date'] ?? 0);
+$wEnc  = !empty($wan['en_cours']);
+// Part de la ligne occupée. N'a de sens QUE si la ligne a été mesurée : sans mesure,
+// afficher un pourcentage supposerait une capacité qu'on ne connaît pas.
+$pctDown = ($wDown > 0) ? min(100, (int) round(100 * $net0['down'] / $wDown)) : -1;
+$pctUp   = ($wUp   > 0) ? min(100, (int) round(100 * $net0['up']   / $wUp))   : -1;
+?>
 <section class="panel">
   <div class="panel-head"><h2>📶 Débit Internet</h2>
     <span class="muted small">interface <?= e($net0['if']) ?> · en direct</span>
   </div>
+  <?php if ($stFlash): ?>
+    <div style="padding:0 1.3rem"><div class="flash <?= e($stFlash[1]) ?>"><?= e($stFlash[0]) ?></div></div>
+  <?php endif; ?>
   <div class="net-head">
     <div>
       <div class="net-val"><span class="net-fl" style="color:#38bdf8">▼</span><span id="netDown"><?= e(fmtBytes($net0['down'])) ?>/s</span></div>
-      <div class="net-lbl">Descendant — ce que les postes téléchargent</div>
+      <div class="net-lbl">Descendant — ce que les postes téléchargent
+        <span id="netPctD"><?= $pctDown >= 0 ? '· <strong>' . $pctDown . ' %</strong> de la ligne' : '' ?></span></div>
     </div>
     <div>
       <div class="net-val"><span class="net-fl" style="color:#a78bfa">▲</span><span id="netUp"><?= e(fmtBytes($net0['up'])) ?>/s</span></div>
-      <div class="net-lbl">Montant — ce qui part vers Internet</div>
+      <div class="net-lbl">Montant — ce qui part vers Internet
+        <span id="netPctU"><?= $pctUp >= 0 ? '· <strong>' . $pctUp . ' %</strong> de la ligne' : '' ?></span></div>
     </div>
     <div style="margin-left:auto;text-align:right">
       <div class="muted small" id="netPeak">crête : —</div>
       <div class="muted small" id="netAvg">moyenne : —</div>
     </div>
+  </div>
+
+  <!-- Capacité de la ligne. La passerelle ne peut PAS la deviner : /sys/.../speed donne
+       la vitesse du lien Ethernet vers la box (une fibre et un ADSL y affichent la même
+       valeur), et la box n'expose rien de standard. Seule une mesure réelle répond. -->
+  <div style="padding:0 1.3rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+    <div class="muted small" style="line-height:1.7;flex:1;min-width:16rem">
+      <?php if ($wAt > 0): ?>
+        <strong>Capacité mesurée de la ligne</strong> —
+        ▼ <strong style="color:#fff"><?= e(fmtBytes($wDown)) ?>/s</strong>
+        (<?= number_format($wDown * 8 / 1e6, 1, ',', ' ') ?> Mbit/s)
+        &nbsp;·&nbsp; ▲ <strong style="color:#fff"><?= e(fmtBytes($wUp)) ?>/s</strong>
+        (<?= number_format($wUp * 8 / 1e6, 1, ',', ' ') ?> Mbit/s)
+        <br>mesurée le <?= e(date('d/m/Y à H:i', $wAt)) ?>
+        <?php if (!empty($wan['erreur'])): ?><br><span style="color:#eab308">⚠️ <?= e($wan['erreur']) ?></span><?php endif; ?>
+      <?php else: ?>
+        <strong>Capacité de la ligne : inconnue.</strong> La passerelle ne peut pas la deviner —
+        le lien Ethernet vers la box affiche la même vitesse qu'il s'agisse d'une fibre ou d'un ADSL.
+        Lancez une mesure pour situer le débit ci-dessus par rapport à ce que la ligne encaisse.
+      <?php endif; ?>
+    </div>
+    <form method="post" style="margin:0" onsubmit="return confirm('Mesurer la ligne ?\n\nLe test SATURE délibérément la ligne pendant une vingtaine de secondes, dans les deux sens.\nLes postes connectés en pâtiront le temps du test.\n\nÀ éviter aux heures de service.')">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <input type="hidden" name="action" value="speedtest">
+      <button class="btn-sm" id="stBtn" <?= $wEnc ? 'disabled' : '' ?>>
+        <?= $wEnc ? 'Mesure en cours…' : ($wAt > 0 ? '↻ Remesurer la ligne' : 'Mesurer la ligne') ?>
+      </button>
+    </form>
   </div>
   <div style="padding:0 1.3rem 1.2rem">
     <canvas id="netChart" style="width:100%;height:96px;display:block"></canvas>
@@ -298,7 +352,7 @@ $net0 = sys_net_rate();
         animeVers(document.getElementById('kpiSeen'), d.kpi.seen, true);
         animeVers(document.getElementById('kpiDown'), d.kpi.down, true);
       }
-      if(d.net) majNet(d.net.down|0, d.net.up|0);
+      if(d.net){ majNet(d.net.down|0, d.net.up|0); majPart(d.net.capD|0, d.net.capU|0, d.net.test); }
     }catch(e){}
   }
   async function loadHistory(){
@@ -349,6 +403,19 @@ $net0 = sys_net_rate();
     }
     trace(netU,'#a78bfa','rgba(167,139,250,.10)');
     trace(netD,'#38bdf8','rgba(56,189,248,.12)');
+  }
+  // Part de la ligne occupée. capD/capU valent 0 tant qu'aucune mesure n'a eu lieu :
+  // on n'affiche alors RIEN plutôt qu'un pourcentage d'une capacité inconnue.
+  var stVu=false;
+  function majPart(capD,capU,enTest){
+    var d=netD.length?netD[netD.length-1]:0, u=netU.length?netU[netU.length-1]:0;
+    var eD=document.getElementById('netPctD'), eU=document.getElementById('netPctU');
+    if(eD) eD.innerHTML = capD>0 ? '· <strong>'+Math.min(100,Math.round(100*d/capD))+' %</strong> de la ligne' : '';
+    if(eU) eU.innerHTML = capU>0 ? '· <strong>'+Math.min(100,Math.round(100*u/capU))+' %</strong> de la ligne' : '';
+    var b=document.getElementById('stBtn');
+    if(b) b.disabled = !!enTest;
+    // La mesure vient de finir : on recharge pour afficher la nouvelle capacité et sa date.
+    if(enTest) stVu=true; else if(stVu){ stVu=false; location.reload(); }
   }
   function majNet(d,u){
     netD.push(d); netU.push(u);
