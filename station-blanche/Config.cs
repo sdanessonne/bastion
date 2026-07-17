@@ -30,6 +30,19 @@ public sealed class Config
     public bool MajAuto { get; set; } = true;
 
     /// <summary>
+    /// Faire tourner Windows Defender EN PLUS de ClamAV, quand il est présent.
+    ///
+    /// ClamAV est le moteur de Bastion : même base et même chaîne de mise à jour que la
+    /// passerelle. Mais il a été conçu pour filtrer des flux de messagerie, et sa détection
+    /// sur les malwares Windows reste en retrait de celle de Defender. Les deux ensemble
+    /// coûtent quelques secondes et rattrapent ce que l'autre laisse passer.
+    ///
+    /// À ne mettre à false que si l'on veut un verdict issu d'un seul moteur maîtrisé —
+    /// en sachant que la station détectera alors moins.
+    /// </summary>
+    public bool DefenderEnSecondAvis { get; set; } = true;
+
+    /// <summary>
     /// Le certificat de Bastion est signé par son autorité interne, inconnue d'un poste
     /// hors domaine : la station refuserait la connexion. Cette option l'accepte quand
     /// même. À n'utiliser que sur un réseau maîtrisé — c'est un compromis assumé, pas un

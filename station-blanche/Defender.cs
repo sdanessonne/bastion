@@ -268,3 +268,19 @@ public static class Defender
         return (sortie, p.ExitCode);
     }
 }
+
+/// <summary>
+/// Defender vu comme un moteur parmi d'autres.
+///
+/// Il vient en SECOND AVIS derrière ClamAV : il est déjà présent sur tout poste Windows et
+/// détecte mieux les malwares Windows que ClamAV, qui a été conçu pour filtrer des flux de
+/// messagerie. Là où ClamAV apporte la cohérence avec la passerelle et une base maîtrisée,
+/// Defender apporte la couverture. Aucun des deux ne suffit seul.
+/// </summary>
+public sealed class MoteurDefender : IMoteur
+{
+    public string Nom => "Windows Defender";
+    public EtatMoteur LireEtat() => Defender.LireEtat();
+    public Task<Resultat> AnalyserAsync(string chemin, CancellationToken jeton) => Defender.AnalyserAsync(chemin, jeton);
+    public Task<(bool ok, string message)> MettreAJourAsync(CancellationToken jeton) => Defender.MettreAJourAsync(jeton);
+}

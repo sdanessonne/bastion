@@ -24,10 +24,12 @@ public sealed class MainForm : Form
     private readonly ComboBox _supports = new();
     private readonly System.Windows.Forms.Timer _majPeriodique = new();
 
+    private readonly List<IMoteur> _moteurs = new();
     private UsbWatcher? _veille;
     private CancellationTokenSource? _annule;
-    private Resultat? _dernier;
+    private Verdict? _dernier;
     private Support? _cible;
+    private bool _analyseEnCours;
 
     private static readonly Color Fond = Color.FromArgb(11, 17, 32);
     private static readonly Color Encre = Color.FromArgb(226, 232, 240);
@@ -41,6 +43,11 @@ public sealed class MainForm : Form
     {
         _cfg = cfg;
         _api = new BastionApi(cfg);
+
+        // ClamAV d'abord : c'est le moteur de Bastion, celui dont on maîtrise la base.
+        // Defender ensuite, en second avis — sauf s'il a été écarté par configuration.
+        _moteurs.Add(new MoteurClamav(_api));
+        if (cfg.DefenderEnSecondAvis) _moteurs.Add(new MoteurDefender());
 
         Text = "Bastion — Station blanche";
         // Icône de la fenêtre (barre de titre, Alt+Tab). Un logo manquant ne doit pas
@@ -249,47 +256,87 @@ public sealed class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Bandeau d'état des moteurs. Il tient en une ligne : c'est la seule chose que l'agent
+    /// lit avant de faire confiance au verdict.
+    /// </summary>
     private void AfficherMoteur()
     {
-        var m = Defender.LireEtat();
-        if (!m.Present)
+        var etats = _moteurs.Select(m => (moteur: m, etat: m.LireEtat())).ToList();
+        var vivants = etats.Where(e => e.etat.Present).ToList();
+
+        if (vivants.Count == 0)
         {
             _moteur.ForeColor = Rouge;
-            _moteur.Text = "⛔ Windows Defender est introuvable : cette station ne peut rien analyser.";
+            _moteur.Text = "⛔ Aucun moteur d'analyse disponible : cette station ne peut rien analyser. "
+                         + "Installez ClamAV (voir la notice).";
             _btnAnalyser.Enabled = false; _btnMaj.Enabled = false;
             return;
         }
-        // Des signatures périmées donnent une FAUSSE ASSURANCE : la station déclare
-        // « sain » ce qu'elle ne sait plus reconnaître. Le dire, et fort.
-        if (m.AgeJours > 7)
+        _btnMaj.Enabled = true;
+
+        // Le PIRE des moteurs commande la couleur. Afficher en vert parce que l'un des deux
+        // est à jour laisserait croire que le verdict vaut pour les deux — alors que le
+        // second déclarerait « sain » ce qu'il ne sait plus reconnaître.
+        var pire = vivants.Max(e => e.etat.AgeJours);
+        var detail = string.Join(" · ", vivants.Select(e =>
+            $"{e.moteur.Nom} {e.etat.Version}".Trim() +
+            (e.etat.Signatures.HasValue ? $" ({e.etat.Signatures:dd/MM/yyyy})" : " (base absente)")));
+
+        var absents = etats.Where(e => !e.etat.Present).Select(e => e.moteur.Nom).ToList();
+        var manque = absents.Count > 0 ? " · " + string.Join(" et ", absents) + " absent" : "";
+
+        if (pire > 7)
         {
             _moteur.ForeColor = Rouge;
-            _moteur.Text = $"⛔ Signatures vieilles de {m.AgeJours} jours ({m.Signatures:dd/MM/yyyy}) — " +
-                           "un « aucune menace » ne veut plus rien dire. Mettez à jour.";
+            _moteur.Text = $"⛔ Signatures vieilles de {pire} jours — un « aucune menace » ne veut plus "
+                         + $"rien dire. Mettez à jour. {detail}";
         }
-        else if (m.AgeJours > 2)
+        else if (pire > 2)
         {
             _moteur.ForeColor = Ambre;
-            _moteur.Text = $"⚠️ Signatures du {m.Signatures:dd/MM/yyyy} ({m.AgeJours} j) — mise à jour conseillée.";
+            _moteur.Text = $"⚠️ Signatures vieilles de {pire} jours — mise à jour conseillée. {detail}";
         }
         else
         {
             _moteur.ForeColor = Grise;
-            _moteur.Text = $"Windows Defender {m.Version} · signatures du {m.Signatures:dd/MM/yyyy à HH:mm}" +
-                           (_cfg.RemonteeActive ? $" · analyses tracées sur {_cfg.Passerelle}" : " · analyses NON tracées");
+            _moteur.Text = detail + manque
+                         + (_cfg.RemonteeActive ? $" · analyses tracées sur {_cfg.Passerelle}" : " · analyses NON tracées");
         }
     }
 
+    /// <summary>
+    /// Met à jour les signatures de chaque moteur. ClamAV les tire de la passerelle,
+    /// Defender de Windows Update : deux chaînes indépendantes, donc deux verdicts.
+    /// </summary>
     private async Task MajAsync(bool manuel)
     {
+        if (_analyseEnCours) return;   // jamais pendant une analyse : la base changerait sous les pieds du moteur
         _btnMaj.Enabled = false;
-        var texte = _moteur.Text;
         _moteur.ForeColor = Grise;
         _moteur.Text = "Mise à jour des signatures en cours…";
-        var (ok, msg) = await Defender.MettreAJourAsync(CancellationToken.None);
+
+        var comptes = new List<string>();
+        var echecs = new List<string>();
+        foreach (var m in _moteurs.Where(m => m.LireEtat().Present))
+        {
+            var (ok, msg) = await m.MettreAJourAsync(CancellationToken.None);
+            (ok ? comptes : echecs).Add($"{m.Nom} : {msg}");
+        }
+
         AfficherMoteur();
-        if (manuel || !ok)
-            _trace.Text = (ok ? "✓ " : "⚠️ ") + msg;
+        // Un échec se dit TOUJOURS, même en mise à jour automatique : c'est précisément
+        // celui que personne ne regarde qui laisse une base pourrir pendant des semaines.
+        if (echecs.Count > 0)
+        {
+            _trace.ForeColor = Ambre;
+            _trace.Text = "⚠️ " + string.Join("  ·  ", echecs);
+        }
+        else if (manuel)
+        {
+            _trace.ForeColor = Grise;
+            _trace.Text = "✓ " + string.Join("  ·  ", comptes);
+        }
         _btnMaj.Enabled = true;
     }
 
@@ -332,7 +379,7 @@ public sealed class MainForm : Form
         if (_cible?.Lettre == lettre) _annule?.Cancel();
         Rafraichir();
         if (_supports.Items.Count == 0)
-            Verdict("Insérez une clé USB", "L'analyse démarre automatiquement.", Grise, Color.FromArgb(21, 30, 51));
+            Afficher("Insérez une clé USB", "L'analyse démarre automatiquement.", Grise, Color.FromArgb(21, 30, 51));
     }
 
     private async Task LancerAsync()
@@ -344,36 +391,54 @@ public sealed class MainForm : Form
 
         _menaces.Items.Clear();
         _trace.Text = "";
+        _analyseEnCours = true;
         _btnAnalyser.Enabled = false; _btnRapport.Enabled = false;
         _barre.Visible = true;
-        Verdict("Analyse en cours…", $"{s.Libelle}\nMerci de ne pas retirer le support.", Bleu, Color.FromArgb(21, 30, 51));
+        Afficher("Analyse en cours…", $"{s.Libelle}\nMerci de ne pas retirer le support.", Bleu, Color.FromArgb(21, 30, 51));
 
-        var r = await Defender.AnalyserAsync(s.Lettre + "\\", _annule.Token);
-        _dernier = r;
-        _barre.Visible = false;
-        _btnAnalyser.Enabled = true; _btnRapport.Enabled = true;
-
-        if (!r.Abouti)
+        // Les moteurs passent l'un APRÈS l'autre, pas en parallèle : chacun charge sa base
+        // en mémoire (ClamAV en réserve plus d'un gigaoctet) et lit le même support. Les
+        // lancer ensemble ferait ramer le poste et se disputer la clé, pour rien gagner.
+        var analyses = new List<(IMoteur, Resultat)>();
+        var utiles = _moteurs.Where(m => m.LireEtat().Present).ToList();
+        foreach (var m in utiles)
         {
-            Verdict("ANALYSE IMPOSSIBLE", r.Erreur ?? "Erreur inconnue.", Ambre, Color.FromArgb(48, 38, 8));
-            _menaces.Items.Add("L'analyse n'a pas abouti : ne considérez PAS ce support comme sain.");
-            if (r.Erreur != null) _menaces.Items.Add("  " + r.Erreur);
+            Afficher("Analyse en cours…",
+                $"{s.Libelle}\n{m.Nom} ({utiles.IndexOf(m) + 1}/{utiles.Count}) — merci de ne pas retirer le support.",
+                Bleu, Color.FromArgb(21, 30, 51));
+            analyses.Add((m, await m.AnalyserAsync(s.Lettre + "\\", _annule.Token)));
+            if (_annule.IsCancellationRequested) break;
         }
-        else if (r.NbMenaces > 0)
+
+        var r = new Verdict(analyses);
+        _dernier = r;
+        _analyseEnCours = false;
+        _barre.Visible = false;
+        _btnAnalyser.Enabled = true; _btnRapport.Enabled = r.Analyses.Count > 0;
+
+        // L'ordre compte : une menace TROUVÉE prime sur une analyse incomplète. Si ClamAV
+        // trouve un cheval de Troie et que Defender s'interrompt, le support est infecté —
+        // point. Traiter cela comme « analyse impossible » enterrerait la trouvaille.
+        if (r.NbMenaces > 0)
         {
-            Verdict($"SUPPORT INFECTÉ — {r.NbMenaces} menace(s)",
+            Afficher("SUPPORT INFECTÉ — " + r.NbMenaces + " menace(s)",
                 "N'utilisez pas ce support. Prévenez le service informatique.\nLe support n'a PAS été modifié.",
                 Rouge, Color.FromArgb(58, 18, 22));
             foreach (var m in r.Menaces) _menaces.Items.Add($"{m.Nom}\n    {m.Fichier}");
+            foreach (var e in r.Ecueils) _menaces.Items.Add("⚠️ " + e);
         }
-        else if (r.Erreur != null)
+        else if (!r.Abouti)
         {
-            Verdict("RIEN À ANALYSER", r.Erreur, Ambre, Color.FromArgb(48, 38, 8));
+            Afficher("ANALYSE IMPOSSIBLE", string.Join("\n", r.Ecueils.DefaultIfEmpty("Erreur inconnue.")),
+                Ambre, Color.FromArgb(48, 38, 8));
+            _menaces.Items.Add("L'analyse n'a pas abouti : ne considérez PAS ce support comme sain.");
+            foreach (var e in r.Ecueils) _menaces.Items.Add("  " + e);
         }
         else
         {
-            Verdict("AUCUNE MENACE DÉTECTÉE",
-                $"Analysé en {r.Duree.TotalSeconds:F1} s. Aucune détection ne garantit toutefois l'absence de tout code inconnu.",
+            var quels = string.Join(" et ", r.Analyses.Select(a => a.moteur.Nom));
+            Afficher("AUCUNE MENACE DÉTECTÉE",
+                $"Analysé par {quels} en {r.Duree.TotalSeconds:F1} s. Aucune détection ne garantit toutefois l'absence de tout code inconnu.",
                 Vert, Color.FromArgb(12, 42, 26));
             _menaces.Items.Add("Aucune menace connue trouvée sur ce support.");
         }
@@ -389,7 +454,7 @@ public sealed class MainForm : Form
         _trace.ForeColor = err == null ? Grise : Ambre;
     }
 
-    private void Verdict(string t, string d, Color c, Color fond)
+    private void Afficher(string t, string d, Color c, Color fond)
     {
         _etat.Text = t; _etat.ForeColor = c;
         _detail.Text = d;
@@ -420,7 +485,6 @@ public sealed class MainForm : Form
     private void Exporter()
     {
         if (_dernier == null || _cible == null) return;
-        var m = Defender.LireEtat();
         var sb = new StringBuilder();
         sb.AppendLine("RAPPORT D'ANALYSE — Bastion Station blanche");
         sb.AppendLine(new string('=', 62));
@@ -428,11 +492,20 @@ public sealed class MainForm : Form
         sb.AppendLine($"Poste           : {Environment.MachineName}");
         sb.AppendLine($"Opérateur       : {Environment.UserName}");
         sb.AppendLine($"Support         : {_cible.Libelle}");
-        sb.AppendLine($"Moteur          : Windows Defender {m.Version}");
-        sb.AppendLine($"Signatures      : {m.Signatures:dd/MM/yyyy HH:mm} ({m.AgeJours} jour(s))");
         sb.AppendLine($"Durée           : {_dernier.Duree.TotalSeconds:F1} s");
-        sb.AppendLine($"Résultat        : {(!_dernier.Abouti ? "ANALYSE NON ABOUTIE" : _dernier.NbMenaces > 0 ? $"INFECTÉ — {_dernier.NbMenaces} menace(s)" : "aucune menace détectée")}");
-        if (_dernier.Erreur != null) sb.AppendLine($"Observation     : {_dernier.Erreur}");
+        sb.AppendLine($"Résultat        : {(_dernier.NbMenaces > 0 ? $"INFECTÉ — {_dernier.NbMenaces} menace(s)" : !_dernier.Abouti ? "ANALYSE NON ABOUTIE" : "aucune menace détectée")}");
+        sb.AppendLine();
+        // Le détail moteur par moteur : c'est ce qui permet, des mois plus tard, de savoir
+        // ce qui a réellement été passé sur ce support et avec quelles signatures.
+        sb.AppendLine("MOTEURS");
+        foreach (var (moteur, res) in _dernier.Analyses)
+        {
+            var e = moteur.LireEtat();
+            sb.AppendLine($"  {moteur.Nom} {e.Version}".TrimEnd());
+            sb.AppendLine($"      signatures : {(e.Signatures.HasValue ? $"{e.Signatures:dd/MM/yyyy HH:mm} ({e.AgeJours} jour(s))" : "inconnues")}");
+            sb.AppendLine($"      verdict    : {(res.Abouti ? (res.NbMenaces > 0 ? $"{res.NbMenaces} menace(s)" : "rien trouvé") : "NON ABOUTI")}");
+            if (res.Erreur != null) sb.AppendLine($"      observation: {res.Erreur}");
+        }
         sb.AppendLine();
         if (_dernier.Menaces.Count > 0)
         {
@@ -441,11 +514,11 @@ public sealed class MainForm : Form
             sb.AppendLine();
         }
         sb.AppendLine("Le support n'a pas été modifié par cette analyse.");
-        sb.AppendLine("Un seul moteur d'analyse : « aucune menace » signifie « rien de connu par");
-        sb.AppendLine("Windows Defender », et non « inoffensif ».");
+        sb.AppendLine("« Aucune menace » signifie « rien de connu par les moteurs ci-dessus, avec les");
+        sb.AppendLine("signatures ci-dessus », et non « inoffensif ».");
         sb.AppendLine();
         sb.AppendLine(new string('-', 62));
-        sb.AppendLine("Journal du moteur :");
+        sb.AppendLine("Journal des moteurs :");
         sb.AppendLine(_dernier.Journal);
 
         using var d = new SaveFileDialog

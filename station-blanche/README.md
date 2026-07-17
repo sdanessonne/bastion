@@ -84,6 +84,71 @@ serait pire.
   est donc vérifié avant analyse : une station qui déclare saine une clé qu'elle n'a pas
   lue est pire qu'inutile.
 
+## Moteurs d'analyse
+
+La station fait tourner **deux moteurs**, l'un après l'autre. Aucun moteur ne détecte
+tout ; les faire passer tous les deux coûte quelques secondes et rattrape ce que l'autre
+laisse échapper.
+
+| Moteur | Rôle | Base virale |
+|---|---|---|
+| **ClamAV** | Moteur de Bastion : même base et même chaîne de mise à jour que la passerelle. | Servie par la passerelle, sur le LAN. |
+| **Windows Defender** | Second avis. Déjà présent sur tout poste Windows. | Windows Update. |
+
+Pourquoi pas ClamAV seul : il a été conçu pour filtrer des flux de messagerie, pas pour
+protéger un poste Windows, et sa détection sur les malwares Windows reste **en retrait de
+celle de Defender**. Pourquoi pas Defender seul : sa base ne se maîtrise pas, il exige
+Internet, et il n'est pas toujours actif sur un poste hors domaine.
+
+Mettre `DefenderEnSecondAvis` à `false` laisse ClamAV travailler seul — en sachant que la
+station détectera alors moins.
+
+Si un seul moteur est présent, la station analyse quand même avec celui-là et l'indique.
+Si aucun ne l'est, elle refuse d'analyser plutôt que de rendre un verdict qui ne repose
+sur rien.
+
+> **Les codes de retour des deux moteurs sont contradictoires.** `clamscan` : `0` = rien,
+> `1` = **menace trouvée**, `2` = erreur. `MpCmdRun` : `0` = rien, `2` = **menace
+> trouvée**. Recopier la logique de l'un sur l'autre ferait passer une clé infectée pour
+> un incident technique — ou une erreur pour une clé saine.
+
+### Installer ClamAV sur la station
+
+```powershell
+winget install --id Cisco.ClamAV
+```
+
+L'installation demande une élévation. La station cherche `clamscan.exe` sous
+`C:\Program Files\ClamAV\`, `C:\Program Files (x86)\ClamAV\`, `C:\ClamAV\`, puis dans le
+`PATH` — une installation portable posée ailleurs et ajoutée au `PATH` convient aussi.
+
+**Il n'y a rien d'autre à configurer.** Ni `freshclam`, ni `clamd`, ni `clamav.conf` : la
+station n'utilise pas la base de ClamAV ni ses services. Elle tient la sienne dans
+`%ProgramData%\Bastion\clamav-db` et la passe à `clamscan` par `--database`. Écrire dans
+`Program Files` demanderait des droits d'administrateur qu'une borne n'a pas.
+
+### Base virale : servie par la passerelle
+
+La passerelle fait déjà tourner `freshclam` : elle a la base à jour en permanence. La
+station vient la chercher chez elle, sur le LAN — **elle n'a jamais besoin d'Internet**.
+C'est le point qui compte pour un poste isolé en commissariat : lui demander de joindre
+les miroirs ClamAV le laisserait travailler avec une base figée au jour de son
+installation.
+
+Au démarrage puis toutes les 4 h, la station demande l'inventaire à
+`api.php?action=station.clamdb`, compare les empreintes SHA-256, et ne retélécharge que ce
+qui a changé — `main.cvd` pèse ~170 Mo et ne bouge que quelques fois par an, là où `daily`
+change plusieurs fois par jour.
+
+Chaque fichier est vérifié par son empreinte **avant** de remplacer l'ancien : un
+téléchargement coupé laisse la base précédente en place plutôt que d'en installer une
+tronquée. La date du fichier sur la passerelle est reportée sur la copie, de sorte que
+l'âge affiché soit celui des **signatures** et non celui du téléchargement.
+
+Le jeton `station_token` ouvre `station.clamdb` en plus de `station.report`, et rien
+d'autre. Le nom de fichier demandé est validé contre une **liste blanche** : sans cela,
+`file=../../etc/shadow` servirait n'importe quel fichier lisible par Apache.
+
 ## Mode borne (kiosque)
 
 Par défaut la station démarre **en plein écran, sans bordure ni barre de titre**, au-dessus
@@ -134,12 +199,18 @@ mais l'écran indique « analyses NON tracées ».
 
 ## Mise à jour des signatures
 
-Au démarrage, puis toutes les 4 h (`MajAuto`). Une borne reste allumée des jours ; attendre
-un redémarrage la laisserait travailler avec des signatures d'il y a une semaine.
+Au démarrage, puis toutes les 4 h (`MajAuto`) — **jamais pendant une analyse** : la base
+changerait sous les pieds du moteur. ClamAV tire la sienne de la passerelle, Defender de
+Windows Update : deux chaînes indépendantes, donc deux verdicts, tous deux affichés.
+
+Une borne reste allumée des jours ; attendre un redémarrage la laisserait travailler avec
+des signatures d'il y a une semaine.
 
 Le bandeau passe à l'ambre au-delà de 2 jours, au rouge au-delà de 7 — parce que des
 signatures périmées donnent une **fausse assurance** : la station déclare « sain » ce
-qu'elle ne sait plus reconnaître.
+qu'elle ne sait plus reconnaître. C'est le **pire** des deux moteurs qui commande la
+couleur : afficher vert parce que l'un est à jour laisserait croire que le verdict vaut
+pour les deux.
 
 > Un code de retour 0 de `MpCmdRun -SignatureUpdate` ne prouve rien : Defender sort en
 > succès même sans avoir rien récupéré (poste hors ligne, serveur injoignable). Seule la

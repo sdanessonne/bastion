@@ -41,12 +41,66 @@ if (!$estAdmin && !$estStation) { jout(['error' => 'unauthorized'], 401); }
 
 $action = (string) ($_GET['action'] ?? $_POST['action'] ?? '');
 
-// Une station ne peut appeler QUE le dépôt de résultats. Sans ce garde-fou, le jeton
-// « limité » ouvrirait toute l'API : la limitation ne serait qu'une intention.
-if ($estStation && !$estAdmin && $action !== 'station.report') { jout(['error' => 'forbidden'], 403); }
+// Une station ne peut appeler QUE ces deux actions. Sans ce garde-fou, le jeton « limité »
+// ouvrirait toute l'API : la limitation ne serait qu'une intention.
+$actionsStation = ['station.report', 'station.clamdb'];
+if ($estStation && !$estAdmin && !in_array($action, $actionsStation, true)) { jout(['error' => 'forbidden'], 403); }
 $active = fn(string $u) => trim((string) shell_exec('systemctl is-active ' . escapeshellarg($u) . ' 2>/dev/null'));
 
 switch ($action) {
+    /**
+     * Base virale ClamAV servie aux stations blanches.
+     *
+     * La passerelle fait déjà tourner freshclam : elle a la base à jour, en permanence.
+     * Les stations viennent la chercher ici, sur le LAN. Une station de commissariat n'a
+     * souvent AUCUN accès Internet ; lui demander de joindre les miroirs ClamAV la
+     * laisserait travailler avec une base figée au jour de son installation.
+     *
+     * Sans « file » : l'inventaire. Avec « file » : le fichier lui-même.
+     */
+    case 'station.clamdb': {
+        $dir = '/var/lib/clamav';
+        // Liste BLANCHE de noms. Le paramètre vient du réseau : sans cela, « file=../../
+        // etc/shadow » servirait n'importe quel fichier lisible par Apache. On ne filtre
+        // pas les caractères dangereux, on n'accepte que des noms connus — c'est la seule
+        // approche qui ne se fait pas contourner.
+        $permis = ['main.cvd', 'main.cld', 'daily.cvd', 'daily.cld', 'bytecode.cvd', 'bytecode.cld'];
+        $demande = (string) ($_GET['file'] ?? '');
+
+        if ($demande === '') {
+            $liste = [];
+            foreach ($permis as $f) {
+                $p = $dir . '/' . $f;
+                if (!is_file($p) || !is_readable($p)) { continue; }
+                $liste[] = [
+                    'nom'    => $f,
+                    'taille' => (int) filesize($p),
+                    'date'   => (int) filemtime($p),
+                    // L'empreinte permet à la station de ne retélécharger que ce qui a
+                    // changé — main.cvd pèse ~170 Mo et ne bouge que quelques fois par an,
+                    // là où daily change plusieurs fois par jour.
+                    'sha256' => hash_file('sha256', $p),
+                ];
+            }
+            jout(['ok' => true, 'base' => $liste, 'date_base' => $liste ? max(array_column($liste, 'date')) : 0]);
+        }
+
+        if (!in_array($demande, $permis, true)) { jout(['error' => 'fichier inconnu'], 404); }
+        $p = $dir . '/' . $demande;
+        if (!is_file($p) || !is_readable($p)) { jout(['error' => 'fichier absent'], 404); }
+
+        // Sortie binaire : on remplace l'en-tête JSON posé en tête de fichier.
+        header('Content-Type: application/octet-stream');
+        header('Content-Length: ' . filesize($p));
+        header('Content-Disposition: attachment; filename="' . $demande . '"');
+        header('X-Bastion-Sha256: ' . hash_file('sha256', $p));
+        // readfile() diffuse sans charger les 170 Mo en mémoire d'un coup. Le tampon de
+        // sortie de PHP, lui, les garderait : on le vide d'abord.
+        while (ob_get_level() > 0) { ob_end_clean(); }
+        readfile($p);
+        exit;
+    }
+
     // Dépôt d'un résultat d'analyse par une station blanche.
     case 'station.report': {
         $poste   = substr(trim((string) ($_POST['poste'] ?? '')), 0, 64);
