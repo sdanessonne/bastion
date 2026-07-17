@@ -83,3 +83,76 @@ serait pire.
 - **Un chemin inexistant fait sortir MpCmdRun avec le code 0** — soit « sain ». Le support
   est donc vérifié avant analyse : une station qui déclare saine une clé qu'elle n'a pas
   lue est pire qu'inutile.
+
+## Mode borne (kiosque)
+
+Par défaut la station démarre **en plein écran, sans bordure ni barre de titre**, au-dessus
+des autres fenêtres. L'agent insère sa clé, lit le verdict, éteint. Il n'y a rien d'autre à
+faire, et rien à fermer par mégarde : Alt+F4 est sans effet.
+
+Sortie de secours pour l'exploitant : **Ctrl+Shift+Q**. Sans elle, une borne en plein écran
+ne se quitterait plus qu'en coupant le poste.
+
+`BastionStationBlanche.exe --fenetre` force le mode fenêtré, pour préparer un poste sans
+s'enfermer dedans.
+
+> **Ce n'est pas le mode kiosque de Windows.** Une application ne peut pas, à elle seule,
+> neutraliser Ctrl+Alt+Suppr, la touche Windows ou le gestionnaire des tâches — aucune
+> application ne le peut, et c'est voulu. Pour verrouiller réellement le poste, il faut
+> configurer Windows : **Accès attribué (Assigned Access)** ou **Shell Launcher**, en
+> désignant cet exécutable comme interface unique de la session. La station coopère avec
+> ces mécanismes ; elle ne les remplace pas. Sans eux, un agent déterminé sort de l'écran.
+
+## Réglages — `station.json`
+
+Écrit à côté de l'exécutable au premier lancement, à compléter :
+
+```json
+{
+  "Passerelle": "https://192.168.182.1:8443",
+  "Jeton": "<pf_settings.station_token de la passerelle>",
+  "Kiosque": true,
+  "BoutonEteindre": true,
+  "MajAuto": true,
+  "AccepterCertificatInterne": true
+}
+```
+
+Le jeton se lit sur la passerelle :
+
+```sh
+sudo mysql proxyfibre -N -B -e "SELECT v FROM pf_settings WHERE k='station_token';"
+```
+
+C'est **`station_token`, jamais `api_token`**. Une station blanche est une machine en libre
+accès dans un couloir : si son jeton fuit, il ne doit ouvrir que le dépôt d'un résultat
+d'analyse — ni les comptes, ni les journaux. L'API refuse (403) toute autre action à ce
+jeton.
+
+Sans `Passerelle` ni `Jeton`, la station fonctionne quand même : elle analyse et affiche,
+mais l'écran indique « analyses NON tracées ».
+
+## Mise à jour des signatures
+
+Au démarrage, puis toutes les 4 h (`MajAuto`). Une borne reste allumée des jours ; attendre
+un redémarrage la laisserait travailler avec des signatures d'il y a une semaine.
+
+Le bandeau passe à l'ambre au-delà de 2 jours, au rouge au-delà de 7 — parce que des
+signatures périmées donnent une **fausse assurance** : la station déclare « sain » ce
+qu'elle ne sait plus reconnaître.
+
+> Un code de retour 0 de `MpCmdRun -SignatureUpdate` ne prouve rien : Defender sort en
+> succès même sans avoir rien récupéré (poste hors ligne, serveur injoignable). Seule la
+> **date des signatures**, relue après coup, fait foi. C'est ce que vérifie le code.
+
+## Remontée vers Bastion
+
+Après chaque analyse, la station dépose le résultat sur la console (`Antivirus` →
+`Historique des analyses`, origine « 🔌 Station »).
+
+La remontée part **après** l'affichage du verdict : elle ne doit jamais faire attendre
+l'agent. Si la passerelle est injoignable, l'écran le dit en petit, et le verdict reste
+valable — c'est lui qui compte.
+
+Une analyse **non aboutie** est enregistrée comme telle (`non aboutie`), et jamais comme
+« 0 menace ». Une analyse qui n'a pas fini ne dit rien sur le support.

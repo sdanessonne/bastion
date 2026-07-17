@@ -63,7 +63,8 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
 <section class="cards">
   <div class="kpi"><div class="kpi-val" style="color:<?= $daemon ? '#4ade80' : '#f87171' ?>"><?= $daemon ? 'Actif' : 'Arrêté' ?></div><div class="kpi-lbl">Moteur temps réel (clamd)</div></div>
   <div class="kpi"><div class="kpi-val" style="font-size:1rem"><?= $dbDate ? date('d/m/Y H:i', $dbDate) : '—' ?></div><div class="kpi-lbl">Base virale (dernière MAJ)</div></div>
-  <div class="kpi"><div class="kpi-val"><?= $last ? (int) $last['infected'] : 0 ?></div><div class="kpi-lbl">Menaces (dernière analyse)</div></div>
+  <?php $li = $last ? (int) $last['infected'] : 0; ?>
+  <div class="kpi"><div class="kpi-val" style="<?= $li < 0 ? 'font-size:1rem;color:#eab308' : ($li > 0 ? 'color:#f87171' : '') ?>"><?= $li < 0 ? 'Non aboutie' : $li ?></div><div class="kpi-lbl">Menaces (dernière analyse)</div></div>
   <div class="kpi"><div class="kpi-val" style="color:<?= $fresh ? '#4ade80' : '#94a3b8' ?>"><?= $fresh ? 'Auto' : 'Manuel' ?></div><div class="kpi-lbl">MAJ base (freshclam)</div></div>
 </section>
 
@@ -95,16 +96,29 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     <div class="panel-head"><h2>Historique des analyses</h2></div>
     <div class="table-wrap">
     <table class="grid-table">
-      <thead><tr><th>Date</th><th>Cible</th><th>Fichiers</th><th>Menaces</th></tr></thead>
+      <thead><tr><th>Date</th><th>Origine</th><th>Cible</th><th>Fichiers</th><th>Menaces</th></tr></thead>
       <tbody>
       <?php if (!$rows): ?>
-        <tr><td colspan="4" class="muted center">Aucune analyse enregistrée.</td></tr>
-      <?php else: foreach ($rows as $r): ?>
+        <tr><td colspan="5" class="muted center">Aucune analyse enregistrée.</td></tr>
+      <?php else: foreach ($rows as $r):
+        $par      = (string) ($r['launched_by'] ?? '');
+        $station  = str_starts_with($par, 'station:');
+        $inf      = (int) $r['infected'];
+        // -1 signifie « analyse NON aboutie » : ni saine, ni infectée. Sans ce cas, le
+        // test « > 0 » la ferait passer en vert — un poste non analysé présenté comme sain.
+        if ($inf < 0)      { $cls = 'warn'; $txt = 'non aboutie'; }
+        elseif ($inf > 0)  { $cls = 'danger'; $txt = (string) $inf; }
+        else               { $cls = 'on';   $txt = '0'; }
+      ?>
         <tr>
           <td class="muted svc-meta"><?= e($r['ts']) ?></td>
+          <td><?php if ($station): ?><span class="badge">🔌 Station</span>
+              <span class="muted small"><?= e(substr($par, 8)) ?></span>
+              <?php else: ?><span class="muted small">Passerelle<?= $par !== '' ? ' · ' . e($par) : '' ?></span><?php endif; ?></td>
           <td><?= e($SCAN_TARGETS[$r['path']] ?? $r['path']) ?></td>
           <td><?= (int) $r['scanned'] ?></td>
-          <td><span class="badge <?= (int) $r['infected'] > 0 ? 'off' : 'on' ?>"><?= (int) $r['infected'] ?></span></td>
+          <td><span class="badge <?= $cls ?>"><?= e($txt) ?></span>
+              <?php if ($r['detail']): ?><div class="muted small" style="white-space:pre-wrap;max-width:32ch"><?= e(mb_strimwidth((string) $r['detail'], 0, 160, '…')) ?></div><?php endif; ?></td>
         </tr>
       <?php endforeach; endif; ?>
       </tbody>

@@ -135,6 +135,10 @@ html.rail .nav-group-label{height:0;padding:.35rem 0 0;margin:.15rem .4rem 0;ove
 .badge{display:inline-block;padding:.15rem .6rem;border-radius:99px;font-size:.75rem;font-weight:600}
 .badge.on{background:rgba(34,197,94,.16);color:#4ade80}
 .badge.off{background:rgba(142,162,189,.14);color:var(--muted)}
+/* « off » est gris : bon pour un service arrêté, muet pour une menace. Ces deux teintes
+   servent aux constats qui doivent sauter aux yeux. */
+.badge.danger{background:rgba(248,113,113,.18);color:#f87171}
+.badge.warn{background:rgba(234,179,8,.18);color:#eab308}
 
 /* ── Forms & buttons ── */
 .split{display:grid;grid-template-columns:320px 1fr;gap:1.4rem;align-items:start}

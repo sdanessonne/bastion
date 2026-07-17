@@ -1,9 +1,10 @@
+using System.Diagnostics;
 using System.Text;
 
 namespace Bastion.StationBlanche;
 
 /// <summary>
-/// Station blanche — écran unique, pensé pour être lu de loin et sans formation.
+/// Station blanche — écran unique, pensé pour une borne : lisible de loin, sans notice.
 ///
 /// PRINCIPE : la station CONSTATE, elle ne modifie JAMAIS le support. Une clé peut être
 /// une pièce remise par un tiers, voire un scellé : en effacer un fichier détruirait une
@@ -11,16 +12,16 @@ namespace Bastion.StationBlanche;
 /// </summary>
 public sealed class MainForm : Form
 {
-    private readonly Label _titre = new();
-    private readonly Label _etat = new();
-    private readonly Label _detail = new();
+    private readonly Config _cfg;
+    private readonly BastionApi _api;
+
+    private readonly Label _titre = new(), _etat = new(), _detail = new(), _moteur = new(), _trace = new();
     private readonly Panel _bandeau = new();
     private readonly ProgressBar _barre = new();
     private readonly ListBox _menaces = new();
-    private readonly Button _btnAnalyser = new();
-    private readonly Button _btnRapport = new();
+    private readonly Button _btnAnalyser = new(), _btnRapport = new(), _btnEteindre = new(), _btnMaj = new();
     private readonly ComboBox _supports = new();
-    private readonly Label _moteur = new();
+    private readonly System.Windows.Forms.Timer _majPeriodique = new();
 
     private UsbWatcher? _veille;
     private CancellationTokenSource? _annule;
@@ -35,137 +36,257 @@ public sealed class MainForm : Form
     private static readonly Color Ambre = Color.FromArgb(234, 179, 8);
     private static readonly Color Bleu = Color.FromArgb(56, 189, 248);
 
-    public MainForm()
+    public MainForm(Config cfg)
     {
-        Text = "Bastion — Station blanche";
-        BackColor = Fond;
-        ForeColor = Encre;
-        Font = new Font("Segoe UI", 10F);
-        MinimumSize = new Size(860, 620);
-        Size = new Size(940, 680);
-        StartPosition = FormStartPosition.CenterScreen;
+        _cfg = cfg;
+        _api = new BastionApi(cfg);
 
+        Text = "Bastion — Station blanche";
+        BackColor = Fond; ForeColor = Encre;
+        Font = new Font("Segoe UI", 11F);
+        KeyPreview = true;   // pour intercepter la sortie de secours avant les contrôles
+
+        if (_cfg.Kiosque)
+        {
+            // MODE BORNE : plein écran sans bordure, au-dessus de tout. Il n'y a ni croix
+            // de fermeture ni barre de titre — l'agent ne peut pas « sortir » par erreur.
+            // Ce n'est PAS le mode kiosque de Windows : pour verrouiller vraiment le poste
+            // (pas de Ctrl+Alt+Suppr, pas d'explorateur), il faut Assigned Access ou Shell
+            // Launcher, configurés côté Windows. Voir le README.
+            FormBorderStyle = FormBorderStyle.None;
+            WindowState = FormWindowState.Maximized;
+            TopMost = true;
+            ShowInTaskbar = false;
+        }
+        else
+        {
+            MinimumSize = new Size(900, 660);
+            Size = new Size(1000, 720);
+            StartPosition = FormStartPosition.CenterScreen;
+        }
+
+        Construire();
+
+        // Sortie de secours pour l'exploitant : sans elle, une borne en plein écran ne se
+        // referme plus qu'en éteignant le poste. Volontairement peu découvrable.
+        KeyDown += (_, e) =>
+        {
+            // Le drapeau est INDISPENSABLE : sans lui, le FormClosing ci-dessous annule
+            // cette fermeture comme il annule Alt+F4, et la borne devient inquittable.
+            if (e.Control && e.Shift && e.KeyCode == Keys.Q) { _sortieDemandee = true; _annule?.Cancel(); Close(); }
+        };
+        // Alt+F4 ne doit pas fermer une borne par mégarde ; la sortie de secours reste.
+        FormClosing += (_, e) =>
+        {
+            if (_cfg.Kiosque && e.CloseReason == CloseReason.UserClosing && !_sortieDemandee) { e.Cancel = true; return; }
+            _annule?.Cancel(); _veille?.Dispose(); _majPeriodique.Dispose();
+        };
+
+        Load += async (_, _) => await DemarrerAsync();
+    }
+
+    private bool _sortieDemandee;
+
+    private void Construire()
+    {
         _titre.Text = "Station blanche";
-        _titre.Font = new Font("Segoe UI", 22F, FontStyle.Bold);
+        _titre.Font = new Font("Segoe UI", 26F, FontStyle.Bold);
         _titre.ForeColor = Color.White;
-        _titre.SetBounds(28, 20, 500, 40);
+        _titre.SetBounds(36, 26, 600, 46);
 
         var sous = new Label
         {
-            Text = "Analyse d'un support amovible avant tout usage sur le réseau du service.",
+            Text = "Analyse d'une clé USB avant tout usage sur le réseau du service.",
             ForeColor = Grise, AutoSize = false,
         };
-        sous.SetBounds(30, 62, 700, 22);
+        sous.SetBounds(38, 74, 800, 24);
 
-        _moteur.SetBounds(30, 88, 860, 20);
+        _moteur.SetBounds(38, 102, 1100, 22);
         _moteur.ForeColor = Grise;
-        _moteur.Font = new Font("Segoe UI", 8.5F);
+        _moteur.Font = new Font("Segoe UI", 9F);
 
-        // Bandeau de verdict : c'est CE QU'ON REGARDE. Il doit se lire à trois mètres.
-        _bandeau.SetBounds(28, 120, 872, 130);
+        _bandeau.SetBounds(36, 136, 1, 150);
         _bandeau.BackColor = Color.FromArgb(21, 30, 51);
-        _bandeau.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
         _etat.Text = "Insérez une clé USB";
-        _etat.Font = new Font("Segoe UI", 20F, FontStyle.Bold);
+        _etat.Font = new Font("Segoe UI", 24F, FontStyle.Bold);
         _etat.ForeColor = Grise;
-        _etat.SetBounds(24, 22, 820, 40);
+        _etat.SetBounds(26, 24, 1000, 46);
         _bandeau.Controls.Add(_etat);
 
         _detail.Text = "L'analyse démarre automatiquement.";
         _detail.ForeColor = Grise;
-        _detail.SetBounds(26, 66, 820, 46);
+        _detail.SetBounds(28, 74, 1000, 60);
         _bandeau.Controls.Add(_detail);
 
-        _barre.SetBounds(28, 262, 872, 8);
+        _barre.SetBounds(36, 298, 1, 8);
         _barre.Style = ProgressBarStyle.Marquee;   // MpCmdRun ne rend aucune progression :
         _barre.MarqueeAnimationSpeed = 30;         // une barre défilante dit « ça travaille »
         _barre.Visible = false;                    // sans prétendre connaître l'avancement.
-        _barre.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
         var lblM = new Label { Text = "Menaces détectées", ForeColor = Grise, AutoSize = true };
-        lblM.SetBounds(30, 286, 200, 20);
+        lblM.SetBounds(38, 322, 200, 20);
 
-        _menaces.SetBounds(28, 310, 872, 240);
+        _menaces.SetBounds(36, 346, 1, 1);
         _menaces.BackColor = Color.FromArgb(15, 23, 42);
         _menaces.ForeColor = Encre;
         _menaces.BorderStyle = BorderStyle.FixedSingle;
-        _menaces.Font = new Font("Consolas", 9.5F);
-        _menaces.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        _menaces.Font = new Font("Consolas", 10F);
         _menaces.IntegralHeight = false;
 
-        var lblS = new Label { Text = "Support", ForeColor = Grise, AutoSize = true };
-        lblS.SetBounds(30, 566, 60, 20);
-        _supports.SetBounds(92, 562, 330, 26);
+        _trace.ForeColor = Grise;
+        _trace.Font = new Font("Segoe UI", 8.5F);
+        _trace.AutoSize = false;
+
         _supports.DropDownStyle = ComboBoxStyle.DropDownList;
         _supports.FlatStyle = FlatStyle.Flat;
         _supports.BackColor = Color.FromArgb(15, 23, 42);
         _supports.ForeColor = Encre;
-        _supports.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+        _supports.Font = new Font("Segoe UI", 10F);
+        // Une liste « DropDownList » ignore BackColor : Windows la peint en blanc, ce qui
+        // faisait une tache éclatante au milieu d'un écran sombre. Seul le dessin manuel
+        // permet de la tenir dans la teinte du reste.
+        _supports.DrawMode = DrawMode.OwnerDrawFixed;
+        _supports.ItemHeight = 22;
+        _supports.DrawItem += (_, e) =>
+        {
+            e.DrawBackground();
+            var choisi = (e.State & DrawItemState.Selected) != 0;
+            using var fond = new SolidBrush(choisi ? Color.FromArgb(30, 41, 66) : Color.FromArgb(15, 23, 42));
+            e.Graphics.FillRectangle(fond, e.Bounds);
+            if (e.Index >= 0 && _supports.Items[e.Index] is Support s)
+                TextRenderer.DrawText(e.Graphics, s.Libelle, e.Font ?? Font,
+                    new Point(e.Bounds.Left + 6, e.Bounds.Top + 3), Encre);
+        };
 
-        Bouton(_btnAnalyser, "Analyser", 440, 560, 130, Bleu);
+        Bouton(_btnAnalyser, "Analyser", Bleu);
         _btnAnalyser.Click += async (_, _) => await LancerAsync();
-        Bouton(_btnRapport, "Rapport…", 582, 560, 130, Color.FromArgb(51, 65, 85));
+        Bouton(_btnRapport, "Rapport…", Color.FromArgb(51, 65, 85));
         _btnRapport.Click += (_, _) => Exporter();
         _btnRapport.Enabled = false;
+        Bouton(_btnMaj, "Mettre à jour", Color.FromArgb(51, 65, 85));
+        _btnMaj.Click += async (_, _) => await MajAsync(manuel: true);
+        Bouton(_btnEteindre, "⏻  Éteindre", Color.FromArgb(90, 32, 38));
+        _btnEteindre.Click += (_, _) => Eteindre();
+        _btnEteindre.Visible = _cfg.BoutonEteindre;
 
-        var pied = new Label
-        {
-            Text = "La station analyse et signale. Elle ne modifie jamais le support.",
-            ForeColor = Grise, Font = new Font("Segoe UI", 8.5F), AutoSize = true,
-        };
-        pied.SetBounds(30, 596, 600, 18);
-        pied.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-
-        Controls.AddRange(new Control[] { _titre, sous, _moteur, _bandeau, _barre, lblM, _menaces, lblS, _supports, _btnAnalyser, _btnRapport, pied });
-
-        Load += (_, _) => Demarrer();
-        FormClosing += (_, _) => { _annule?.Cancel(); _veille?.Dispose(); };
+        Controls.AddRange(new Control[] { _titre, sous, _moteur, _bandeau, _barre, lblM, _menaces,
+                                          _trace, _supports, _btnAnalyser, _btnRapport, _btnMaj, _btnEteindre });
+        Resize += (_, _) => Disposer();
+        Shown += (_, _) => Disposer();
     }
 
-    private void Bouton(Button b, string t, int x, int y, int w, Color c)
+    /// <summary>
+    /// Mise en page calculée : la borne peut tourner sur n'importe quelle définition.
+    ///
+    /// La barre du bas se pose DE DROITE À GAUCHE, et la liste des supports prend ce qui
+    /// reste. Poser de gauche à droite faisait passer « Mettre à jour » sous « Éteindre »
+    /// dès que la fenêtre descendait à 1000 px — soit la taille par défaut.
+    /// </summary>
+    private void Disposer()
     {
-        b.Text = t; b.SetBounds(x, y, w, 30);
+        int l = ClientSize.Width, h = ClientSize.Height, m = 36;
+        _bandeau.SetBounds(m, 136, l - 2 * m, 150);
+        _etat.Width = _bandeau.Width - 52;
+        _detail.Width = _bandeau.Width - 56;
+        _barre.SetBounds(m, 298, l - 2 * m, 8);
+        _menaces.SetBounds(m, 346, l - 2 * m, Math.Max(60, h - 346 - 96));
+        _trace.SetBounds(m + 2, h - 88, l - 2 * m, 18);
+
+        const int E = 150, MAJ = 150, RAP = 130, AN = 150, G = 14;
+        int y = h - 63;
+        int droite = l - m;
+        if (_btnEteindre.Visible)
+        {
+            _btnEteindre.SetBounds(droite - E, y, E, 32);
+            droite -= E + G * 2;   // respiration avant le bouton rouge : on n'éteint pas par erreur
+        }
+        _btnMaj.SetBounds(droite - MAJ, y, MAJ, 32); droite -= MAJ + G;
+        _btnRapport.SetBounds(droite - RAP, y, RAP, 32); droite -= RAP + G;
+        _btnAnalyser.SetBounds(droite - AN, y, AN, 32); droite -= AN + G;
+        _supports.SetBounds(m, h - 62, Math.Max(120, droite - m), 30);
+    }
+
+    private void Bouton(Button b, string t, Color c)
+    {
+        b.Text = t;
         b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderSize = 0;
         b.BackColor = c; b.ForeColor = c == Bleu ? Color.FromArgb(11, 17, 32) : Encre;
-        b.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
+        b.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
         b.Cursor = Cursors.Hand;
-        b.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+        // Pas d'ancrage : Disposer() pose ces boutons au pixel à chaque redimensionnement.
+        // Les deux mécanismes ensemble se contrarient.
     }
 
-    private void Demarrer()
+    private async Task DemarrerAsync()
+    {
+        AfficherMoteur();
+        _veille = new UsbWatcher(this);
+        _veille.Insere += s => BeginInvoke(() => SurInsertion(s));
+        _veille.Retire += l => BeginInvoke(() => SurRetrait(l));
+        Rafraichir();
+
+        if (_cfg.MajAuto)
+        {
+            await MajAsync(manuel: false);
+            // Toutes les 4 h : une borne reste allumée des jours. Microsoft publie
+            // plusieurs jeux de signatures par jour ; attendre le redémarrage du poste
+            // laisserait la station travailler avec des signatures d'il y a une semaine.
+            _majPeriodique.Interval = 4 * 60 * 60 * 1000;
+            _majPeriodique.Tick += async (_, _) => await MajAsync(manuel: false);
+            _majPeriodique.Start();
+        }
+    }
+
+    private void AfficherMoteur()
     {
         var m = Defender.LireEtat();
         if (!m.Present)
         {
             _moteur.ForeColor = Rouge;
             _moteur.Text = "⛔ Windows Defender est introuvable : cette station ne peut rien analyser.";
-            _btnAnalyser.Enabled = false;
+            _btnAnalyser.Enabled = false; _btnMaj.Enabled = false;
             return;
         }
         // Des signatures périmées donnent une FAUSSE ASSURANCE : la station déclare
-        // « sain » ce qu'elle ne sait plus reconnaître. Le dire franchement.
+        // « sain » ce qu'elle ne sait plus reconnaître. Le dire, et fort.
         if (m.AgeJours > 7)
         {
             _moteur.ForeColor = Rouge;
-            _moteur.Text = $"⛔ Signatures antivirus vieilles de {m.AgeJours} jours " +
-                           $"({m.Signatures:dd/MM/yyyy}) — un « aucune menace » ne veut plus rien dire. Mettez à jour Windows Defender.";
+            _moteur.Text = $"⛔ Signatures vieilles de {m.AgeJours} jours ({m.Signatures:dd/MM/yyyy}) — " +
+                           "un « aucune menace » ne veut plus rien dire. Mettez à jour.";
         }
         else if (m.AgeJours > 2)
         {
             _moteur.ForeColor = Ambre;
-            _moteur.Text = $"⚠️ Signatures du {m.Signatures:dd/MM/yyyy} ({m.AgeJours} j) — une mise à jour est conseillée.";
+            _moteur.Text = $"⚠️ Signatures du {m.Signatures:dd/MM/yyyy} ({m.AgeJours} j) — mise à jour conseillée.";
         }
         else
         {
             _moteur.ForeColor = Grise;
-            _moteur.Text = $"Moteur Windows Defender {m.Version} · signatures du {m.Signatures:dd/MM/yyyy à HH:mm}";
+            _moteur.Text = $"Windows Defender {m.Version} · signatures du {m.Signatures:dd/MM/yyyy à HH:mm}" +
+                           (_cfg.RemonteeActive ? $" · analyses tracées sur {_cfg.Passerelle}" : " · analyses NON tracées");
         }
+    }
 
-        _veille = new UsbWatcher(this);
-        _veille.Insere += s => BeginInvoke(() => SurInsertion(s));
-        _veille.Retire += l => BeginInvoke(() => SurRetrait(l));
-        Rafraichir();
+    private async Task MajAsync(bool manuel)
+    {
+        _btnMaj.Enabled = false;
+        var texte = _moteur.Text;
+        _moteur.ForeColor = Grise;
+        _moteur.Text = "Mise à jour des signatures en cours…";
+        var (ok, msg) = await Defender.MettreAJourAsync(CancellationToken.None);
+        AfficherMoteur();
+        if (manuel || !ok)
+            _trace.Text = (ok ? "✓ " : "⚠️ ") + msg;
+        _btnMaj.Enabled = true;
+    }
+
+    /// <summary>Alimente la liste sans clé USB, pour contrôler le rendu (mode --capture).</summary>
+    internal void InjecterSupportFictif(Support s)
+    {
+        _supports.Items.Add(s); _supports.SelectedIndex = 0;
+        _supports.Visible = true; _btnAnalyser.Enabled = true;
     }
 
     private void Rafraichir()
@@ -175,9 +296,14 @@ public sealed class MainForm : Form
         foreach (var s in UsbWatcher.Lister()) _supports.Items.Add(s);
         _supports.DisplayMember = nameof(Support.Libelle);
         if (_supports.Items.Count > 0)
-            _supports.SelectedIndex = Math.Max(0, _supports.Items.Cast<Support>().ToList()
-                .FindIndex(s => s.Lettre == avant));
-        _btnAnalyser.Enabled = _supports.Items.Count > 0;
+        {
+            var i = _supports.Items.Cast<Support>().ToList().FindIndex(s => s.Lettre == avant);
+            _supports.SelectedIndex = Math.Max(0, i);
+        }
+        // Sans clé, la liste n'a rien à proposer : on la retire au lieu de laisser une
+        // case vide — que Windows peint en blanc, en tache au milieu de l'écran sombre.
+        _supports.Visible = _supports.Items.Count > 0;
+        _btnAnalyser.Enabled = _supports.Items.Count > 0 && Defender.TrouverExe() != null;
     }
 
     private async void SurInsertion(Support s)
@@ -185,7 +311,7 @@ public sealed class MainForm : Form
         Rafraichir();
         var i = _supports.Items.Cast<Support>().ToList().FindIndex(x => x.Lettre == s.Lettre);
         if (i >= 0) _supports.SelectedIndex = i;
-        await LancerAsync();   // automatique : on insère, ça analyse. Rien à cliquer.
+        await LancerAsync();   // on insère, ça analyse. Rien à cliquer.
     }
 
     private void SurRetrait(string lettre)
@@ -194,7 +320,8 @@ public sealed class MainForm : Form
         // « aucune menace » sur un support absent — un feu vert sur rien.
         if (_cible?.Lettre == lettre) _annule?.Cancel();
         Rafraichir();
-        if (_supports.Items.Count == 0) Verdict("Insérez une clé USB", "L'analyse démarre automatiquement.", Grise, Color.FromArgb(21, 30, 51));
+        if (_supports.Items.Count == 0)
+            Verdict("Insérez une clé USB", "L'analyse démarre automatiquement.", Grise, Color.FromArgb(21, 30, 51));
     }
 
     private async Task LancerAsync()
@@ -205,42 +332,50 @@ public sealed class MainForm : Form
         _annule = new CancellationTokenSource();
 
         _menaces.Items.Clear();
-        _btnAnalyser.Enabled = false;
-        _btnRapport.Enabled = false;
+        _trace.Text = "";
+        _btnAnalyser.Enabled = false; _btnRapport.Enabled = false;
         _barre.Visible = true;
-        Verdict("Analyse en cours…", $"{s.Libelle} — merci de ne pas retirer le support.", Bleu, Color.FromArgb(21, 30, 51));
+        Verdict("Analyse en cours…", $"{s.Libelle}\nMerci de ne pas retirer le support.", Bleu, Color.FromArgb(21, 30, 51));
 
         var r = await Defender.AnalyserAsync(s.Lettre + "\\", _annule.Token);
         _dernier = r;
         _barre.Visible = false;
-        _btnAnalyser.Enabled = true;
-        _btnRapport.Enabled = true;
+        _btnAnalyser.Enabled = true; _btnRapport.Enabled = true;
 
         if (!r.Abouti)
         {
             Verdict("ANALYSE IMPOSSIBLE", r.Erreur ?? "Erreur inconnue.", Ambre, Color.FromArgb(48, 38, 8));
             _menaces.Items.Add("L'analyse n'a pas abouti : ne considérez PAS ce support comme sain.");
             if (r.Erreur != null) _menaces.Items.Add("  " + r.Erreur);
-            return;
         }
-        if (r.NbMenaces > 0)
+        else if (r.NbMenaces > 0)
         {
             Verdict($"SUPPORT INFECTÉ — {r.NbMenaces} menace(s)",
-                "N'utilisez pas ce support. Prévenez le service informatique. Le support n'a PAS été modifié.",
+                "N'utilisez pas ce support. Prévenez le service informatique.\nLe support n'a PAS été modifié.",
                 Rouge, Color.FromArgb(58, 18, 22));
             foreach (var m in r.Menaces) _menaces.Items.Add($"{m.Nom}\n    {m.Fichier}");
-            return;
         }
-        // Un support vide n'est pas un support sain : Defender le signale via Erreur.
-        if (r.Erreur != null)
+        else if (r.Erreur != null)
         {
             Verdict("RIEN À ANALYSER", r.Erreur, Ambre, Color.FromArgb(48, 38, 8));
-            return;
         }
-        Verdict("AUCUNE MENACE DÉTECTÉE",
-            $"Analysé en {r.Duree.TotalSeconds:F1} s. Aucune détection ne garantit toutefois l'absence de tout code inconnu.",
-            Vert, Color.FromArgb(12, 42, 26));
-        _menaces.Items.Add("Aucune menace connue trouvée sur ce support.");
+        else
+        {
+            Verdict("AUCUNE MENACE DÉTECTÉE",
+                $"Analysé en {r.Duree.TotalSeconds:F1} s. Aucune détection ne garantit toutefois l'absence de tout code inconnu.",
+                Vert, Color.FromArgb(12, 42, 26));
+            _menaces.Items.Add("Aucune menace connue trouvée sur ce support.");
+        }
+
+        // Remontée APRÈS l'affichage : le verdict de l'agent ne doit jamais attendre le
+        // réseau. Un échec de remontée est signalé, mais ne change pas le verdict.
+        int nb = 0;
+        try { nb = Directory.EnumerateFiles(s.Lettre + "\\", "*", SearchOption.AllDirectories).Count(); } catch { }
+        var err = await _api.RemonterAsync(s, r, nb, CancellationToken.None);
+        _trace.Text = err == null
+            ? $"✓ Analyse tracée sur la console Bastion ({DateTime.Now:HH:mm:ss})."
+            : "⚠️ " + err;
+        _trace.ForeColor = err == null ? Grise : Ambre;
     }
 
     private void Verdict(string t, string d, Color c, Color fond)
@@ -250,6 +385,26 @@ public sealed class MainForm : Form
         _bandeau.BackColor = fond;
     }
 
+    private void Eteindre()
+    {
+        var r = MessageBox.Show(this,
+            "Éteindre cet ordinateur ?\n\nRetirez votre clé USB avant de confirmer.",
+            "Éteindre la station", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+        if (r != DialogResult.Yes) return;
+        try
+        {
+            // « /t 0 » : sans délai. « /f » ferme les applications récalcitrantes — sur une
+            // borne, il n'y a rien à sauvegarder, et un arrêt qui ne se produit pas laisse
+            // le poste allumé toute la nuit avec la session ouverte.
+            Process.Start(new ProcessStartInfo("shutdown.exe", "/s /f /t 0") { CreateNoWindow = true, UseShellExecute = false });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Extinction impossible : " + ex.Message, "Erreur",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
     /// <summary>Rapport texte : une analyse doit pouvoir être jointe à un compte rendu.</summary>
     private void Exporter()
     {
@@ -257,7 +412,7 @@ public sealed class MainForm : Form
         var m = Defender.LireEtat();
         var sb = new StringBuilder();
         sb.AppendLine("RAPPORT D'ANALYSE — Bastion Station blanche");
-        sb.AppendLine(new string('=', 60));
+        sb.AppendLine(new string('=', 62));
         sb.AppendLine($"Date            : {DateTime.Now:dd/MM/yyyy HH:mm:ss}");
         sb.AppendLine($"Poste           : {Environment.MachineName}");
         sb.AppendLine($"Opérateur       : {Environment.UserName}");
@@ -275,8 +430,10 @@ public sealed class MainForm : Form
             sb.AppendLine();
         }
         sb.AppendLine("Le support n'a pas été modifié par cette analyse.");
+        sb.AppendLine("Un seul moteur d'analyse : « aucune menace » signifie « rien de connu par");
+        sb.AppendLine("Windows Defender », et non « inoffensif ».");
         sb.AppendLine();
-        sb.AppendLine(new string('-', 60));
+        sb.AppendLine(new string('-', 62));
         sb.AppendLine("Journal du moteur :");
         sb.AppendLine(_dernier.Journal);
 

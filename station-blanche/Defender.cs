@@ -82,6 +82,40 @@ public static class Defender
     }
 
     /// <summary>
+    /// Met à jour les signatures.
+    ///
+    /// POURQUOI C'EST AUTOMATIQUE ET NON UNE OPTION : une station blanche aux signatures
+    /// périmées déclare « sain » ce qu'elle ne sait plus reconnaître. Elle ne protège
+    /// plus — elle rassure à tort, ce qui est pire que pas de station du tout. La même
+    /// leçon a été tirée sur la passerelle, où l'antivirus tournait avec un moteur dont
+    /// le service de mise à jour était désactivé.
+    ///
+    /// Peut durer une minute et exige un accès aux serveurs Microsoft. Sur une station
+    /// derrière Bastion, le walled garden doit les laisser passer : ils y sont déjà, le
+    /// portail captif ouvrant les serveurs de mise à jour sans authentification.
+    /// </summary>
+    public static async Task<(bool ok, string message)> MettreAJourAsync(CancellationToken jeton)
+    {
+        var exe = TrouverExe();
+        if (exe == null) return (false, "Windows Defender est introuvable.");
+        var avant = LireEtat().Signatures;
+        try
+        {
+            var (sortie, code) = await ExecuterAsync(exe, "-SignatureUpdate", jeton);
+            var apres = LireEtat().Signatures;
+            if (code != 0)
+                return (false, "Mise à jour impossible : la station a-t-elle accès à Internet ?");
+            // Un code 0 ne prouve RIEN : Defender sort en succès même sans rien récupérer
+            // (déjà à jour, ou serveur injoignable en silence). Seule la DATE fait foi.
+            if (apres.HasValue && (!avant.HasValue || apres > avant))
+                return (true, $"Signatures mises à jour ({apres:dd/MM/yyyy HH:mm}).");
+            return (true, "Signatures déjà à jour.");
+        }
+        catch (OperationCanceledException) { return (false, "Mise à jour interrompue."); }
+        catch (Exception ex) { return (false, "Mise à jour impossible : " + ex.Message); }
+    }
+
+    /// <summary>
     /// Analyse un support. NE MODIFIE RIEN.
     ///
     /// « -DisableRemediation » est ESSENTIEL, et ce n'est pas un détail de confort :

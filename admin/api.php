@@ -25,12 +25,55 @@ $given = '';
 $h = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
 if (preg_match('/Bearer\s+(\S+)/i', $h, $m)) { $given = $m[1]; }
 if ($given === '') { $given = (string) ($_POST['token'] ?? $_GET['token'] ?? ''); }
-if ($expected === '' || $given === '' || !hash_equals($expected, $given)) { jout(['error' => 'unauthorized'], 401); }
+
+// Jeton DÉDIÉ aux stations blanches, distinct de celui d'administration.
+// Une station est un poste en LIBRE ACCÈS, physiquement exposé : quiconque l'ouvre lit
+// sa configuration. Lui confier le jeton d'administration donnerait la main sur les
+// comptes, le filtrage et le PXE de la passerelle. Ce jeton-là n'ouvre QUE le dépôt de
+// résultats d'analyse, et rien d'autre.
+$expectStation = '';
+try { $expectStation = (string) $db->query("SELECT v FROM pf_settings WHERE k='station_token'")->fetchColumn(); }
+catch (Throwable $e) { }
+
+$estAdmin   = $expected !== '' && $given !== '' && hash_equals($expected, $given);
+$estStation = $expectStation !== '' && $given !== '' && hash_equals($expectStation, $given);
+if (!$estAdmin && !$estStation) { jout(['error' => 'unauthorized'], 401); }
 
 $action = (string) ($_GET['action'] ?? $_POST['action'] ?? '');
+
+// Une station ne peut appeler QUE le dépôt de résultats. Sans ce garde-fou, le jeton
+// « limité » ouvrirait toute l'API : la limitation ne serait qu'une intention.
+if ($estStation && !$estAdmin && $action !== 'station.report') { jout(['error' => 'forbidden'], 403); }
 $active = fn(string $u) => trim((string) shell_exec('systemctl is-active ' . escapeshellarg($u) . ' 2>/dev/null'));
 
 switch ($action) {
+    // Dépôt d'un résultat d'analyse par une station blanche.
+    case 'station.report': {
+        $poste   = substr(trim((string) ($_POST['poste'] ?? '')), 0, 64);
+        $support = substr(trim((string) ($_POST['support'] ?? '')), 0, 200);
+        $op      = substr(trim((string) ($_POST['operateur'] ?? '')), 0, 64);
+        $nb      = max(0, (int) ($_POST['menaces'] ?? 0));
+        $fic     = max(0, (int) ($_POST['fichiers'] ?? 0));
+        $detail  = substr(trim((string) ($_POST['detail'] ?? '')), 0, 4000);
+        $abouti  = ($_POST['abouti'] ?? '1') === '1';
+        if ($poste === '') { jout(['error' => 'poste manquant'], 400); }
+
+        // On réutilise pf_avscan, déjà en place pour les analyses de la passerelle :
+        // les deux origines se lisent au même endroit. « launched_by » distingue la
+        // station de l'administrateur.
+        $st = $db->prepare('INSERT INTO pf_avscan (path, scanned, infected, detail, launched_by)
+                            VALUES (?,?,?,?,?)');
+        $st->execute([
+            'Station ' . $poste . ' — ' . ($support ?: 'support inconnu'),
+            $fic,
+            $abouti ? $nb : -1,   // -1 = analyse NON aboutie : ni saine, ni infectée.
+            ($abouti ? '' : "ANALYSE NON ABOUTIE
+") . $detail,
+            'station:' . ($op ?: 'inconnu'),
+        ]);
+        jout(['ok' => true, 'id' => (int) $db->lastInsertId()]);
+    }
+
     case 'status':
         $svc = [];
         foreach (['opennds', 'freeradius', 'mariadb', 'apache2', 'dnsmasq', 'chrony', 'proxyfibre-weblog'] as $u) {

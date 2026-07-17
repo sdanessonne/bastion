@@ -1,0 +1,11 @@
+# Réglages du poste : contient le JETON de la passerelle. Un secret poussé une fois dans
+# Git y reste pour toujours, y compris après suppression du fichier — l'historique le garde.
+# L'exécutable écrit un modèle vierge au premier lancement : il n'y a rien à versionner.
+station.json
+
+# Sorties de compilation (l'exe autonome pèse ~68 Mo)
+bin/
+obj/
+
+# Captures produites par « --capture »
+*.png

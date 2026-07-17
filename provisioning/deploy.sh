@@ -243,9 +243,23 @@ mysql "${DB_NAME}" -e "CREATE TABLE IF NOT EXISTS pf_admins (id INT AUTO_INCREME
 mysql "${DB_NAME}" -e "ALTER TABLE pf_admins ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64) DEFAULT NULL, ADD COLUMN IF NOT EXISTS totp_enabled TINYINT(1) NOT NULL DEFAULT 0;" 2>/dev/null || true
 ADMIN_HASH="$(PF_AP="$ADMIN_PASS" php -r "echo password_hash(getenv('PF_AP'), PASSWORD_DEFAULT);")"
 mysql "${DB_NAME}" -e "INSERT INTO pf_admins (username,password_hash) VALUES ('${ADMIN_USER}','${ADMIN_HASH}') ON DUPLICATE KEY UPDATE password_hash='${ADMIN_HASH}';"
-# Jeton d'API pour le serveur central (généré une seule fois s'il n'existe pas)
+# Jetons d'API, générés une seule fois chacun (INSERT IGNORE : un redéploiement ne les
+# change pas, sans quoi tous les postes déjà configurés perdraient l'accès).
+#   api_token     : serveur central — ouvre TOUTE l'API.
+#   station_token : stations blanches — n'ouvre QUE le dépôt de résultats d'analyse.
+# Deux jetons distincts parce qu'une station blanche est une machine en libre accès dans
+# un couloir : si son jeton fuit, il ne doit donner ni les comptes, ni les journaux.
 mysql "${DB_NAME}" -e "CREATE TABLE IF NOT EXISTS pf_settings (k VARCHAR(64) PRIMARY KEY, v TEXT);
-INSERT IGNORE INTO pf_settings (k,v) VALUES ('api_token', SHA2(CONCAT(RAND(),UUID(),NOW(6)),256));"
+INSERT IGNORE INTO pf_settings (k,v) VALUES ('api_token', SHA2(CONCAT(RAND(),UUID(),NOW(6)),256));
+INSERT IGNORE INTO pf_settings (k,v) VALUES ('station_token', SHA2(CONCAT(RAND(),UUID(),NOW(6)),256));"
+# Journal des analyses antivirus. Créé ici, et pas seulement à l'ouverture de la page
+# antivirus.php : une station blanche peut remonter un résultat avant qu'un administrateur
+# n'ait jamais ouvert cette page, et l'insertion échouerait — la trace serait perdue.
+# Schéma volontairement IDENTIQUE à celui d'antivirus.php : « IF NOT EXISTS » ne corrige
+# pas une divergence, il la masque.
+mysql "${DB_NAME}" -e "CREATE TABLE IF NOT EXISTS pf_avscan (
+  id INT AUTO_INCREMENT PRIMARY KEY, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  path VARCHAR(255), scanned INT DEFAULT 0, infected INT DEFAULT 0, detail TEXT, launched_by VARCHAR(64));"
 grep -q '^Listen 8080$' /etc/apache2/ports.conf || echo "Listen 8080" >> /etc/apache2/ports.conf
 sed -e "s|__LAN_NET__|${LAN_NET}|g" -e "s|__LAN_CIDR__|${LAN_CIDR}|g" \
     "${REPO_DIR}/services/apache/admin.conf" > /etc/apache2/sites-available/proxyfibre-admin.conf
