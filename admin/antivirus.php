@@ -8,6 +8,14 @@ try {
     $db->exec('CREATE TABLE IF NOT EXISTS pf_avscan (
         id INT AUTO_INCREMENT PRIMARY KEY, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         path VARCHAR(255), scanned INT DEFAULT 0, infected INT DEFAULT 0, detail TEXT, launched_by VARCHAR(64))');
+    // Le jeton des stations est créé ICI, et pas seulement par deploy.sh : la mise à jour
+    // depuis Git ne rejoue PAS deploy.sh (elle synchronise le code, pas l'infrastructure).
+    // Une passerelle déjà en service recevrait donc l'API des stations sans jamais avoir le
+    // jeton qui va avec — et toute station se ferait refuser en 401, sans que rien
+    // n'explique pourquoi. « INSERT IGNORE » : une fois créé, il ne bouge plus, sinon
+    // chaque visite de cette page invaliderait les postes déjà configurés.
+    $db->exec("CREATE TABLE IF NOT EXISTS pf_settings (k VARCHAR(64) PRIMARY KEY, v TEXT)");
+    $db->exec("INSERT IGNORE INTO pf_settings (k,v) VALUES ('station_token', SHA2(CONCAT(RAND(),UUID(),NOW(6)),256))");
 } catch (Throwable $e) {}
 
 $SCAN_TARGETS = ['/srv/partage' => 'Dossiers partagés', '/var/www' => 'Serveur web'];
@@ -16,7 +24,13 @@ $flash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $action = $_POST['action'] ?? '';
-    if ($action === 'update') {
+    if ($action === 'station_token_new') {
+        // Renouvellement : indispensable le jour où une station est volée ou son fichier de
+        // configuration recopié. Toutes les stations devront être reconfigurées — c'est le
+        // prix, et c'est annoncé.
+        $db->exec("REPLACE INTO pf_settings (k,v) VALUES ('station_token', SHA2(CONCAT(RAND(),UUID(),NOW(6)),256))");
+        $flash = ['Nouveau jeton généré. Les stations blanches doivent être reconfigurées avec celui-ci.', 'ok'];
+    } elseif ($action === 'update') {
         $out = shell_exec('sudo /usr/local/sbin/proxyfibre-clamav update 2>&1');
         $flash = ['Base virale : mise à jour lancée.' . (preg_match('/up-to-date|is up to date|updated/i', (string) $out) ? '' : ''), 'ok'];
     } elseif ($action === 'scan') {
@@ -52,6 +66,23 @@ $rows     = [];
 try { $rows = $db->query('SELECT * FROM pf_avscan ORDER BY id DESC LIMIT 20')->fetchAll(); } catch (Throwable $e) {}
 $installed = trim((string) shell_exec('command -v clamscan 2>/dev/null')) !== '';
 
+// ── Ce que la passerelle sert aux stations blanches ───────────────────────────
+$stationToken = '';
+try { $stationToken = (string) $db->query("SELECT v FROM pf_settings WHERE k='station_token'")->fetchColumn(); }
+catch (Throwable $e) {}
+$baseFichiers = [];
+$baseBloquee  = [];
+foreach (['main.cvd', 'main.cld', 'daily.cvd', 'daily.cld', 'bytecode.cvd', 'bytecode.cld'] as $f) {
+    $p = "/var/lib/clamav/$f";
+    if (!is_file($p)) { continue; }
+    // Lisible par le serveur web ? Un fichier présent mais interdit à Apache ne partira
+    // jamais vers les stations, et rien ne le dirait — la station répéterait « base
+    // absente » devant une passerelle qui en a une.
+    if (!is_readable($p)) { $baseBloquee[] = $f; continue; }
+    $baseFichiers[$f] = ['taille' => filesize($p), 'date' => filemtime($p)];
+}
+$lanIp = trim((string) shell_exec("ip -4 addr show scope global 2>/dev/null | awk '/inet /{print \$2}' | cut -d/ -f1 | head -1"));
+
 pf_header('Antivirus', 'antivirus.php');
 if ($flash) { pf_flash($flash[0], $flash[1]); }
 ?>
@@ -69,6 +100,10 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
 </section>
 
 <div class="split">
+  <!-- Colonne de gauche : les deux panneaux de réglage EMPILÉS. « .split » n'a que deux
+       colonnes ; les laisser en enfants directs enverrait l'historique dans la colonne
+       étroite de 320 px, illisible. -->
+  <div style="display:grid;gap:1.4rem">
   <section class="panel form-panel">
     <div class="panel-head"><h2>🛡️ Protection</h2></div>
     <div style="padding:1.2rem">
@@ -91,6 +126,68 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       dossiers partagés sont analysés. Une analyse planifiée quotidienne tourne aussi automatiquement.</p>
     </div>
   </section>
+
+  <section class="panel form-panel">
+    <div class="panel-head"><h2>🔌 Stations blanches</h2></div>
+    <div style="padding:1.2rem">
+      <p class="muted small" style="margin-top:0">Les stations d'analyse de clés USB déposent leurs
+      résultats ici et récupèrent leur base virale sur cette passerelle — elles n'ont pas besoin d'Internet.</p>
+
+      <?php if (!$baseFichiers): ?>
+        <div class="flash err" style="margin:.6rem 0">
+          <?php if ($baseBloquee): ?>
+            Base virale présente mais <strong>illisible par le serveur web</strong>
+            (<?= e(implode(', ', $baseBloquee)) ?>). Les stations ne recevront rien.
+            Corrigez les droits : <code>chmod o+r /var/lib/clamav/*.c?d</code>
+          <?php else: ?>
+            <strong>Aucune base virale sur cette passerelle</strong> : les stations ne pourront pas se mettre
+            à jour. Lancez <code>provisioning/setup-antivirus.sh</code>.
+          <?php endif; ?>
+        </div>
+      <?php else: ?>
+        <p class="muted small">Base servie aux stations :</p>
+        <table class="grid-table" style="margin-bottom:1rem">
+          <tbody>
+          <?php foreach ($baseFichiers as $n => $i): ?>
+            <tr><td><code><?= e($n) ?></code></td>
+                <td class="muted svc-meta"><?= number_format($i['taille'] / 1048576, 1, ',', ' ') ?> Mo</td>
+                <td class="muted svc-meta"><?= date('d/m/Y H:i', $i['date']) ?></td></tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+
+      <p class="muted small">Jeton des stations — à reporter dans <code>station.json</code>.
+      Il n'ouvre que le dépôt de résultats et la base virale, <strong>rien d'autre</strong> :
+      une station est un poste en libre accès.</p>
+      <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.8rem">
+        <input id="jetonSt" type="password" readonly value="<?= e($stationToken) ?>"
+               style="flex:1;font-family:monospace;font-size:.8rem" onclick="this.select()">
+        <button type="button" class="btn-sm" onclick="var c=document.getElementById('jetonSt');
+                c.type = c.type === 'password' ? 'text' : 'password';">👁 Voir</button>
+      </div>
+
+      <details style="margin-bottom:1rem">
+        <summary class="muted small" style="cursor:pointer">Contenu de <code>station.json</code></summary>
+<pre style="font-size:.75rem;overflow-x:auto;background:rgba(0,0,0,.25);padding:.6rem;border-radius:6px">{
+  "Passerelle": "https://<?= e($lanIp ?: '192.168.182.1') ?>:8443",
+  "Jeton": "&lt;le jeton ci-dessus&gt;",
+  "Kiosque": true,
+  "BoutonEteindre": true,
+  "MajAuto": true,
+  "DefenderEnSecondAvis": true,
+  "AccepterCertificatInterne": true
+}</pre>
+      </details>
+
+      <form method="post" onsubmit="return confirm('Générer un nouveau jeton ?\n\nToutes les stations blanches déjà configurées seront refusées tant qu\'elles n\'auront pas reçu le nouveau.');">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <button name="action" value="station_token_new" class="btn-sm">↻ Générer un nouveau jeton</button>
+        <span class="muted small">en cas de vol ou de fuite</span>
+      </form>
+    </div>
+  </section>
+  </div><!-- /colonne de gauche -->
 
   <section class="panel">
     <div class="panel-head"><h2>Historique des analyses</h2></div>
