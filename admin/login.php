@@ -3,6 +3,7 @@
 /** Bastion Admin — page de connexion (avec double authentification optionnelle). */
 require_once __DIR__ . '/inc/config.php';
 require_once __DIR__ . '/inc/totp.php';
+require_once __DIR__ . '/inc/throttle.php';
 
 if (!empty($_SESSION['admin'])) { header('Location: /index.php'); exit; }
 
@@ -12,34 +13,58 @@ $stage = 'password';   // 'password' | 'totp'
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
+    $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+
     // ── Étape 2 : vérification du code 2FA ──
     if (($_POST['step'] ?? '') === 'totp' && !empty($_SESSION['pending_admin'])) {
         $pu = (string) $_SESSION['pending_admin'];
-        try {
-            $st = pf_db()->prepare('SELECT totp_secret FROM pf_admins WHERE username = ?');
-            $st->execute([$pu]);
-            $sec = (string) ($st->fetchColumn() ?: '');
-            $code = (string) ($_POST['code'] ?? '');
-            if ($sec !== '' && totp_verify($sec, $code)) {
+        // Le 2FA se brute-force aussi : une fois « pending_admin » en session, un script
+        // peut enchaîner les codes. On limite donc cette étape comme la première.
+        $th = throttle_begin(pf_db(), $ip, $pu);
+        if (!$th['ok']) {
+            $stage = 'totp';
+            $error = $th['msg'];
+        } else {
+            $vrai = false;
+            try {
+                $st = pf_db()->prepare('SELECT totp_secret FROM pf_admins WHERE username = ?');
+                $st->execute([$pu]);
+                $sec = (string) ($st->fetchColumn() ?: '');
+                $code = (string) ($_POST['code'] ?? '');
+                $vrai = $sec !== '' && totp_verify($sec, $code);
+            } catch (Throwable $ex) { /* erreur générique */ }
+            throttle_finish(pf_db(), $th['id'], $vrai);
+            if ($vrai) {
                 unset($_SESSION['pending_admin']);
                 session_regenerate_id(true);
                 $_SESSION['admin'] = $pu;
                 header('Location: /index.php');
                 exit;
             }
-        } catch (Throwable $ex) { /* erreur générique */ }
-        $stage = 'totp';
-        $error = 'Code de vérification invalide.';
+            $stage = 'totp';
+            $error = 'Code de vérification invalide.';
+        }
     }
     // ── Étape 1 : identifiant + mot de passe ──
     elseif (($_POST['step'] ?? '') === 'password') {
         $u = trim((string) ($_POST['username'] ?? ''));
         $p = (string) ($_POST['password'] ?? '');
-        try {
-            $st = pf_db()->prepare('SELECT password_hash, totp_enabled FROM pf_admins WHERE username = ?');
-            $st->execute([$u]);
-            $row = $st->fetch();
-            if ($row && password_verify($p, $row['password_hash'])) {
+        $th = throttle_begin(pf_db(), $ip, $u);
+        if (!$th['ok']) {
+            $error = $th['msg'];
+        } else {
+            $ok = false; $row = false;
+            try {
+                $st = pf_db()->prepare('SELECT password_hash, totp_enabled FROM pf_admins WHERE username = ?');
+                $st->execute([$u]);
+                $row = $st->fetch();
+                $ok = $row && password_verify($p, $row['password_hash']);
+            } catch (Throwable $ex) { /* $ok reste false */ }
+            // Un mot de passe correct N'EST PAS un échec, même s'il reste à faire le 2FA :
+            // la ligne réservée passe en ok=1 et cesse de compter. L'étape 2FA aura sa
+            // propre réservation.
+            throttle_finish(pf_db(), $th['id'], $ok);
+            if ($ok) {
                 if (!empty($row['totp_enabled'])) {
                     $_SESSION['pending_admin'] = $u;   // en attente du code
                     $stage = 'totp';
@@ -52,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $error = 'Identifiant ou mot de passe incorrect.';
             }
-        } catch (Throwable $ex) { $error = 'Identifiant ou mot de passe incorrect.'; }
+        }
     }
 }
 
