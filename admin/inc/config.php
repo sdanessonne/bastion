@@ -140,6 +140,71 @@ function sys_disk(string $path): ?array {
 }
 
 /**
+ * Débit instantané de l'interface WAN, en octets par seconde.
+ *
+ * Un débit ne se lit nulle part : le noyau ne publie que des COMPTEURS cumulés. Il faut
+ * donc deux échantillons et le temps écoulé entre eux. Le précédent est gardé en tmpfs.
+ *
+ * SENS : « descendant » = rx sur le WAN, c'est-à-dire ce qui ARRIVE d'Internet, donc ce
+ * que les postes téléchargent. « montant » = tx, ce qui part vers Internet. Le sens est
+ * bien celui de l'utilisateur, pas celui de l'interface.
+ *
+ * Ce que compte le WAN inclut le trafic PROPRE de la passerelle (mises à jour apt,
+ * signatures antivirus) : c'est voulu — l'administrateur veut savoir ce qui occupe sa
+ * ligne, quelle qu'en soit l'origine.
+ *
+ * @return array{down:int,up:int,if:string}
+ */
+function sys_net_rate(): array {
+    // L'interface WAN vient de la configuration : la coder en dur casserait sur tout
+    // site dont le nommage diffère.
+    static $if = null;
+    if ($if === null) {
+        $if = 'enp0s3';
+        foreach (@file('/etc/proxyfibre/net.env') ?: [] as $l) {
+            if (preg_match('/^WAN_IF="?([A-Za-z0-9._@:-]+)"?/', $l, $m)) { $if = $m[1]; break; }
+        }
+    }
+    $base = "/sys/class/net/{$if}/statistics/";
+    if (!is_readable($base . 'rx_bytes')) { return ['down' => 0, 'up' => 0, 'if' => $if]; }
+
+    $rx  = (int) trim((string) @file_get_contents($base . 'rx_bytes'));
+    $tx  = (int) trim((string) @file_get_contents($base . 'tx_bytes'));
+    $now = microtime(true);
+    $f   = '/dev/shm/pf-net-' . preg_replace('/[^a-z0-9]/i', '', $if) . '.sample';
+
+    $down = 0; $up = 0;
+    $prev = (string) @file_get_contents($f);
+    if ($prev !== '') {
+        [$pts, $prx, $ptx, $pdown, $pup] = array_pad(explode(' ', trim($prev)), 5, '0');
+        $dt = $now - (float) $pts;
+        if ($dt >= 0.5) {
+            // Un compteur qui DIMINUE signifie que l'interface a été réinitialisée :
+            // le delta serait négatif et donnerait un débit absurde. On repart de zéro.
+            $down = ($rx >= (int) $prx) ? (int) round(($rx - (int) $prx) / $dt) : 0;
+            $up   = ($tx >= (int) $ptx) ? (int) round(($tx - (int) $ptx) / $dt) : 0;
+        } else {
+            // Deux onglets ouverts sur la console interrogent à quelques millisecondes
+            // d'écart : le Δt frôle zéro et la division explose. On rejoue la dernière
+            // valeur ET — surtout — on NE RÉÉCRIT PAS l'échantillon : sinon chaque
+            // appel remettrait la base à zéro, aucun Δt exploitable ne s'accumulerait
+            // jamais, et le débit resterait bloqué à 0.
+            return ['down' => (int) $pdown, 'up' => (int) $pup, 'if' => $if];
+        }
+    }
+    // Le débit est calculé sur le temps RÉELLEMENT écoulé, jamais sur l'intervalle
+    // supposé du sondage : celui-ci dérive (ndsctl prend ~1,7 s, l'onglet peut être
+    // en arrière-plan et le navigateur ralentit alors ses minuteurs).
+    // 0644 comme les autres caches de /dev/shm, et NON 0666 : un fichier inscriptible par
+    // tous laisserait n'importe quel compte local injecter un débit fantaisiste dans la
+    // console. L'enjeu est cosmétique, mais un fichier world-writable n'a aucune raison
+    // d'exister. Seul www-data l'écrit en service ; un fichier laissé par un essai en
+    // root empêcherait l'écriture, d'où le nettoyage à l'installation (deploy.sh).
+    @file_put_contents($f, "{$now} {$rx} {$tx} {$down} {$up}");
+    return ['down' => $down, 'up' => $up, 'if' => $if];
+}
+
+/**
  * État de plusieurs unités systemd en UN SEUL appel.
  *
  * `systemctl is-active a b c` écrit exactement une ligne par unité, dans l'ordre

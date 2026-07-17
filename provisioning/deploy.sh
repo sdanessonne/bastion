@@ -373,6 +373,10 @@ chmod 440 /etc/sudoers.d/proxyfibre-secu
 echo '0 4 * * 0 root [ "$(mysql -N -B radius -e "SELECT v FROM pf_settings WHERE k=\"adblock_enabled\"" 2>/dev/null)" = "1" ] && /usr/local/sbin/proxyfibre-update-adblock enable' > /etc/cron.d/proxyfibre-adblock
 # Quotas/horaires + journalisation : custombinauth (appelé par OpenNDS binauth)
 install -m755 "${REPO_DIR}/services/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh
+# Échantillons de débit laissés par un essai en ligne de commande : appartenant à root,
+# ils empêcheraient le serveur web de les réécrire et le débit resterait figé.
+rm -f /dev/shm/pf-net-*.sample 2>/dev/null || true
+
 # Journal systemd : plafonné. Par défaut il grossit jusqu'à 10 % du disque — sur une
 # passerelle laissée des mois en service, c'est plusieurs gigaoctets pour rien.
 sed -i 's/^#\?SystemMaxUse=.*/SystemMaxUse=500M/' /etc/systemd/journald.conf 2>/dev/null || true

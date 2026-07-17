@@ -149,6 +149,42 @@ $resBlock = function (string $key, string $icon, string $label, int $pct, string
     <span class="muted small" id="resTs">en direct · mise à jour toutes les 5 s</span>
   </div>
 </section>
+
+<?php
+// Débit WAN. Premier calcul côté serveur pour que la page ne s'ouvre pas sur deux zéros ;
+// le sondage prend ensuite le relais.
+$net0 = sys_net_rate();
+?>
+<style>
+  .net-head{display:flex;gap:2.4rem;align-items:baseline;flex-wrap:wrap;padding:1.2rem 1.3rem .8rem}
+  .net-val{font-size:1.75rem;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:#fff}
+  .net-lbl{color:var(--muted);font-size:.8rem;margin-top:.25rem}
+  .net-fl{font-size:1.1rem;margin-right:.3rem}
+</style>
+<section class="panel">
+  <div class="panel-head"><h2>📶 Débit Internet</h2>
+    <span class="muted small">interface <?= e($net0['if']) ?> · en direct</span>
+  </div>
+  <div class="net-head">
+    <div>
+      <div class="net-val"><span class="net-fl" style="color:#38bdf8">▼</span><span id="netDown"><?= e(fmtBytes($net0['down'])) ?>/s</span></div>
+      <div class="net-lbl">Descendant — ce que les postes téléchargent</div>
+    </div>
+    <div>
+      <div class="net-val"><span class="net-fl" style="color:#a78bfa">▲</span><span id="netUp"><?= e(fmtBytes($net0['up'])) ?>/s</span></div>
+      <div class="net-lbl">Montant — ce qui part vers Internet</div>
+    </div>
+    <div style="margin-left:auto;text-align:right">
+      <div class="muted small" id="netPeak">crête : —</div>
+      <div class="muted small" id="netAvg">moyenne : —</div>
+    </div>
+  </div>
+  <div style="padding:0 1.3rem 1.2rem">
+    <canvas id="netChart" style="width:100%;height:96px;display:block"></canvas>
+    <span class="muted small">5 dernières minutes · <span style="color:#38bdf8">■</span> descendant
+      &nbsp;<span style="color:#a78bfa">■</span> montant</span>
+  </div>
+</section>
 <script>
 (function(){
   function col(p){return p<70?'#4ade80':(p<90?'#eab308':'#f87171');}
@@ -262,6 +298,7 @@ $resBlock = function (string $key, string $icon, string $label, int $pct, string
         animeVers(document.getElementById('kpiSeen'), d.kpi.seen, true);
         animeVers(document.getElementById('kpiDown'), d.kpi.down, true);
       }
+      if(d.net) majNet(d.net.down|0, d.net.up|0);
     }catch(e){}
   }
   async function loadHistory(){
@@ -275,7 +312,59 @@ $resBlock = function (string $key, string $icon, string $label, int $pct, string
     try{ var r=await fetch('/sessions.php',{cache:'no-store'}); if(!r.ok)return;
       var tb=document.getElementById('sessBody'); if(tb)tb.innerHTML=await r.text(); }catch(e){}
   }
-  window.addEventListener('resize',drawHist);
+  // ══════════════ Débit Internet en direct ══════════════
+  // Anneau de 60 points : à un sondage toutes les 5 s, cela fait 5 minutes — assez pour
+  // voir une pointe passer, assez court pour rester lisible.
+  var netD=[], netU=[], NET_N=60;
+  function drawNet(){
+    var c=document.getElementById('netChart'); if(!c)return;
+    var w=c.clientWidth||600, h=96;
+    // Écrans à forte densité : sans devicePixelRatio, le tracé est flou.
+    var dpr=window.devicePixelRatio||1;
+    if(c.width!==Math.round(w*dpr)){ c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); }
+    var x=c.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
+
+    // ÉCHELLE : un débit n'a pas de maximum naturel (contrairement au processeur, borné
+    // à 100 %). On s'ajuste donc sur la plus forte valeur VISIBLE, avec un plancher de
+    // 64 ko/s — sans lui, un réseau au repos afficherait le moindre paquet ARP comme un
+    // pic plein écran, ce qui serait alarmant et faux.
+    var max=65536;
+    for(var i=0;i<netD.length;i++){ if(netD[i]>max)max=netD[i]; if(netU[i]>max)max=netU[i]; }
+    max*=1.15;   // respiration : la courbe ne colle pas au bord haut
+
+    x.strokeStyle='rgba(148,163,184,.15)'; x.lineWidth=1;
+    [0.25,0.5,0.75].forEach(function(g){ x.beginPath(); x.moveTo(0,h*g); x.lineTo(w,h*g); x.stroke(); });
+    x.fillStyle='rgba(148,163,184,.55)'; x.font='10px system-ui,sans-serif'; x.textAlign='right';
+    x.fillText(fmtOctets(max)+'/s', w-2, 10);
+
+    function trace(arr,col,fill){
+      if(arr.length<2)return;
+      var n=arr.length, pas=w/(NET_N-1), x0=w-(n-1)*pas;   // ancré à DROITE : le présent est à droite
+      x.beginPath();
+      for(var i=0;i<n;i++){ var px=x0+i*pas, py=h-Math.min(1,arr[i]/max)*h*0.92;
+        i?x.lineTo(px,py):x.moveTo(px,py); }
+      x.strokeStyle=col; x.lineWidth=2; x.lineJoin='round'; x.stroke();
+      x.lineTo(x0+(n-1)*pas,h); x.lineTo(x0,h); x.closePath();
+      x.fillStyle=fill; x.fill();
+    }
+    trace(netU,'#a78bfa','rgba(167,139,250,.10)');
+    trace(netD,'#38bdf8','rgba(56,189,248,.12)');
+  }
+  function majNet(d,u){
+    netD.push(d); netU.push(u);
+    while(netD.length>NET_N){ netD.shift(); netU.shift(); }
+    var eD=document.getElementById('netDown'), eU=document.getElementById('netUp');
+    if(eD) eD.textContent=fmtOctets(d)+'/s';
+    if(eU) eU.textContent=fmtOctets(u)+'/s';
+    var crete=0, som=0;
+    for(var i=0;i<netD.length;i++){ if(netD[i]>crete)crete=netD[i]; som+=netD[i]; }
+    var p=document.getElementById('netPeak'), a=document.getElementById('netAvg');
+    if(p) p.textContent='crête : '+fmtOctets(crete)+'/s';
+    if(a) a.textContent='moyenne : '+fmtOctets(Math.round(som/Math.max(1,netD.length)))+'/s';
+    drawNet();
+  }
+
+  window.addEventListener('resize',function(){ drawHist(); drawNet(); });
   demarrer();
   loadHistory();
   setInterval(tick,5000);
