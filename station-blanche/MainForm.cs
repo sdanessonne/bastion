@@ -91,6 +91,8 @@ public sealed class MainForm : Form
         {
             if (_cfg.Kiosque && e.CloseReason == CloseReason.UserClosing && !_sortieDemandee) { e.Cancel = true; return; }
             _annule?.Cancel(); _veille?.Dispose(); _majPeriodique.Dispose();
+            // Sans cela, ~960 Mo restent retenus par le démon après la fermeture.
+            MoteurClamav.ArreterDaemon();
         };
 
         Load += async (_, _) => await DemarrerAsync();
@@ -238,6 +240,10 @@ public sealed class MainForm : Form
 
     private async Task DemarrerAsync()
     {
+        // Au plus tôt : le démon met ~35 s à charger sa base. Lancé maintenant, il sera
+        // prêt bien avant qu'un agent n'arrive avec une clé. En attendant, les analyses
+        // retombent sur clamscan — lentes, mais justes.
+        MoteurClamav.DemarrerDaemon();
         AfficherMoteur();
         _veille = new UsbWatcher(this);
         _veille.Insere += s => BeginInvoke(() => SurInsertion(s));

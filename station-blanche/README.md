@@ -149,6 +149,35 @@ plutôt que de le confondre avec une erreur technique quelconque.
 > intact. Cette exclusion se règle côté Windows — aucun logiciel ne peut la poser à votre
 > place.
 
+### Le démon : 274 ms au lieu de 35 secondes
+
+**Mesuré**, base réelle (3 627 917 signatures, 107 Mo) :
+
+| | Par analyse |
+|---|---|
+| `clamscan` | **34 907 / 35 690 / 35 754 ms** |
+| `clamdscan` (démon) | **48 / 50 ms** — 274 ms à travers la station |
+
+Ces 35 secondes ne sont **pas** le temps d'analyse : le dossier testé contenait 74 octets.
+C'est le chargement de la base, repayé intégralement à **chaque lancement du processus**.
+Sur une borne, l'agent aurait attendu 35 s à chaque clé insérée.
+
+La station lance donc `clamd` à son démarrage. Il charge la base une fois et la garde :
+**prêt en 13 s**, sans personne devant l'écran, pour ~960 Mo de mémoire retenue. Prévoir
+**2 Go de RAM** minimum sur le poste.
+
+Tant que le démon charge, les analyses retombent sur `clamscan` — lentes, mais justes. Un
+démon injoignable n'est jamais pris pour un « rien trouvé » : ce serait un feu vert sur une
+clé que personne n'a regardée.
+
+Le démon écoute sur **127.0.0.1:3311**, jamais sur le réseau : il obéit sans authentifier.
+Le port 3311 et non 3310 (le défaut) pour ne pas prendre la place d'un `clamd` déjà en
+service sur le poste — et pour ne pas dépendre de sa base, qui n'est pas celle de Bastion.
+
+Après chaque mise à jour, la station force `clamdscan --reload` : le démon tient sa base en
+mémoire et continuerait sinon à analyser avec les signatures d'avant, pendant que l'écran
+afficherait fièrement la date de la nouvelle.
+
 ### Installer ClamAV sur la station
 
 ```powershell

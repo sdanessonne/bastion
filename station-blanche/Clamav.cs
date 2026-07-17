@@ -24,6 +24,16 @@ public sealed class MoteurClamav : IMoteur
 
     public string Nom => "ClamAV";
 
+    /// <summary>
+    /// Port du démon, sur la boucle locale uniquement.
+    ///
+    /// 3311 et non 3310 (le port par défaut) : si le site fait déjà tourner un clamd, on ne
+    /// lui prend pas sa place et on ne dépend pas de sa base — la nôtre vient de Bastion.
+    /// </summary>
+    private const int PortDaemon = 3311;
+
+    private static Process? _daemon;
+
     private static readonly string[] Emplacements =
     {
         @"C:\Program Files\ClamAV\clamscan.exe",
@@ -80,6 +90,97 @@ public sealed class MoteurClamav : IMoteur
                 .Any(f => Extensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
         }
         catch { return false; }
+    }
+
+    /// <summary>Chemin d'un binaire ClamAV voisin de clamscan.exe (clamd, clamdscan).</summary>
+    private static string? Voisin(string nom)
+    {
+        var exe = TrouverExe();
+        if (exe == null) return null;
+        var p = Path.Combine(Path.GetDirectoryName(exe)!, nom);
+        return File.Exists(p) ? p : null;
+    }
+
+    /// <summary>
+    /// Lance le démon d'analyse et rend la main aussitôt.
+    ///
+    /// ── POURQUOI UN DÉMON, ET PAS clamscan ──────────────────────────────────────
+    /// MESURÉ, base réelle (3,6 millions de signatures, 107 Mo) :
+    ///     clamscan   : 34 907 / 35 690 / 35 754 ms  ← à CHAQUE analyse
+    ///     clamdscan  :    338 /     48 /     50 ms
+    /// Ces 35 secondes ne sont pas le temps d'analyse — le dossier testé ne contenait que
+    /// 74 octets. C'est le chargement de la base, repayé à chaque lancement du processus.
+    /// Sur une borne, l'agent aurait attendu 35 s à chaque clé insérée. Le démon la charge
+    /// une fois et la garde : 700 fois plus rapide, pour ~960 Mo de mémoire retenue.
+    ///
+    /// Le chargement prend ces mêmes 35 s au démarrage de la station — sans agent devant
+    /// l'écran. Tant qu'il dure, les analyses retombent sur clamscan : lentes, mais justes.
+    /// </summary>
+    public static void DemarrerDaemon()
+    {
+        var exe = Voisin("clamd.exe");
+        if (exe == null || _daemon is { HasExited: false }) return;
+        try
+        {
+            var conf = Path.Combine(DossierBase, "..", "clamd.conf");
+            conf = Path.GetFullPath(conf);
+            File.WriteAllText(conf, string.Join("\n", new[]
+            {
+                "DatabaseDirectory " + DossierBase,
+                "TCPSocket " + PortDaemon,
+                "TCPAddr 127.0.0.1",           // jamais exposé au réseau : le démon obéit sans authentifier
+                "MaxThreads 4",
+                "Foreground yes",              // sinon il se détache et on ne peut plus l'arrêter
+                "SelfCheck 300",               // relit la base quand elle change : la MAJ est prise en compte
+                "ExitOnOOM yes",
+            }));
+            _daemon = Process.Start(new ProcessStartInfo(exe, $"--config-file=\"{conf}\"")
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true,
+            });
+            // Il faut vider les tuyaux, sinon le démon se bloque une fois le tampon plein.
+            _daemon?.BeginOutputReadLine();
+            _daemon?.BeginErrorReadLine();
+            if (_daemon != null) { _daemon.OutputDataReceived += (_, _) => { }; _daemon.ErrorDataReceived += (_, _) => { }; }
+        }
+        catch { _daemon = null; /* on se rabattra sur clamscan */ }
+    }
+
+    /// <summary>
+    /// Attend que le démon réponde. Sert au banc de mesure ; l'interface, elle, n'attend
+    /// pas — elle se rabat sur clamscan tant que le démon charge.
+    /// </summary>
+    public static async Task<bool> AttendreDaemonAsync(TimeSpan delai, CancellationToken jeton)
+    {
+        var fin = DateTime.UtcNow + delai;
+        while (DateTime.UtcNow < fin && !jeton.IsCancellationRequested)
+        {
+            if (_daemon is null or { HasExited: true }) return false;
+            try
+            {
+                using var c = new System.Net.Sockets.TcpClient();
+                await c.ConnectAsync("127.0.0.1", PortDaemon, jeton);
+                // Le port s'ouvre AVANT la fin du chargement : clamd écoute puis charge.
+                // Se fier au port seul déclarerait « prêt » un démon qui refuse encore
+                // toute analyse. PING/PONG est le seul aveu fiable qu'il est opérationnel.
+                using var f = c.GetStream();
+                await f.WriteAsync("zPING\0"u8.ToArray(), jeton);
+                var buf = new byte[16];
+                var n = await f.ReadAsync(buf, jeton);
+                if (n > 0 && System.Text.Encoding.ASCII.GetString(buf, 0, n).StartsWith("PONG")) return true;
+            }
+            catch { /* pas encore là */ }
+            await Task.Delay(500, jeton);
+        }
+        return false;
+    }
+
+    /// <summary>Arrête le démon. Sans cela, 960 Mo restent retenus après la fermeture.</summary>
+    public static void ArreterDaemon()
+    {
+        try { if (_daemon is { HasExited: false }) _daemon.Kill(true); } catch { }
+        _daemon = null;
     }
 
     public static string? TrouverExe()
@@ -163,19 +264,34 @@ public sealed class MoteurClamav : IMoteur
 
         // ── ARGUMENTS ────────────────────────────────────────────────────────────────
         // JAMAIS « --remove », « --move » ni « --copy » : une clé peut être un scellé, et
-        // la station CONSTATE, elle ne corrige pas. clamscan ne touche à rien par défaut ;
-        // ces options sont la seule façon de le faire écrire sur le support, et elles ne
-        // doivent jamais apparaître ici.
-        var args = new StringBuilder();
-        args.Append("--database=").Append('"').Append(DossierBase).Append('"');
-        args.Append(" --recursive --infected --stdout");
-        args.Append(" --max-filesize=2000M --max-scansize=0 --max-files=0");   // 0 = sans limite
-        args.Append(" --alert-encrypted=yes");   // une archive chiffrée est signalée, pas ignorée
-        args.Append(' ').Append('"').Append(chemin.TrimEnd('\\')).Append('"');
+        // la station CONSTATE, elle ne corrige pas. Les moteurs ne touchent à rien par
+        // défaut ; ces options sont la seule façon de les faire écrire sur le support, et
+        // elles ne doivent jamais apparaître ici.
+        var cible = '"' + chemin.TrimEnd('\\') + '"';
 
         try
         {
-            var (sortie, code) = await ExecuterAsync(exe, args.ToString(), jeton);
+            string sortie; int code;
+
+            // Le démon d'abord : 48 ms contre 35 s. Voir DemarrerDaemon().
+            var viaDaemon = await AnalyserParDaemonAsync(cible, jeton);
+            if (viaDaemon.HasValue)
+            {
+                (sortie, code) = viaDaemon.Value;
+            }
+            else
+            {
+                // Démon absent, ou encore en train de charger sa base : on analyse quand
+                // même, en payant les 35 secondes. Lent, mais juste — et bien préférable à
+                // ne rien dire à l'agent.
+                var args = new StringBuilder();
+                args.Append("--database=").Append('"').Append(DossierBase).Append('"');
+                args.Append(" --recursive --infected --stdout");
+                args.Append(" --max-filesize=2000M --max-scansize=0 --max-files=0");   // 0 = sans limite
+                args.Append(" --alert-encrypted=yes");   // une archive chiffrée est signalée, pas ignorée
+                args.Append(' ').Append(cible);
+                (sortie, code) = await ExecuterAsync(exe, args.ToString(), jeton);
+            }
             var menaces = LireMenaces(sortie);
 
             // ── CODES DE RETOUR ──────────────────────────────────────────────────────
@@ -208,6 +324,34 @@ public sealed class MoteurClamav : IMoteur
         {
             return new Resultat(false, 0, Array.Empty<Menace>(), debut.Elapsed, "", "ClamAV : " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Analyse par le démon. Rend null s'il n'a pas pu être joint — à l'appelant de se
+    /// rabattre sur clamscan.
+    ///
+    /// clamdscan rend les mêmes lignes « fichier: Signature FOUND » et les mêmes codes que
+    /// clamscan (0 = rien, 1 = menace, 2 = erreur) : l'analyse de sortie est commune.
+    /// </summary>
+    private static async Task<(string, int)?> AnalyserParDaemonAsync(string cible, CancellationToken jeton)
+    {
+        var exe = Voisin("clamdscan.exe");
+        var conf = Path.GetFullPath(Path.Combine(DossierBase, "..", "clamd.conf"));
+        if (exe == null || _daemon is null or { HasExited: true } || !File.Exists(conf)) return null;
+
+        // « --fdpass » n'existe pas sous Windows : le démon ouvre le fichier lui-même. Il
+        // tourne sous le même compte que la station, il a donc les mêmes accès au support.
+        var (sortie, code) = await ExecuterAsync(exe,
+            $"--config-file=\"{conf}\" --multiscan --infected --stdout {cible}", jeton);
+
+        // Démon injoignable (encore en train de charger sa base, ou mort) : ce n'est PAS un
+        // résultat d'analyse. Le confondre avec « rien trouvé » donnerait un feu vert sur
+        // une clé que personne n'a regardée.
+        if (Regex.IsMatch(sortie, @"Could not connect|ERROR: Can't (?:connect|access)|connect\(\) error",
+                RegexOptions.IgnoreCase))
+            return null;
+
+        return (sortie, code);
     }
 
     /// <summary>« C:\chemin\fichier: Win.Test.EICAR_HDB-1 FOUND »</summary>
@@ -263,7 +407,20 @@ public sealed class MoteurClamav : IMoteur
     public async Task<(bool ok, string message)> MettreAJourAsync(CancellationToken jeton)
     {
         if (TrouverExe() == null) return (false, "ClamAV n'est pas installé sur ce poste.");
-        return await _api.SynchroniserBaseAsync(DossierBase, jeton);
+        var r = await _api.SynchroniserBaseAsync(DossierBase, jeton);
+
+        // Le démon tient sa base EN MÉMOIRE : sans relecture, il continuerait d'analyser
+        // avec les signatures d'avant la mise à jour — et la station afficherait fièrement
+        // une date de base qu'elle n'utilise pas. « SelfCheck » finirait par le faire seul,
+        // mais jusqu'à cinq minutes plus tard.
+        if (r.ok && _daemon is { HasExited: false })
+        {
+            var exe = Voisin("clamdscan.exe");
+            var conf = Path.GetFullPath(Path.Combine(DossierBase, "..", "clamd.conf"));
+            if (exe != null && File.Exists(conf))
+                try { await ExecuterAsync(exe, $"--config-file=\"{conf}\" --reload", jeton); } catch { }
+        }
+        return r;
     }
 
     private static string Executer(string exe, string args, TimeSpan delai)

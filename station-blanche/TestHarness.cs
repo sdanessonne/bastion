@@ -19,6 +19,17 @@ public static class TestHarness
         Console.WriteLine($"PASSERELLE {(cfg.RemonteeActive ? cfg.Passerelle : "(non configuree)")}");
         Console.WriteLine($"BASE CLAMAV {MoteurClamav.DossierBase}");
 
+        // « --daemon » lance clamd et attend qu'il ait chargé sa base : c'est le seul moyen
+        // de mesurer le chemin rapide sans interface. Sans ce drapeau, le banc analyse par
+        // clamscan — utile aussi, c'est le repli.
+        if (a.Contains("--daemon"))
+        {
+            var t0 = System.Diagnostics.Stopwatch.StartNew();
+            MoteurClamav.DemarrerDaemon();
+            var pret = await MoteurClamav.AttendreDaemonAsync(TimeSpan.FromMinutes(2), CancellationToken.None);
+            Console.WriteLine($"DAEMON pret={pret} apres {t0.Elapsed.TotalSeconds:F1}s");
+        }
+
         if (a.Contains("--maj"))
         {
             foreach (var m in moteurs.Where(m => m.LireEtat().Present))
