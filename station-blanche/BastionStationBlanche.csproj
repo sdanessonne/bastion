@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- .NET 8 : version à support long (LTS), maintenue jusqu'en novembre 2026 et
+         au-delà. La 9 est une version courte (STS) : inadaptée à un poste de service
+         qu'on ne remet pas à jour tous les six mois. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <AssemblyName>BastionStationBlanche</AssemblyName>
+    <RootNamespace>Bastion.StationBlanche</RootNamespace>
+    <Product>Bastion — Station blanche</Product>
+    <Company>Mickaël MONESTIER</Company>
+    <Copyright>© 2026 Mickaël MONESTIER — Tous droits réservés</Copyright>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <!-- Un SEUL fichier .exe, sans runtime .NET à installer sur le poste : une station
+         blanche est souvent un poste isolé, sans droits d'installation ni accès Internet.
+         Elle doit démarrer sur un simple copier-coller. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- PAS de trimming : il retire du code jugé inutilisé par analyse statique, et
+         casse la sérialisation JSON par réflexion utilisée pour l'API. Le gain de taille
+         ne vaut pas une panne à l'exécution, impossible à voir à la compilation. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+</Project>

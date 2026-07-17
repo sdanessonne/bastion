@@ -28,3 +28,12 @@ services/tftp/ipxe-build/
 *.tmp
 .DS_Store
 Thumbs.db
+
+# ── ARTEFACTS DE COMPILATION .NET ────────────────────────────────────────────
+# bin/ et publish/ pèsent ~70 Mo par build et se régénèrent d'une commande. Les
+# versionner gonfle le dépôt à chaque compilation, et GitHub refuse au-delà de 100 Mo
+# par fichier.
+[Bb]in/
+[Oo]bj/
+publish/
+*.user
