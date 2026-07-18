@@ -134,6 +134,14 @@ systemctl daemon-reload
 systemctl enable proxyfibre-issue.service >/dev/null 2>&1 || true
 /usr/local/sbin/proxyfibre-issue || true
 
+# Démarrage aux couleurs du produit : menu d'amorçage masqué, amorçage silencieux.
+# « || true » : un échec de mise en forme de l'amorçage ne doit pas interrompre le
+# déploiement d'une passerelle qui, elle, fonctionne. Retour arrière possible avec
+# « proxyfibre-brand --defaire ».
+install -D -m755 "${REPO_DIR}/services/scripts/boot-brand.sh" /usr/local/sbin/proxyfibre-brand
+/usr/local/sbin/proxyfibre-brand >/dev/null 2>&1 || \
+    echo "  (mise en forme de l'amorçage ignorée — lancez proxyfibre-brand à la main)"
+
 /usr/local/sbin/proxyfibre-netguard apply
 # Persistance au reboot. Au démarrage, OpenNDS n'a pas encore confirmé : le garde
 # pose le repli, donc le LAN reste fermé tant que le portail n'est pas opérationnel.
