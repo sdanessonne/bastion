@@ -26,7 +26,13 @@
 set -eu
 
 ASCII=0
-[ "${1:-}" = "--ascii" ] && ASCII=1
+MODE=issue
+for arg in "$@"; do
+    case "$arg" in
+        --ascii)  ASCII=1 ;;
+        --splash) MODE=splash ;;
+    esac
+done
 
 # /etc/issue appartient à root. Sans ce contrôle, « set -e » ferait sortir le script sur un
 # échec de mktemp, sans rien dire — et l'exploitant chercherait pourquoi son écran n'a pas
@@ -51,9 +57,11 @@ GRIS="${E}[90m"
 JAUNE="${E}[93m"
 NORM="${E}[0m"
 
-TMP=$(mktemp /etc/issue.XXXXXX)
-# Le fichier est lu par agetty, qui tourne en root : 644 suffit et reste lisible.
-chmod 644 "$TMP"
+if [ "$MODE" = issue ]; then
+    TMP=$(mktemp /etc/issue.XXXXXX)
+    # Le fichier est lu par agetty, qui tourne en root : 644 suffit et reste lisible.
+    chmod 644 "$TMP"
+fi
 
 if [ "$ASCII" -eq 1 ]; then
     # En repli, TOUT passe en ASCII : une police qui ne rend pas les blocs ne rendra pas
@@ -96,14 +104,42 @@ else
     NOM_6='╚═════╝ ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝'
 fi
 
+# Le logo est défini UNE fois et sert aux deux écrans : celui du démarrage et celui de la
+# connexion. Deux copies finiraient par diverger, et la passerelle afficherait deux
+# marques différentes en dix secondes.
+logo() {
+    printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_1" "$NORM" "$BLANC" "$NOM_1" "$NORM"
+    printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_2" "$NORM" "$BLANC" "$NOM_2" "$NORM"
+    printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_3" "$NORM" "$BLANC" "$NOM_3" "$NORM"
+    printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_4" "$NORM" "$BLANC" "$NOM_4" "$NORM"
+    printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_5" "$NORM" "$BLANC" "$NOM_5" "$NORM"
+    printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_6" "$NORM" "$BLANC" "$NOM_6" "$NORM"
+}
+
+# ── ÉCRAN DE DÉMARRAGE ───────────────────────────────────────────────────────
+# Affiché sur la console dès le début du démarrage. Le reste de l'amorçage étant
+# silencieux (voir proxyfibre-brand), le logo RESTE à l'écran jusqu'à ce qu'agetty
+# affiche l'écran de connexion : l'utilisateur ne voit jamais de console vide.
+if [ "$MODE" = splash ]; then
+    ECRAN=/dev/tty1
+    [ -w "$ECRAN" ] || ECRAN=/dev/console
+    [ -w "$ECRAN" ] || exit 0      # ni l'un ni l'autre : un logo n'a jamais bloqué un démarrage
+    {
+        printf '%s[2J%s[H' "$E" "$E"     # efface l'écran et remonte en haut
+        printf '\n\n'
+        logo
+        printf '\n'
+        printf '  %sContrôle d'\''accès au réseau %s Passerelle de sécurité%s\n' "$GRIS" "$PUCE" "$NORM"
+        printf '\n'
+        printf '  %sDémarrage en cours…%s\n' "$BLEU" "$NORM"
+        printf '%s' "$NORM"
+    } > "$ECRAN" 2>/dev/null || true
+    exit 0
+fi
+
 {
 printf '\n'
-printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_1" "$NORM" "$BLANC" "$NOM_1" "$NORM"
-printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_2" "$NORM" "$BLANC" "$NOM_2" "$NORM"
-printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_3" "$NORM" "$BLANC" "$NOM_3" "$NORM"
-printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_4" "$NORM" "$BLANC" "$NOM_4" "$NORM"
-printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_5" "$NORM" "$BLANC" "$NOM_5" "$NORM"
-printf '  %s%s%s   %s%s%s\n' "$BLEU" "$ECU_6" "$NORM" "$BLANC" "$NOM_6" "$NORM"
+logo
 printf '\n'
 printf '  %sContrôle d'\''accès au réseau %s Passerelle de sécurité%s\n' "$GRIS" "$PUCE" "$NORM"
 printf '  %s%s%s\n' "$GRIS" "$SEP" "$NORM"

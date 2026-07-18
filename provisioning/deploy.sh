@@ -130,8 +130,31 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 UNIT
+cat > /etc/systemd/system/proxyfibre-splash.service <<'UNIT'
+[Unit]
+Description=Bastion - logo au demarrage
+# Au plus tôt : le logo doit apparaître avant que les services ne démarrent, sinon
+# l'utilisateur regarde un écran noir pendant tout l'amorçage.
+DefaultDependencies=no
+After=systemd-vconsole-setup.service
+Before=sysinit.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+# Le « - » ignore un échec : un logo ne doit JAMAIS empêcher une passerelle de
+# sécurité de démarrer. Le délai borné vaut pour la même raison.
+ExecStart=-/usr/local/sbin/proxyfibre-issue --splash
+TimeoutStartSec=5
+RemainAfterExit=no
+
+[Install]
+WantedBy=sysinit.target
+UNIT
 systemctl daemon-reload
 systemctl enable proxyfibre-issue.service >/dev/null 2>&1 || true
+systemctl enable proxyfibre-splash.service >/dev/null 2>&1 || true
 /usr/local/sbin/proxyfibre-issue || true
 
 # Démarrage aux couleurs du produit : menu d'amorçage masqué, amorçage silencieux.
