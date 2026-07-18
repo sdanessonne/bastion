@@ -110,6 +110,30 @@ LAN_CIDR="${LAN_CIDR}"
 AD_DNS_IP="${AD_DNS_IP:-192.168.182.2}"
 ENV
 chmod 644 /etc/proxyfibre/net.env
+
+# ── Bannière de la console locale ────────────────────────────────────────────
+# L'écran affiché avant le prompt de connexion sur les consoles physiques. Posé ICI,
+# après net.env, dont il lit les noms d'interfaces.
+install -D -m755 "${REPO_DIR}/services/scripts/issue-banner.sh" /usr/local/sbin/proxyfibre-issue
+cat > /etc/systemd/system/proxyfibre-issue.service <<'UNIT'
+[Unit]
+Description=Bastion - banniere de la console locale
+# Après le réseau : les noms d'interfaces doivent être stabilisés quand on écrit
+# la bannière. Les ADRESSES, elles, sont relues par agetty à chaque affichage.
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proxyfibre-issue
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable proxyfibre-issue.service >/dev/null 2>&1 || true
+/usr/local/sbin/proxyfibre-issue || true
+
 /usr/local/sbin/proxyfibre-netguard apply
 # Persistance au reboot. Au démarrage, OpenNDS n'a pas encore confirmé : le garde
 # pose le repli, donc le LAN reste fermé tant que le portail n'est pas opérationnel.
