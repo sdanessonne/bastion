@@ -26,12 +26,24 @@ REPO_DIR=/home/proxyfibre/proxyFibre
 UNIT=proxyfibre-selfupdate
 STATE_DIR=/var/lib/proxyfibre
 LAST="$STATE_DIR/git-last-apply"
+# Progression pour la jauge de la console : un fichier « pct|libellé » que « _apply » et
+# « _check » écrivent à chaque étape, et que « state » relit. La jauge suit donc le travail
+# RÉELLEMENT accompli (récupération, vérification, déploiement…) — elle ne défile pas toute
+# seule pour faire joli.
+PROGRESS="$STATE_DIR/git-progress"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 GIT_REPO=""; GIT_BRANCH="main"; GIT_TOKEN=""
 [ -r "$CONF" ] && . "$CONF"
 
 json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/ /g'; }
+
+# Marque une étape : écrit la progression pour la jauge ET l'affiche dans le journal (le
+# « --- libellé --- » que l'administrateur voit défiler reste là, la jauge s'ajoute).
+etape() {
+    printf '%s|%s\n' "$1" "$2" > "$PROGRESS" 2>/dev/null || true
+    echo "--- $2 ---"
+}
 
 # Le jeton est passé par un « credential helper » éphémère plutôt que collé dans
 # l'URL : il ne touche ni .git/config, ni les journaux, ni « git remote -v ».
@@ -85,13 +97,23 @@ case "${1:-}" in
                 sujet=$(git -C "$REPO_DIR" log -1 --pretty=%s "origin/${GIT_BRANCH}" 2>/dev/null)
             fi
         fi
-        printf '{"pret":%s,"clone":%s,"en_cours":%s,"repo":"%s","branche":"%s","jeton":%s,"local":"%s","distant":"%s","retard":%s,"sujet":"%s","date":"%s","derniere_maj":%s}\n' \
+        # Progression courante, pour la jauge. Fichier « pct|libellé » ; on borne le
+        # pourcentage à un entier de 0 à 100 et on échappe le libellé comme le reste.
+        prog_pct=0; prog_lib=""
+        if [ -r "$PROGRESS" ]; then
+            _l=$(cat "$PROGRESS" 2>/dev/null)
+            prog_pct=${_l%%|*}; prog_lib=${_l#*|}
+            case "$prog_pct" in ''|*[!0-9]*) prog_pct=0 ;; esac
+            [ "$prog_pct" -gt 100 ] 2>/dev/null && prog_pct=100
+        fi
+        printf '{"pret":%s,"clone":%s,"en_cours":%s,"repo":"%s","branche":"%s","jeton":%s,"local":"%s","distant":"%s","retard":%s,"sujet":"%s","date":"%s","derniere_maj":%s,"progres":%s,"etape":"%s"}\n' \
             "$pret" "$clone" "$actif" \
             "$(json_escape "$GIT_REPO")" "$(json_escape "$GIT_BRANCH")" \
             "$([ -n "$GIT_TOKEN" ] && echo true || echo false)" \
             "$(json_escape "${local_c:-}")" "$(json_escape "${remote_c:-}")" "${retard:-0}" \
             "$(json_escape "${sujet:-}")" "$(json_escape "${date_c:-}")" \
-            "$(cat "$LAST" 2>/dev/null || echo 0)"
+            "$(cat "$LAST" 2>/dev/null || echo 0)" \
+            "${prog_pct:-0}" "$(json_escape "${prog_lib:-}")"
         ;;
 
     check|apply)
@@ -108,6 +130,7 @@ case "${1:-}" in
     # ── Exécutés DANS l'unité transitoire ; non autorisés par sudo ────────────
     _check)
         git_env
+        printf '40|Recherche de mises à jour\n' > "$PROGRESS" 2>/dev/null || true
         if [ ! -d "$REPO_DIR/.git" ]; then
             # Premier rattachement : le dossier existe déjà et n'est pas vide, donc
             # « git clone » refuserait. On initialise sur place et on aligne le contenu
@@ -137,12 +160,13 @@ case "${1:-}" in
 
     _apply)
         git_env
+        printf '5|Démarrage\n' > "$PROGRESS" 2>/dev/null || true
         echo "=== Mise à jour de Bastion — $(date '+%d/%m/%Y %H:%M:%S') ==="
         [ -d "$REPO_DIR/.git" ] || { echo "ECHEC: dépôt non rattaché — lancez d'abord une recherche."; exit 1; }
         git -C "$REPO_DIR" fetch --prune origin "$GIT_BRANCH" 2>&1 || { echo "ECHEC: dépôt injoignable"; exit 1; }
 
         avant=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "-")
-        echo "--- Récupération du code ---"
+        etape 15 "Récupération du code"
         # « reset --hard » et non « pull » : le dépôt fait autorité, et une modification
         # locale accidentelle sur la passerelle bloquerait un merge en plein milieu d'une
         # mise à jour. On aligne franchement.
@@ -160,7 +184,7 @@ case "${1:-}" in
         # console (ad.php, apps.php, sauvegarde.php…) et l'intégralité de l'intranet.
         # L'administrateur a vu ses menus tomber en erreur et a cru avoir perdu ses droits.
         # On refuse donc de synchroniser depuis un dépôt qui ne ressemble pas à Bastion.
-        echo "--- Vérification du dépôt ---"
+        etape 35 "Vérification du dépôt"
         for f in admin/index.php admin/inc/layout.php admin/inc/config.php portal/fas.php; do
             [ -f "$REPO_DIR/$f" ] || {
                 echo "ECHEC: ce dépôt ne ressemble pas à Bastion ($f manquant)."
@@ -198,7 +222,7 @@ case "${1:-}" in
         fi
         echo "  dépôt cohérent (${n} pages, ${sup} fichier(s) obsolète(s) à retirer)"
 
-        echo "--- Déploiement du code ---"
+        etape 60 "Déploiement du code"
         # Console et portail. Les uploads de l'intranet vivent dans l'arborescence web
         # et ne sont PAS dans le dépôt : --delete les effacerait.
         rsync -a --delete --exclude='inc/config.local.php' "$REPO_DIR/admin/"  /var/www/admin/  2>&1 | tail -2
@@ -208,6 +232,7 @@ case "${1:-}" in
         chmod 640 /var/www/admin/watchdog.php /var/www/admin/logseal.php 2>/dev/null
         echo "  console + portail synchronisés"
 
+        etape 85 "Installation des scripts et rechargement"
         # Scripts privilégiés : le nom d'installation ne suit pas celui du fichier.
         for s in netguard qos apt selfupdate; do
             case "$s" in
@@ -229,7 +254,7 @@ case "${1:-}" in
         systemctl reload apache2 2>/dev/null && echo "  serveur web rechargé"
 
         date +%s > "$LAST"
-        echo "--- Terminé ---"
+        etape 100 "Terminé"
         git -C "$REPO_DIR" log -1 --pretty='  version %h — %s (%cr)' 2>/dev/null
         ;;
 

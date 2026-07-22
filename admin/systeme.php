@@ -536,19 +536,32 @@ $gRetard = (int) ($git['retard'] ?? 0);
   });
 })();
 (function(){
-  var j=document.getElementById('gitJauge'), lg=document.getElementById('gitLog');
+  var j=document.getElementById('gitJauge'), lg=document.getElementById('gitLog'),
+      fill=document.getElementById('gitFill'), ph=document.getElementById('gitPhase');
   if(!j) return;
-  var vu=false, t=setInterval(async function(){
+  var vu=false, pct=0, t=setInterval(async function(){
     try{
       var r=await fetch('systeme.php?apt=gitstate',{cache:'no-store'}); if(!r.ok)return;
       var s=await r.json();
       if(s.en_cours){
         vu=true; j.hidden=false; lg.hidden=false;
+        // La jauge n'AVANCE que : une étape franchie ne revient jamais en arrière, même si
+        // deux sondages se croisent. Le pourcentage vient des étapes réelles du script.
+        var np = Math.max(pct, Math.min(100, parseInt(s.progres,10)||0));
+        pct = np;
+        if(fill) fill.style.width = pct + '%';
+        if(ph) ph.textContent = (s.etape || 'Opération en cours…') + ' — ' + pct + ' %';
         var lr=await fetch('systeme.php?apt=gitlog',{cache:'no-store'});
         if(lr.ok){ var d=await lr.json(); lg.textContent=d.log||'(démarrage…)'; lg.scrollTop=lg.scrollHeight; }
-      } else if(vu){ clearInterval(t); location.reload(); }
+      } else if(vu){
+        // Fin de l'opération : on remplit la barre avant de recharger, pour que l'œil voie
+        // qu'elle est allée au bout plutôt que de disparaître à mi-course.
+        if(fill) fill.style.width='100%';
+        if(ph) ph.textContent='Terminé — 100 %';
+        clearInterval(t); setTimeout(function(){ location.reload(); }, 700);
+      }
     }catch(e){}
-  }, 2000);
+  }, 1500);
 })();
 </script>
 
