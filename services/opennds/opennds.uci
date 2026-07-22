@@ -32,6 +32,11 @@ config opennds 'ndsconfig'
 	list users_to_router 'allow tcp port 53'
 	list users_to_router 'allow udp port 53'
 	list users_to_router 'allow udp port 67'
+	# NTP (123) : un poste du domaine doit pouvoir synchroniser son heure AVANT toute
+	# authentification au portail — sinon son horloge dérive, Kerberos échoue (écart > 5 min)
+	# et plus aucune GPO ne s'applique. Même famille que le DNS et le DHCP : service
+	# d'infrastructure nécessaire en amont de l'accès Internet.
+	list users_to_router 'allow udp port 123'
 	list users_to_router 'allow tcp port 2050'
 	list users_to_router 'allow tcp port 2080'
 	list users_to_router 'allow tcp port 2443'

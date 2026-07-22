@@ -266,10 +266,21 @@ return [
         'desc'=>"Désactive la résolution de noms LLMNR (souvent exploitée pour le vol d'identifiants).",
         'policies'=>[['keyname'=>'Software\\Policies\\Microsoft\\Windows NT\\DNSClient','valuename'=>'EnableMulticast','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
     'ntp' => ['cat'=>'Réseau','title'=>"Synchronisation de l'heure (NTP passerelle)",'icon'=>'🕰️','scope'=>'Ordinateur',
-        'desc'=>"Configure le client de temps Windows sur le serveur NTP de la passerelle Bastion.",
+        'desc'=>"Configure ET ACTIVE le client de temps Windows sur le serveur NTP de la passerelle. Indispensable au domaine : Kerberos refuse toute authentification si l'horloge du poste s'écarte de plus de 5 minutes de celle du contrôleur — les lecteurs réseau et les GPO cessent alors de s'appliquer (erreur « Fonction incorrecte »).",
         'policies'=>[
-            ['keyname'=>'Software\\Policies\\Microsoft\\W32time\\Parameters','valuename'=>'NtpServer','class'=>'MACHINE','type'=>'REG_SZ','data'=>'192.168.182.1,0x9'],
-            ['keyname'=>'Software\\Policies\\Microsoft\\W32time\\Parameters','valuename'=>'Type','class'=>'MACHINE','type'=>'REG_SZ','data'=>'NTP'],
+            // « Configure Windows NTP Client » : serveur + mode.
+            ['keyname'=>'Software\\Policies\\Microsoft\\W32Time\\Parameters','valuename'=>'NtpServer','class'=>'MACHINE','type'=>'REG_SZ','data'=>'192.168.182.1,0x9'],
+            ['keyname'=>'Software\\Policies\\Microsoft\\W32Time\\Parameters','valuename'=>'Type','class'=>'MACHINE','type'=>'REG_SZ','data'=>'NTP'],
+            // « Enable Windows NTP Client » : SANS cette clé, le serveur configuré ci-dessus
+            // n'est pas interrogé — le client de temps reste inactif. C'était le manque.
+            ['keyname'=>'Software\\Policies\\Microsoft\\W32Time\\TimeProviders\\NtpClient','valuename'=>'Enabled','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1],
+            // Intervalle référencé par le drapeau « 0x9 » du serveur : interrogation horaire.
+            ['keyname'=>'Software\\Policies\\Microsoft\\W32Time\\TimeProviders\\NtpClient','valuename'=>'SpecialPollInterval','class'=>'MACHINE','type'=>'REG_DWORD','data'=>3600],
+            // Corriger l'heure MÊME sur un grand écart : une VM figée puis relancée peut
+            // avoir dérivé de plusieurs heures ; par défaut Windows refuse de corriger au-delà
+            // d'un certain seuil, et l'horloge resterait fausse. 0xFFFFFFFF = corriger toujours.
+            ['keyname'=>'Software\\Policies\\Microsoft\\W32Time\\Config','valuename'=>'MaxPosPhaseCorrection','class'=>'MACHINE','type'=>'REG_DWORD','data'=>4294967295],
+            ['keyname'=>'Software\\Policies\\Microsoft\\W32Time\\Config','valuename'=>'MaxNegPhaseCorrection','class'=>'MACHINE','type'=>'REG_DWORD','data'=>4294967295],
         ]],
 
     // ═══ Windows Update (Ordinateur) ════════════════════════════════════════
