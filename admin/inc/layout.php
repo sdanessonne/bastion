@@ -69,6 +69,9 @@ function pf_header(string $title, string $active = ''): void {
                     text-decoration:none;font-size:.88rem}
     .usermenu-pop a:hover{background:var(--panel2)}
     .usermenu-pop a.mi-logout{color:var(--danger)}
+    .usermenu-pop a.mi-warn{color:#eab308}
+    .usermenu-pop a.mi-danger{color:var(--danger)}
+    .usermenu-sep{height:1px;background:var(--line);margin:.4rem .3rem}
     .usermenu-pop .ico{width:1.2rem;text-align:center}
     @media (max-width:640px){.uname{display:none}}
   </style>
@@ -122,7 +125,11 @@ function pf_header(string $title, string $active = ''): void {
           <div class="usermenu-hd"><span class="uavatar sm"><?= e(strtoupper(substr($admin, 0, 1))) ?></span>
             <div><strong><?= e($admin) ?></strong><br><small class="muted">Administrateur</small></div></div>
           <a href="/profil.php" role="menuitem"><span class="ico">👤</span>Mon profil &amp; sécurité</a>
-          <a href="/logout.php" role="menuitem" class="mi-logout"><span class="ico">⏻</span>Se déconnecter</a>
+          <div class="usermenu-sep"></div>
+          <a href="/power.php?a=reboot" role="menuitem" class="mi-warn"><span class="ico">🔄</span>Redémarrer le serveur</a>
+          <a href="/power.php?a=shutdown" role="menuitem" class="mi-danger"><span class="ico">⏻</span>Arrêter le serveur</a>
+          <div class="usermenu-sep"></div>
+          <a href="/logout.php" role="menuitem" class="mi-logout"><span class="ico">🚪</span>Se déconnecter</a>
         </div>
       </div>
     </header>

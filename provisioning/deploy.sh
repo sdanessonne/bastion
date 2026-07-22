@@ -378,6 +378,8 @@ install -m755 "${REPO_DIR}/services/scripts/selfupdate.sh"  /usr/local/sbin/prox
 install -m755 "${REPO_DIR}/services/scripts/update-conf.sh" /usr/local/sbin/proxyfibre-update-conf
 # Changement du mot de passe système depuis la console (Système → Compte système).
 install -m750 "${REPO_DIR}/services/scripts/syspasswd.sh"  /usr/local/sbin/proxyfibre-syspasswd
+# Redémarrage / arrêt de la passerelle depuis le menu de la console.
+install -m755 "${REPO_DIR}/services/scripts/power-ctl.sh"  /usr/local/sbin/proxyfibre-power
 # Mesure de la ligne Internet : la passerelle ne peut pas connaître sa capacité autrement.
 install -m755 "${REPO_DIR}/services/scripts/speedtest-wan.sh" /usr/local/sbin/proxyfibre-speedtest
 # Dépôt Git de Bastion : renseigné depuis la console (Système → Mise à jour de Bastion).
@@ -408,6 +410,8 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-update-conf
 # la liste fermée du script sautait un jour, sudo n'accepterait toujours que ces deux
 # invocations, et jamais « proxyfibre-syspasswd <compte-arbitraire> ».
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-syspasswd proxyfibre, /usr/local/sbin/proxyfibre-syspasswd root
+# Redémarrage / arrêt : les deux verbes énumérés, jamais « proxyfibre-power * ».
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-power reboot, /usr/local/sbin/proxyfibre-power poweroff
 # Mesure de la ligne. « _run » n'est PAS listé : lui seul sature réellement la liaison.
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-speedtest run, /usr/local/sbin/proxyfibre-speedtest state, /usr/local/sbin/proxyfibre-speedtest log
 SUD
