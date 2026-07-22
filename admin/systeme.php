@@ -88,6 +88,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'git') {
                : [$act === 'check' ? 'Recherche lancée…' : 'Mise à jour de Bastion lancée…', 'ok']);
     }
 }
+// ── Changement du mot de passe système ───────────────────────────────────────
+$pwFlash = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'syspw') {
+    csrf_check();
+    $compte  = in_array($_POST['compte'] ?? '', ['proxyfibre', 'root'], true) ? (string) $_POST['compte'] : '';
+    $nouveau = (string) ($_POST['nouveau'] ?? '');
+    $confirm = (string) ($_POST['confirm'] ?? '');
+    $actuel  = (string) ($_POST['actuel'] ?? '');
+
+    // RESSAISIE OBLIGATOIRE du mot de passe administrateur. Changer un mot de passe système
+    // est une action à fort impact : une session ouverte et abandonnée, ou un jeton CSRF
+    // dérobé, ne doivent pas suffire — il faut reprouver son identité à cet instant.
+    $reauth = false;
+    try {
+        $st = $db->prepare('SELECT password_hash FROM pf_admins WHERE username = ?');
+        $st->execute([$_SESSION['admin'] ?? '']);
+        $h = (string) ($st->fetchColumn() ?: '');
+        $reauth = $h !== '' && password_verify($actuel, $h);
+    } catch (Throwable $e) {}
+
+    if ($compte === '') {
+        $pwFlash = ['Compte système non autorisé.', 'err'];
+    } elseif (!$reauth) {
+        $pwFlash = ['Mot de passe administrateur incorrect : changement refusé.', 'err'];
+    } elseif (strlen($nouveau) < 8) {
+        $pwFlash = ['Le nouveau mot de passe doit faire au moins 8 caractères.', 'err'];
+    } elseif ($nouveau !== $confirm) {
+        $pwFlash = ['Les deux nouveaux mots de passe ne correspondent pas.', 'err'];
+    } else {
+        // Le mot de passe part sur l'ENTRÉE STANDARD du script, jamais en argument (un
+        // argument serait lisible dans « ps » par tout utilisateur de la machine).
+        $out = '';
+        $p = proc_open('sudo /usr/local/sbin/proxyfibre-syspasswd ' . escapeshellarg($compte) . ' 2>&1',
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w']], $pipes);
+        if (is_resource($p)) {
+            fwrite($pipes[0], $nouveau); fclose($pipes[0]);
+            $out = trim((string) stream_get_contents($pipes[1])); fclose($pipes[1]);
+            proc_close($p);
+        }
+        // Trace d'audit : QUI a changé QUEL compte. Jamais le mot de passe lui-même.
+        error_log(sprintf('[bastion] syspasswd admin=%s compte=%s resultat=%s',
+            $_SESSION['admin'] ?? '?', $compte, str_starts_with($out, 'OK') ? 'ok' : 'echec'));
+        $pwFlash = str_starts_with($out, 'OK')
+            ? ["Mot de passe du compte système « $compte » changé.", 'ok']
+            : [$out ?: 'Changement impossible.', 'err'];
+    }
+}
+
 $git = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate state 2>/dev/null'), true) ?: [];
 // Clé publique de la passerelle — engendrée au premier affichage de cette page.
 $gitKey = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate pubkey 2>/dev/null'));
@@ -436,6 +484,42 @@ $gRetard = (int) ($git['retard'] ?? 0);
       </form>
     </details>
     <?php endif; ?>
+  </div>
+</section>
+
+<section class="panel form-panel">
+  <div class="panel-head"><h2>🔑 Compte système</h2></div>
+  <div style="padding:1.2rem">
+    <?php if ($pwFlash): ?><div class="flash <?= e($pwFlash[1]) ?>"><?= e($pwFlash[0]) ?></div><?php endif; ?>
+    <p class="muted small" style="margin-top:0">Change le mot de passe d'un compte de la machine
+    (celui de la console physique et de l'accès SSH). Sans rapport avec le mot de passe de
+    <em>cette</em> console web, qui se change dans « Administrateurs ».</p>
+
+    <form method="post" autocomplete="off" style="max-width:32rem"
+          onsubmit="if(this.nouveau.value!==this.confirm.value){alert('Les deux nouveaux mots de passe ne correspondent pas.');return false;}return confirm('Changer le mot de passe système ?');">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <input type="hidden" name="do" value="syspw">
+      <label>Compte
+        <select name="compte">
+          <option value="proxyfibre">proxyfibre — compte d'administration (recommandé)</option>
+          <option value="root">root — superutilisateur</option>
+        </select>
+      </label>
+      <label>Nouveau mot de passe
+        <input type="password" name="nouveau" required minlength="8" autocomplete="new-password"></label>
+      <label>Confirmer le nouveau mot de passe
+        <input type="password" name="confirm" required minlength="8" autocomplete="new-password"></label>
+      <hr style="border:none;border-top:1px solid rgba(120,150,190,.18);margin:1rem 0">
+      <label>Votre mot de passe administrateur <span class="muted small">(pour confirmer que c'est bien vous)</span>
+        <input type="password" name="actuel" required autocomplete="current-password"></label>
+      <button class="btn" style="margin-top:.9rem">Changer le mot de passe système</button>
+    </form>
+
+    <p class="hint muted small" style="margin-top:1rem">
+      « proxyfibre » est le compte qui sert à se connecter à la machine puis à passer
+      administrateur (<code>sudo</code>). C'est celui à changer si vous avez perdu l'accès.
+      Choisissez « root » seulement si vous savez pourquoi : cela réactive la connexion
+      directe en superutilisateur.</p>
   </div>
 </section>
 
