@@ -51,19 +51,29 @@ case "$cat" in
       list)   exec "$ST" gpo listall ;;
       create) exec "$ST" gpo create "$a" -U "Administrator%${ADPASS}" ;;
       deploy)
-        # Déploiement catalogue : crée la GPO $a, charge les stratégies registre
-        # depuis le fichier JSON $b, puis lie la GPO à la racine du domaine.
+        # Déploiement catalogue : (ré)écrit les stratégies registre du JSON $b dans la GPO
+        # nommée $a, puis lie la GPO à la racine du domaine.
+        # IDEMPOTENT PAR NOM : si une GPO du même nom d'affichage existe déjà, on RÉUTILISE
+        # son GUID au lieu d'en créer une seconde. Sans cela, re-déployer une GPO du catalogue
+        # (ex. corriger la stratégie de temps) laissait un DOUBLON : l'ancienne version,
+        # incomplète et toujours liée, continuait de s'appliquer à côté de la nouvelle.
         [ -f "$b" ] || { echo "ERROR: json absent" >&2; exit 2; }
-        guid=$("$ST" gpo create "$a" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
-        [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$a" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$a" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
         # Écriture directe du Registry.pol sur le SYSVOL local (l'écriture SMB de
         # `gpo load` est refusée ; `gpo create` a déjà posé l'arborescence en local).
         python3 /usr/local/sbin/proxyfibre-gpo-apply "$guid" "$b" >/dev/null 2>&1 \
           || { echo "ERROR: application des strategies echouee ($guid)" >&2; exit 1; }
         realm=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
         dn=$(printf '%s' "$realm" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
-        "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 \
-          || echo "ATTENTION: GPO creee mais lien au domaine echoue"
+        # Lien au domaine : posé seulement s'il n'existe pas déjà (re-déploiement).
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
+          || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 \
+          || echo "ATTENTION: GPO prete mais lien au domaine echoue"
         echo "$guid deployee et liee au domaine"
         ;;
       appstore)

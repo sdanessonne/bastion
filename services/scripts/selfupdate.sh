@@ -233,15 +233,57 @@ case "${1:-}" in
         echo "  console + portail synchronisés"
 
         etape 85 "Installation des scripts et rechargement"
-        # Scripts privilégiés : le nom d'installation ne suit pas celui du fichier.
-        for s in netguard qos apt selfupdate; do
-            case "$s" in
-                netguard) f=netguard.sh ;; qos) f=qos-ctl.sh ;;
-                apt) f=apt-ctl.sh ;; selfupdate) f=selfupdate.sh ;;
-            esac
-            [ -f "$REPO_DIR/services/scripts/$f" ] && install -m755 "$REPO_DIR/services/scripts/$f" "/usr/local/sbin/proxyfibre-$s"
-        done
-        echo "  scripts installés"
+        # Scripts privilégiés appelés par la console. On (ré)installe TOUT le jeu à chaque
+        # mise à jour. Auparavant seuls quatre l'étaient : une correction d'un autre script
+        # (proxyfibre-ad, -power, -syspasswd…) ne se déployait JAMAIS par Git et exigeait une
+        # réinstallation manuelle en SSH — pire, des fonctions livrées par mise à jour (mot de
+        # passe système, redémarrage du serveur) restaient muettes, leur binaire n'ayant
+        # jamais été posé. Le nom d'installation ne suit pas celui du fichier ; le mode plus
+        # strict (750) de syspasswd est respecté.
+        # ATTENTION : ceci installe les BINAIRES seulement. Les entrées sudo, les cron et les
+        # unités systemd d'une fonction NOUVELLE restent posés par deploy.sh (ou son installeur
+        # dédié, ex. install-console.sh) — la mise à jour Git ne les rejoue délibérément pas.
+        installes=0
+        while read -r mode name src; do
+            [ -n "${mode:-}" ] || continue
+            [ -f "$REPO_DIR/$src" ] || continue
+            install -m"$mode" "$REPO_DIR/$src" "/usr/local/sbin/proxyfibre-$name" && installes=$((installes+1))
+        done <<'SCRIPTS'
+755 netguard             services/scripts/netguard.sh
+755 qos                  services/scripts/qos-ctl.sh
+755 issue                services/scripts/issue-banner.sh
+755 brand                services/scripts/boot-brand.sh
+755 make-web-cert        services/scripts/make-web-cert.sh
+755 apply-filter         services/scripts/apply-filter.sh
+755 update-adblock       services/scripts/update-adblock.sh
+755 service              services/scripts/service-ctl.sh
+755 apt                  services/scripts/apt-ctl.sh
+755 update-conf          services/scripts/update-conf.sh
+750 syspasswd            services/scripts/syspasswd.sh
+755 power                services/scripts/power-ctl.sh
+755 speedtest            services/scripts/speedtest-wan.sh
+755 clamav               services/scripts/clamav-ctl.sh
+755 ad                   services/scripts/ad-ctl.sh
+755 gpo-apply            services/scripts/gpo-apply.py
+755 gpo-apps             services/scripts/gpo-apps.py
+755 gpo-kms              services/scripts/gpo-kms.py
+755 gpo-drives           services/scripts/gpo-drives.py
+755 metrics-sample       services/scripts/metrics-sample.php
+755 backup               services/scripts/backup-ctl.sh
+755 habilitation         services/scripts/habilitation-ctl.sh
+755 sign                 services/scripts/sign-ctl.sh
+755 purge-logs           services/scripts/purge-logs.sh
+755 walledgarden-refresh services/scripts/walledgarden-refresh.sh
+755 weblog-ingest        services/scripts/weblog-ingest.sh
+SCRIPTS
+        # custombinauth : appelé par OpenNDS à chaque (dé)connexion (quotas + journalisation),
+        # hors /usr/local/sbin. Fait partie du code, doit suivre les mises à jour.
+        [ -f "$REPO_DIR/services/opennds/custombinauth.sh" ] && install -m755 "$REPO_DIR/services/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh
+        # selfupdate.sh lui-même, EN DERNIER : le processus courant tourne déjà en mémoire
+        # (unité transitoire), réécrire le fichier ne le perturbe pas — la prochaine exécution
+        # prendra la nouvelle version.
+        [ -f "$REPO_DIR/services/scripts/selfupdate.sh" ] && install -m755 "$REPO_DIR/services/scripts/selfupdate.sh" /usr/local/sbin/proxyfibre-selfupdate
+        echo "  ${installes} scripts installés"
 
         if ls "$REPO_DIR"/services/systemd/*.service >/dev/null 2>&1; then
             install -m644 "$REPO_DIR"/services/systemd/*.service "$REPO_DIR"/services/systemd/*.timer /etc/systemd/system/ 2>/dev/null
