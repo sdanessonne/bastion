@@ -164,6 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
         case 'gpo_create':   $out = ad('gpo', 'create', (string) ($_POST['name'] ?? '')); break;
         case 'kms_auto':     $out = ad('gpo', 'activation', '192.168.182.1'); break;
+        case 'sysvol_reset': $out = ad('gpo', 'sysvolreset', ''); break;
         case 'gpo_cert':
             // Déploie le certificat racine Bastion dans le magasin de confiance des postes.
             $ca = '/etc/proxyfibre/bastion-ca.crt';
@@ -575,6 +576,14 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0">Connecte automatiquement des lecteurs réseau à l'ouverture
   de session des agents (par GPO). Les chemins pointent vers les partages, ex.
   <code>\\<?= e($curRealm) ?>\Commun</code>.</p>
+  <div class="ad-help" style="margin:0 1.2rem .8rem;padding:.7rem .9rem;background:rgba(56,189,248,.06);border-radius:8px">
+    <strong>Un poste affiche « Windows a tenté en vain de lire gpt.ini » ?</strong>
+    Les permissions du SYSVOL sont désynchronisées (fréquent après création de GPO sur Samba).
+    <form method="post" style="margin:.5rem 0 0" onsubmit="this.querySelector('button').textContent='Réparation…';this.querySelector('button').disabled=true">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="sysvol_reset">
+      <button class="btn-sm">🔧 Réparer les permissions SYSVOL</button>
+    </form>
+  </div>
   <div style="padding:0 1.2rem 1.2rem">
     <table class="grid-table" style="margin-bottom:.9rem">
       <thead><tr><th style="width:70px">Lettre</th><th>Chemin réseau</th><th>Étiquette</th><th></th></tr></thead>

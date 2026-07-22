@@ -185,7 +185,24 @@ PY
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid fond d'ecran deploye"
         ;;
+      sysvolreset)
+        # Réparation manuelle des permissions NT de SYSVOL (bouton console).
+        "$ST" ntacl sysvolreset >/dev/null 2>&1 \
+          && echo "permissions SYSVOL reparees" \
+          || { echo "ERROR: reparation SYSVOL echouee" >&2; exit 1; }
+        ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;
+    esac
+    # ── Réparation systématique des permissions SYSVOL après toute écriture de GPO ──
+    # Les scripts Python écrivent Registry.pol / Drives.xml / images directement dans le
+    # SYSVOL et recopient l'ACL NT « au mieux ». Quand cette recopie échoue, les postes ne
+    # peuvent plus LIRE le gpt.ini de la GPO (« Windows a tenté en vain de lire… »), et plus
+    # aucune stratégie ne s'applique. « ntacl sysvolreset » réaligne toutes les ACL sur
+    # l'AD : on le lance après chaque modification, plutôt que d'espérer que la recopie a
+    # tenu. Ignoré pour les sous-actions en lecture seule et le reset manuel (déjà fait).
+    case "$sub" in
+        list|create|sysvolreset) : ;;
+        *) "$ST" ntacl sysvolreset >/dev/null 2>&1 || true ;;
     esac ;;
   share)
     case "$sub" in
