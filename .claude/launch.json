@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin-console",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8081", "-t", "admin"],
+      "port": 8081
+    },
+    {
+      "name": "central-console",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8083", "-t", "central"],
+      "port": 8083
+    },
+    {
+      "name": "portail-captif",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8082", "-t", "portal"],
+      "port": 8082
+    }
+  ]
+}
