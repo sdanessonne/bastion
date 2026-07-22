@@ -1,0 +1,13 @@
+[Unit]
+Description=Bastion — recherche quotidienne d'une mise à jour
+
+[Timer]
+# Une fois par jour, la nuit. « Persistent » rattrape l'exécution si la machine était
+# éteinte à l'heure dite ; le délai aléatoire évite que tout un parc n'interroge le dépôt
+# à la même seconde.
+OnCalendar=*-*-* 03:20:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

@@ -27,7 +27,7 @@ apt-get install -y -qq \
   freeradius freeradius-mysql freeradius-utils \
   mariadb-server \
   dnsmasq \
-  apache2 libapache2-mod-php php php-mysql php-yaml php-mbstring php-zip \
+  apache2 libapache2-mod-php php php-mysql php-yaml php-mbstring php-zip php-gd \
   nftables openssl gettext-base curl ca-certificates \
   qrencode poppler-utils wimtools
 

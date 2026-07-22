@@ -7,8 +7,12 @@
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/totp.php';
+require_once __DIR__ . '/inc/avatar.php';
 $db = pf_db();
 $me = (string) $_SESSION['admin'];
+// Colonnes de photo créées à la demande : la mise à jour depuis Git ne rejoue pas
+// deploy.sh, donc la migration doit pouvoir se faire depuis le code web.
+avatar_migre($db);
 
 $row = $db->query('SELECT password_hash, totp_secret, totp_enabled FROM pf_admins WHERE username=' . $db->quote($me))->fetch();
 $flash = null;
@@ -16,6 +20,18 @@ $flash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $action = $_POST['action'] ?? '';
+
+    // ── Photo de profil ──
+    if ($action === 'avatar') {
+        [$ok, $msg, $v] = avatar_traiter($db, $me, $_FILES['photo'] ?? []);
+        if ($ok) { $_SESSION['avatar_v'] = $v; }   // le gabarit relit la session pour l'afficher
+        $flash = [$msg, $ok ? 'ok' : 'err'];
+    }
+    if ($action === 'avatar_delete') {
+        avatar_supprimer($db, $me);
+        unset($_SESSION['avatar_v']);
+        $flash = ['Photo de profil retirée.', 'ok'];
+    }
 
     // ── Changer son mot de passe ──
     if ($action === 'password') {
@@ -94,6 +110,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   .qrbox img{display:block;width:180px;height:180px;image-rendering:pixelated}
   .secretkey{font-family:monospace;font-size:1.05rem;letter-spacing:.08em;background:var(--bg);border:1px dashed var(--line);
              border-radius:8px;padding:.6rem .8rem;text-align:center;user-select:all}
+  .ava-row{display:flex;align-items:center;gap:1rem;margin:0 0 1.2rem}
+  .ava-big{width:72px;height:72px;border-radius:50%;object-fit:cover;background:var(--accent2);
+           display:grid;place-items:center;font-size:1.8rem;font-weight:700;color:#fff;flex-shrink:0}
 </style>
 
 <div class="prof-grid">
@@ -101,9 +120,40 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   <section class="panel">
     <div class="panel-head"><h2>👤 Mon compte</h2></div>
     <div style="padding:1.2rem">
-      <p style="margin:0 0 1rem"><strong style="font-size:1.1rem"><?= e($me) ?></strong><br>
-        <span class="muted small">Administrateur de la console Bastion</span></p>
-      <h3 style="font-size:.95rem;margin:.5rem 0 .8rem">Changer mon mot de passe</h3>
+      <?php $hasAv = !empty($_SESSION['avatar_v']); ?>
+      <div class="ava-row">
+        <?php if ($hasAv): ?>
+          <img class="ava-big" src="/avatar.php?v=<?= e($_SESSION['avatar_v']) ?>" alt="Ma photo">
+        <?php else: ?>
+          <span class="ava-big"><?= e(strtoupper(substr($me, 0, 1))) ?></span>
+        <?php endif; ?>
+        <div>
+          <strong style="font-size:1.1rem"><?= e($me) ?></strong><br>
+          <span class="muted small">Administrateur de la console Bastion</span>
+        </div>
+      </div>
+
+      <h3 style="font-size:.95rem;margin:.5rem 0 .8rem">Photo de profil</h3>
+      <form method="post" enctype="multipart/form-data" class="prof-form">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="action" value="avatar">
+        <label>Choisir une image <span class="muted small">(JPEG, PNG, GIF ou WebP — 5 Mo max, recadrée en carré)</span>
+          <input type="file" name="photo" accept="image/jpeg,image/png,image/gif,image/webp" required></label>
+        <div style="display:flex;gap:.6rem;align-items:center">
+          <button class="btn">Enregistrer la photo</button>
+          <?php if ($hasAv): ?>
+            <button type="submit" class="btn-sm" form="ava-del">Retirer</button>
+          <?php endif; ?>
+        </div>
+      </form>
+      <?php if ($hasAv): ?>
+        <form method="post" id="ava-del" onsubmit="return confirm('Retirer votre photo de profil ?')">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <input type="hidden" name="action" value="avatar_delete">
+        </form>
+      <?php endif; ?>
+
+      <h3 style="font-size:.95rem;margin:1.4rem 0 .8rem">Changer mon mot de passe</h3>
       <form method="post" class="prof-form" autocomplete="off">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="action" value="password">

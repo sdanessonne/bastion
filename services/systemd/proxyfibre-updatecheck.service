@@ -1,0 +1,12 @@
+[Unit]
+Description=Bastion — recherche d'une mise à jour disponible
+# Le dépôt est distant : on attend que le réseau soit réellement monté.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Réutilise le mécanisme public de recherche (garde « occupe », unité transitoire isolée),
+# qui rafraîchit l'état lu ensuite par la console pour décider d'afficher la popup. Le « - »
+# ignore un échec : un dépôt momentanément injoignable ne doit rien casser.
+ExecStart=-/usr/local/sbin/proxyfibre-selfupdate check

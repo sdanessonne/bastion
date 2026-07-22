@@ -246,6 +246,12 @@ case "${1:-}" in
         if ls "$REPO_DIR"/services/systemd/*.service >/dev/null 2>&1; then
             install -m644 "$REPO_DIR"/services/systemd/*.service "$REPO_DIR"/services/systemd/*.timer /etc/systemd/system/ 2>/dev/null
             systemctl daemon-reload
+            # Activer les minuteries NOUVELLEMENT livrées : sans cela, un .timer arrivé par
+            # mise à jour (ex. recherche quotidienne de mise à jour) resterait inerte jusqu'à
+            # un deploy.sh complet, que la mise à jour depuis Git ne rejoue justement pas.
+            for t in "$REPO_DIR"/services/systemd/*.timer; do
+                [ -f "$t" ] && systemctl enable --now "$(basename "$t")" >/dev/null 2>&1 || true
+            done
             echo "  unités systemd rechargées"
         fi
 

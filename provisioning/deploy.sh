@@ -296,6 +296,11 @@ chgrp www-data /etc/proxyfibre/admin.env
 mysql "${DB_NAME}" -e "CREATE TABLE IF NOT EXISTS pf_admins (id INT AUTO_INCREMENT PRIMARY KEY, username VARCHAR(64) UNIQUE, password_hash VARCHAR(255), totp_secret VARCHAR(64) DEFAULT NULL, totp_enabled TINYINT(1) NOT NULL DEFAULT 0);"
 # Migration des installations antérieures (colonnes 2FA)
 mysql "${DB_NAME}" -e "ALTER TABLE pf_admins ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64) DEFAULT NULL, ADD COLUMN IF NOT EXISTS totp_enabled TINYINT(1) NOT NULL DEFAULT 0;" 2>/dev/null || true
+# Photo de profil : image PNG ré-encodée (MEDIUMBLOB) + version courte pour le cache.
+# Créées aussi à la volée par le code web (avatar_migre), car selfupdate ne rejoue pas ce script.
+mysql "${DB_NAME}" -e "ALTER TABLE pf_admins ADD COLUMN IF NOT EXISTS avatar MEDIUMBLOB DEFAULT NULL, ADD COLUMN IF NOT EXISTS avatar_v VARCHAR(16) DEFAULT NULL;" 2>/dev/null || true
+# php-gd est indispensable au ré-encodage des photos (installations déjà en service).
+dpkg -s php-gd >/dev/null 2>&1 || apt-get install -y php-gd >/dev/null 2>&1 || true
 ADMIN_HASH="$(PF_AP="$ADMIN_PASS" php -r "echo password_hash(getenv('PF_AP'), PASSWORD_DEFAULT);")"
 mysql "${DB_NAME}" -e "INSERT INTO pf_admins (username,password_hash) VALUES ('${ADMIN_USER}','${ADMIN_HASH}') ON DUPLICATE KEY UPDATE password_hash='${ADMIN_HASH}';"
 # Jetons d'API, générés une seule fois chacun (INSERT IGNORE : un redéploiement ne les
@@ -380,6 +385,12 @@ install -m755 "${REPO_DIR}/services/scripts/update-conf.sh" /usr/local/sbin/prox
 install -m750 "${REPO_DIR}/services/scripts/syspasswd.sh"  /usr/local/sbin/proxyfibre-syspasswd
 # Redémarrage / arrêt de la passerelle depuis le menu de la console.
 install -m755 "${REPO_DIR}/services/scripts/power-ctl.sh"  /usr/local/sbin/proxyfibre-power
+# Recherche quotidienne d'une mise à jour : garde l'état « en retard » frais, pour que la
+# console puisse afficher une popup quand une version est disponible.
+install -m644 "${REPO_DIR}/services/systemd/proxyfibre-updatecheck.service" /etc/systemd/system/proxyfibre-updatecheck.service
+install -m644 "${REPO_DIR}/services/systemd/proxyfibre-updatecheck.timer"   /etc/systemd/system/proxyfibre-updatecheck.timer
+systemctl daemon-reload
+systemctl enable --now proxyfibre-updatecheck.timer >/dev/null 2>&1 || true
 # Mesure de la ligne Internet : la passerelle ne peut pas connaître sa capacité autrement.
 install -m755 "${REPO_DIR}/services/scripts/speedtest-wan.sh" /usr/local/sbin/proxyfibre-speedtest
 # Dépôt Git de Bastion : renseigné depuis la console (Système → Mise à jour de Bastion).

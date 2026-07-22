@@ -4,6 +4,7 @@
 require_once __DIR__ . '/inc/config.php';
 require_once __DIR__ . '/inc/totp.php';
 require_once __DIR__ . '/inc/throttle.php';
+require_once __DIR__ . '/inc/avatar.php';
 
 if (!empty($_SESSION['admin'])) { header('Location: /index.php'); exit; }
 
@@ -38,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 unset($_SESSION['pending_admin']);
                 session_regenerate_id(true);
                 $_SESSION['admin'] = $pu;
+                $_SESSION['avatar_v'] = avatar_version(pf_db(), $pu);   // photo affichée dès l'ouverture
                 header('Location: /index.php');
                 exit;
             }
@@ -71,6 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     session_regenerate_id(true);
                     $_SESSION['admin'] = $u;
+                    $_SESSION['avatar_v'] = avatar_version(pf_db(), $u);   // photo affichée dès l'ouverture
                     header('Location: /index.php');
                     exit;
                 }

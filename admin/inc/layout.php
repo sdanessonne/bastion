@@ -55,6 +55,7 @@ function pf_header(string $title, string $active = ''): void {
     .userbtn{display:flex;align-items:center;gap:.55rem;background:var(--panel2);border:1px solid var(--line);
              color:var(--text);padding:.4rem .7rem .4rem .45rem;border-radius:24px;cursor:pointer;font:inherit}
     .userbtn:hover{border-color:var(--accent)}
+    img.uavatar{object-fit:cover;background:var(--accent2)}
     .uavatar{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--accent2);
              color:#052536;font-weight:700;font-size:.9rem;flex:0 0 auto}
     .uavatar.sm{width:34px;height:34px}
@@ -72,6 +73,15 @@ function pf_header(string $title, string $active = ''): void {
     .usermenu-pop a.mi-warn{color:#eab308}
     .usermenu-pop a.mi-danger{color:var(--danger)}
     .usermenu-sep{height:1px;background:var(--line);margin:.4rem .3rem}
+    .maj-toast{position:fixed;right:1.2rem;bottom:1.2rem;max-width:360px;background:var(--panel);
+      border:1px solid var(--line);border-left:3px solid #38bdf8;border-radius:12px;
+      box-shadow:0 16px 40px rgba(0,0,0,.5);padding:1rem 1.1rem;z-index:200;animation:majIn .35s cubic-bezier(.16,1,.3,1)}
+    @keyframes majIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+    .maj-toast h4{margin:0 0 .35rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem}
+    .maj-toast p{margin:0 0 .8rem;font-size:.82rem;color:var(--muted);line-height:1.5}
+    .maj-toast .row{display:flex;gap:.5rem}
+    @media(max-width:640px){.maj-toast{left:1rem;right:1rem;max-width:none}}
+    @media(prefers-reduced-motion:reduce){.maj-toast{animation:none}}
     .usermenu-pop .ico{width:1.2rem;text-align:center}
     @media (max-width:640px){.uname{display:none}}
   </style>
@@ -115,14 +125,23 @@ function pf_header(string $title, string $active = ''): void {
         <button type="button" class="nav-toggle" id="navToggle" aria-label="Ouvrir le menu">☰</button>
         <h1><?= e($title) ?></h1>
       </div>
+      <?php
+      // Photo de profil chargée dans la session à la connexion (et à chaque changement).
+      // Absente = on retombe sur l'initiale. La version « ?v= » invalide le cache du
+      // navigateur dès que la photo change.
+      $av = $_SESSION['avatar_v'] ?? null;
+      $ini = e(strtoupper(substr($admin, 0, 1)));
+      $avImg = $av ? '<img class="uavatar" src="/avatar.php?v=' . e($av) . '" alt="">' : '<span class="uavatar">' . $ini . '</span>';
+      $avImgSm = $av ? '<img class="uavatar sm" src="/avatar.php?v=' . e($av) . '" alt="">' : '<span class="uavatar sm">' . $ini . '</span>';
+      ?>
       <div class="usermenu" id="usermenu">
         <button type="button" class="userbtn" id="userbtn" aria-haspopup="true" aria-expanded="false">
-          <span class="uavatar"><?= e(strtoupper(substr($admin, 0, 1))) ?></span>
+          <?= $avImg ?>
           <span class="uname"><?= e($admin) ?></span>
           <span class="ucaret">▾</span>
         </button>
         <div class="usermenu-pop" id="userpop" role="menu">
-          <div class="usermenu-hd"><span class="uavatar sm"><?= e(strtoupper(substr($admin, 0, 1))) ?></span>
+          <div class="usermenu-hd"><?= $avImgSm ?>
             <div><strong><?= e($admin) ?></strong><br><small class="muted">Administrateur</small></div></div>
           <a href="/profil.php" role="menuitem"><span class="ico">👤</span>Mon profil &amp; sécurité</a>
           <div class="usermenu-sep"></div>
@@ -174,6 +193,37 @@ function pf_footer(): void {
       if(bd) bd.addEventListener('click',closeNav);
       document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeNav(); });
       document.querySelectorAll('.sidebar nav a').forEach(function(a){ a.addEventListener('click',closeNav); });
+    })();
+    // Popup « mise à jour disponible ». Une fois par session, hors page Système, en
+    // ASYNCHRONE : elle ne retarde jamais l'affichage. On lit l'état déjà rafraîchi par la
+    // recherche quotidienne (minuterie) — aucune interrogation réseau n'est déclenchée ici.
+    (function(){
+      if(location.pathname.indexOf('systeme.php')!==-1) return;
+      try{ if(sessionStorage.getItem('pf_maj_shown')) return; }catch(e){}
+      fetch('systeme.php?apt=gitstate',{cache:'no-store'})
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(s){
+          if(!s || !s.clone) return;
+          var retard = parseInt(s.retard,10)||0;
+          if(retard < 1) return;
+          try{ sessionStorage.setItem('pf_maj_shown','1'); }catch(e){}
+          var box=document.createElement('div'); box.className='maj-toast'; box.setAttribute('role','status');
+          var h=document.createElement('h4'); h.appendChild(document.createTextNode('🔔 Mise à jour disponible'));
+          var p=document.createElement('p');
+          // textContent : la version vient de git (hash court) mais on n'injecte jamais de
+          // HTML — une valeur d'état ne doit pas pouvoir écrire dans la page.
+          p.textContent = 'Une nouvelle version de Bastion est disponible ('
+            + retard + (retard>1?' versions':' version') + ' de retard'
+            + (s.distant ? ', ' + s.distant : '') + '). Mettez à jour depuis la page Système.';
+          var row=document.createElement('div'); row.className='row';
+          var voir=document.createElement('a'); voir.className='btn-sm'; voir.href='/systeme.php'; voir.textContent='Voir la mise à jour';
+          var tard=document.createElement('button'); tard.className='btn-sm'; tard.type='button'; tard.textContent='Plus tard';
+          tard.addEventListener('click',function(){ box.remove(); });
+          row.appendChild(voir); row.appendChild(tard);
+          box.appendChild(h); box.appendChild(p); box.appendChild(row);
+          document.body.appendChild(box);
+        })
+        .catch(function(){});
     })();
   </script>
 </body>
