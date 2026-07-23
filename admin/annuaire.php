@@ -100,6 +100,7 @@ pf_header('Annuaire', 'annuaire.php');
               <?php if (isset($adUsers[$u])): ?><span class="rbadge r-ad">Domaine</span><?php endif; ?>
               <?php if (isset($consoleAdmins[$u])): ?><span class="rbadge r-adm">Admin</span><?php endif; ?>
             </div>
+            <a href="badge.php?u=<?= e($u) ?>" class="btn-sm" style="display:inline-block;margin-top:.55rem;font-size:.68rem;padding:.2rem .55rem">🪪 Badge</a>
           </div>
         </div>
       <?php endforeach; ?>
