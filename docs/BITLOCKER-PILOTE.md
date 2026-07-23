@@ -128,3 +128,38 @@ clé de récupération apparaît sous son poste dans la console.
 
 Pour **retirer** la stratégie : onglet Stratégies → « Chiffrement BitLocker » → **Désactiver**
 (les postes déjà chiffrés le restent ; leurs clés restent dans l'AD).
+
+---
+
+## Modes de déverrouillage (TPM seul / TPM + PIN)
+
+La carte « Chiffrement BitLocker » (onglet Stratégies) propose **trois modes** :
+
+| Mode | Démarrage | Pour qui |
+|---|---|---|
+| **TPM seul** | transparent, aucun code | postes **fixes** (défaut) |
+| **TPM + PIN commun** | un **même code** pour tout le parc, demandé à chaque démarrage | parc homogène, frein anti-vol simple |
+| **TPM + PIN par poste** | un code **unique par poste**, demandé à chaque démarrage | **portables** / postes sensibles (le plus sûr) |
+
+> Avec un PIN, le code est demandé **à chaque** démarrage — **sur site comme hors réseau**.
+> C'est le durcissement « volé = verrouillé ». Le PIN commun est **lisible dans SYSVOL** par
+> les comptes du domaine : à réserver au frein anti-vol opportuniste ; préférez le PIN par
+> poste pour les machines réellement sensibles.
+
+### Procédure « PIN par poste » (mode manuel)
+
+Dans ce mode, la GPO **impose** la politique TPM+PIN mais **ne chiffre pas** automatiquement
+(elle ne peut pas connaître le PIN de chacun). Sur **chaque** poste, une fois la GPO appliquée
+(`gpupdate /force`), en **invite de commandes administrateur** :
+
+```bat
+manage-bde -on C: -TPMAndPIN
+```
+
+Windows demande alors de **saisir puis confirmer le PIN** (6 à 20 chiffres), ajoute une clé de
+récupération — **automatiquement sauvegardée dans l'AD** (visible dans la console) — et lance
+le chiffrement. Vérifier ensuite avec `manage-bde -status C:` (protecteurs : `TpmPin` **et**
+`Mot de passe numérique`).
+
+> Pour **changer** le PIN d'un poste plus tard : `manage-bde -changepin C:`.
+
