@@ -423,6 +423,8 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-update-conf
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-syspasswd proxyfibre, /usr/local/sbin/proxyfibre-syspasswd root
 # Redémarrage / arrêt : les deux verbes énumérés, jamais « proxyfibre-power * ».
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-power reboot, /usr/local/sbin/proxyfibre-power poweroff
+# Réservations DHCP : seul « apply » (régénère la conf depuis la base + recharge dnsmasq).
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-dhcp apply
 # Mesure de la ligne. « _run » n'est PAS listé : lui seul sature réellement la liaison.
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-speedtest run, /usr/local/sbin/proxyfibre-speedtest state, /usr/local/sbin/proxyfibre-speedtest log
 SUD
