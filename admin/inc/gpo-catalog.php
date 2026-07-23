@@ -316,7 +316,7 @@ return [
         'policies'=>[['keyname'=>'Software\\Policies\\Microsoft\\Windows\\PreviewBuilds','valuename'=>'AllowBuildPreview','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
 
     // ═══ Navigateur Microsoft Edge (Ordinateur) ═════════════════════════════
-    'edgehome' => ['cat'=>'Navigateur Edge','title'=>"Page d'accueil intranet imposée",'icon'=>'🏠','scope'=>'Ordinateur',
+    'edgehome' => ['cat'=>'Navigateur Edge','title'=>"Page d'accueil intranet imposée (Edge)",'icon'=>'🏠','scope'=>'Ordinateur',
         'desc'=>"Force la page d'accueil et la page de démarrage d'Edge vers l'intranet Bastion.",
         'policies'=>[
             ['keyname'=>$K_EDGE,'valuename'=>'HomepageLocation','class'=>'MACHINE','type'=>'REG_SZ','data'=>'http://192.168.182.1:2080/portal/intranet.php'],
