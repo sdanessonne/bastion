@@ -28,10 +28,7 @@ function pf_header(string $title, string $active = ''): void {
             'assistance.php' => ['Assistance', '📨'],
         ],
         'Journalisation' => [
-            'recherche.php'   => ['Recherche agent', '🔎'],
-            'weblog.php'      => ['Navigation', '🌐'],
-            'logs.php'        => ['Journaux légaux', '📄'],
-            'requisition.php' => ['Réquisition', '⚖️'],
+            'journal.php' => ['Journalisation', '📄'],
         ],
         'Aide' => [
             'aide.php'    => ['Aide', '❓'],
@@ -39,6 +36,10 @@ function pf_header(string $title, string $active = ''): void {
         ],
     ];
     $admin = $_SESSION['admin'] ?? '';
+    // Mode « embarqué » : une page ouverte dans un onglet (iframe) de journal.php n'affiche
+    // ni barre latérale ni en-tête — juste son contenu. pf_footer() garde alors « embed » sur
+    // les navigations internes.
+    $embed = ($_GET['embed'] ?? '') === '1';
     ?>
 <!doctype html>
 <html lang="fr">
@@ -87,6 +88,10 @@ function pf_header(string $title, string $active = ''): void {
   </style>
 </head>
 <body>
+<?php if ($embed): ?>
+  <style>#splash,.sidebar,.topbar,.nav-backdrop{display:none!important}
+    .content{margin-left:0!important}.page{padding:1rem 1.2rem!important;max-width:none!important}</style>
+<?php endif; ?>
   <div id="splash" class="splash">
     <div class="splash-inner">
       <img class="splash-logo" src="/assets/bastion-icon.svg" alt="Bastion">
@@ -157,6 +162,7 @@ function pf_header(string $title, string $active = ''): void {
 }
 
 function pf_footer(): void {
+    $embed = ($_GET['embed'] ?? '') === '1';
     ?>
     </div>
   </main>
@@ -199,6 +205,7 @@ function pf_footer(): void {
     // recherche quotidienne (minuterie) — aucune interrogation réseau n'est déclenchée ici.
     (function(){
       if(location.pathname.indexOf('systeme.php')!==-1) return;
+      if(new URLSearchParams(location.search).get('embed')==='1') return;   // pas de toast dans un onglet embarqué
       try{ if(sessionStorage.getItem('pf_maj_shown')) return; }catch(e){}
       fetch('systeme.php?apt=gitstate',{cache:'no-store'})
         .then(function(r){ return r.ok ? r.json() : null; })
@@ -226,6 +233,25 @@ function pf_footer(): void {
         .catch(function(){});
     })();
   </script>
+<?php if ($embed): ?>
+  <script>
+  /* Onglet embarqué (iframe de journal.php) : garder « embed=1 » sur les navigations internes
+     (formulaires + liens) pour que la barre latérale ne réapparaisse pas dans l'onglet. Les
+     téléchargements (export CSV) et les liens externes / _blank sont laissés intacts. */
+  (function () {
+    document.querySelectorAll('form').forEach(function (f) {
+      if (!f.querySelector('input[name=embed]')) {
+        var i = document.createElement('input'); i.type = 'hidden'; i.name = 'embed'; i.value = '1'; f.appendChild(i);
+      }
+    });
+    document.querySelectorAll('a[href]').forEach(function (a) {
+      var h = a.getAttribute('href');
+      if (!h || /^(https?:|mailto:|tel:|#|javascript:)/i.test(h) || a.hasAttribute('download') || a.target === '_blank') return;
+      if (h.indexOf('embed=') < 0) { a.setAttribute('href', h + (h.indexOf('?') >= 0 ? '&' : '?') + 'embed=1'); }
+    });
+  })();
+  </script>
+<?php endif; ?>
 </body>
 </html>
     <?php

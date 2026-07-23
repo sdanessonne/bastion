@@ -7,6 +7,7 @@
  */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/userphoto.php';
 $db = pf_db();
 
 function ad(...$args): string {
@@ -44,6 +45,9 @@ $profiles = [];     // username => ['nom','prenom','service'] (identité du fonc
 foreach ($db->query('SELECT username,nom,prenom,service FROM pf_user_profile') as $r) {
     $profiles[(string) $r['username']] = ['nom' => (string) $r['nom'], 'prenom' => (string) $r['prenom'], 'service' => (string) $r['service']];
 }
+// Photos des fonctionnaires (stockées en base, ré-encodées ; servies par user-photo.php).
+userphoto_migre($db);
+$photoV = userphoto_all_versions($db);   // username => version de la photo (absent = pas de photo)
 function pf_set_profile(PDO $db, string $u, string $nom, string $prenom, string $service): void {
     if ($nom === '' && $prenom === '' && $service === '') {
         $db->prepare('DELETE FROM pf_user_profile WHERE username=?')->execute([$u]);
@@ -135,6 +139,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // ── Identité du fonctionnaire (nom / prénom / service) ──
         pf_set_profile($db, $u, trim((string) ($_POST['nom'] ?? '')), trim((string) ($_POST['prenom'] ?? '')), trim((string) ($_POST['service'] ?? '')));
 
+        // ── Photo du fonctionnaire (optionnelle) ──
+        if (isset($_POST['photo_remove'])) {
+            userphoto_supprimer($db, $u);
+        } elseif (($_FILES['photo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            [$pok, $pmsg] = userphoto_traiter($db, $u, $_FILES['photo']);
+            if (!$pok) { $msgs[] = 'Photo : ' . $pmsg; }
+        }
+
         if (!$flash) { $flash = ['Compte « ' . $u . ' » enregistré.' . ($msgs ? ' ' . implode(' ', $msgs) : ''), $msgs ? 'err' : 'ok']; }
     }
 
@@ -144,6 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($u !== 'admin') { $db->prepare('DELETE FROM pf_admins WHERE username=?')->execute([$u]); }
         $db->prepare('DELETE FROM pf_user_site WHERE username=?')->execute([$u]);
         $db->prepare('DELETE FROM pf_user_profile WHERE username=?')->execute([$u]);
+        userphoto_supprimer($db, $u);
         if ($dcUp && in_array($u, ad_lines('user', 'list'), true)) { ad('user', 'delete', $u); }
         // Déconnecter du portail si en ligne
         foreach (nds_clients() as $mac => $c) {
@@ -171,6 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->prepare('DELETE FROM pf_admins WHERE username=?')->execute([$su]);
                 $db->prepare('DELETE FROM pf_user_site WHERE username=?')->execute([$su]);
                 $db->prepare('DELETE FROM pf_user_profile WHERE username=?')->execute([$su]);
+                userphoto_supprimer($db, $su);
                 if ($dcUp && in_array($su, $adList, true)) { ad('user', 'delete', $su); }
                 foreach (nds_clients() as $mac => $c) {
                     if (!empty($c['custom']) && ($d = base64_decode($c['custom'], true)) && strpos($d, 'user=' . $su) !== false) {
@@ -439,10 +453,17 @@ $siteOptions = function (int $sel) use ($sites) {
     ?>
       <tr class="urow" data-f="<?= e($rsearch) ?>" data-site="<?= $sid ?>" data-types="<?= e(implode(' ', $rtypes)) ?>">
         <td><input type="checkbox" class="selrow" name="sel[]" form="bulkform" value="<?= e($name) ?>"<?= $name === 'admin' ? ' data-admin="1"' : '' ?>></td>
-        <td><strong><?= e($name) ?></strong>
-          <?php $pn = trim(($profiles[$name]['nom'] ?? '') . ' ' . ($profiles[$name]['prenom'] ?? '')); ?>
-          <?php if ($pn !== ''): ?><br><span class="muted svc-meta"><?= e($pn) ?><?php if (($profiles[$name]['service'] ?? '') !== ''): ?> · <?= e($profiles[$name]['service']) ?><?php endif; ?></span>
-          <?php elseif (isset($portalG[$name]) && $portalG[$name] !== ''): ?><br><span class="muted svc-meta"><?= e($portalG[$name]) ?></span><?php endif; ?></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:.6rem">
+            <?php if (!empty($photoV[$name])): ?><img src="user-photo.php?u=<?= e($name) ?>&amp;v=<?= e($photoV[$name]) ?>" alt="" style="width:34px;height:34px;border-radius:9px;object-fit:cover;flex:none;border:1px solid var(--line)">
+            <?php else: ?><span style="width:34px;height:34px;border-radius:9px;flex:none;border:1px solid var(--line);background:var(--bg);display:inline-flex;align-items:center;justify-content:center;color:var(--muted);font-size:.95rem">👤</span><?php endif; ?>
+            <div>
+              <strong><?= e($name) ?></strong>
+              <?php $pn = trim(($profiles[$name]['nom'] ?? '') . ' ' . ($profiles[$name]['prenom'] ?? '')); ?>
+              <?php if ($pn !== ''): ?><br><span class="muted svc-meta"><?= e($pn) ?><?php if (($profiles[$name]['service'] ?? '') !== ''): ?> · <?= e($profiles[$name]['service']) ?><?php endif; ?></span>
+              <?php elseif (isset($portalG[$name]) && $portalG[$name] !== ''): ?><br><span class="muted svc-meta"><?= e($portalG[$name]) ?></span><?php endif; ?>
+            </div>
+          </div></td>
         <td>
           <?php if (isset($portalG[$name])): ?><span class="rbadge r-portal">🌐 Internet</span><?php endif; ?>
           <?php if (isset($adUsers[$name])): ?><span class="rbadge r-ad">🗄️ Domaine</span><?php endif; ?>
@@ -456,7 +477,8 @@ $siteOptions = function (int $sel) use ($sites) {
             data-u="<?= e($name) ?>" data-portal="<?= isset($portalG[$name]) ? 1 : 0 ?>"
             data-ad="<?= isset($adUsers[$name]) ? 1 : 0 ?>" data-pgroup="<?= e($portalG[$name] ?? '') ?>"
             data-admin="<?= isset($consoleAdmins[$name]) ? 1 : 0 ?>" data-dom="<?= isset($domainAdmins[$name]) ? 1 : 0 ?>" data-site="<?= $sid ?>"
-            data-nom="<?= e($profiles[$name]['nom'] ?? '') ?>" data-prenom="<?= e($profiles[$name]['prenom'] ?? '') ?>" data-service="<?= e($profiles[$name]['service'] ?? '') ?>">Modifier</button>
+            data-nom="<?= e($profiles[$name]['nom'] ?? '') ?>" data-prenom="<?= e($profiles[$name]['prenom'] ?? '') ?>" data-service="<?= e($profiles[$name]['service'] ?? '') ?>"
+            data-photov="<?= e($photoV[$name] ?? '') ?>">Modifier</button>
           <?php if ($name !== 'admin'): ?>
           <form method="post" style="display:inline" onsubmit="return confirm('Supprimer « <?= e($name) ?> » (portail + domaine + droits) ?')">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete">
@@ -506,7 +528,7 @@ $siteOptions = function (int $sel) use ($sites) {
   <div class="modal" role="dialog" aria-modal="true">
     <div class="modal-head"><h2 id="modaltitle">Nouvel utilisateur</h2>
       <button type="button" class="modal-x" data-close aria-label="Fermer">&times;</button></div>
-    <form method="post" class="u-form modal-body" id="userform">
+    <form method="post" enctype="multipart/form-data" class="u-form modal-body" id="userform">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
       <input type="hidden" name="action" value="save">
       <label class="field">Identifiant
@@ -524,6 +546,15 @@ $siteOptions = function (int $sel) use ($sites) {
           <label class="field" style="margin:0">Prénom<input type="text" name="prenom" id="f_prenom" placeholder="Jean"></label>
         </div>
         <label class="field" style="margin:.6rem 0 0">Service<input type="text" name="service" id="f_service" placeholder="ex. Police secours, PJ, BAC…"></label>
+        <div style="display:flex;align-items:center;gap:1rem;margin-top:.7rem">
+          <img id="f_photo_img" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover;border:1px solid var(--line);background:var(--bg);display:none">
+          <span id="f_photo_ph" style="width:64px;height:64px;border-radius:12px;border:1px solid var(--line);background:var(--bg);display:inline-flex;align-items:center;justify-content:center;font-size:1.7rem;color:var(--muted)">👤</span>
+          <div style="flex:1;min-width:0">
+            <label class="field" style="margin:0">📷 Photo <span class="muted small">(JPEG, PNG, GIF ou WebP — recadrée en carré, max 5 Mo)</span>
+              <input type="file" name="photo" id="f_photo" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+            <label class="u-chk" id="f_photo_rm_l" style="margin-top:.4rem;display:none"><input type="checkbox" name="photo_remove" id="f_photo_rm"><span class="txt">Retirer la photo actuelle</span></label>
+          </div>
+        </div>
       </div>
 
       <div class="u-block">
@@ -585,18 +616,24 @@ $siteOptions = function (int $sel) use ($sites) {
     document.getElementById('f_nom').value=d.nom||'';
     document.getElementById('f_prenom').value=d.prenom||'';
     document.getElementById('f_service').value=d.service||'';
+    // Photo : aperçu de l'existante en édition ; sinon pastille neutre. Champ fichier remis à zéro.
+    var pimg=document.getElementById('f_photo_img'), pph=document.getElementById('f_photo_ph'), prml=document.getElementById('f_photo_rm_l');
+    document.getElementById('f_photo').value=''; document.getElementById('f_photo_rm').checked=false;
+    if(!isNew && d.photov){ pimg.src='user-photo.php?u='+encodeURIComponent(d.u)+'&v='+encodeURIComponent(d.photov);
+      pimg.style.display=''; pph.style.display='none'; prml.style.display=''; }
+    else { pimg.removeAttribute('src'); pimg.style.display='none'; pph.style.display=''; prml.style.display='none'; }
     set('f_portal', isNew?true:d.portal);
     set('f_ad', d.ad); set('f_admin', d.admin); set('f_dom', d.dom);
   }
   document.getElementById('newuser').addEventListener('click',function(){
-    fill({u:'',portal:1,ad:0,pgroup:'',admin:0,dom:0,site:0,nom:'',prenom:'',service:''}, true); open();
+    fill({u:'',portal:1,ad:0,pgroup:'',admin:0,dom:0,site:0,nom:'',prenom:'',service:'',photov:''}, true); open();
     setTimeout(function(){uName.focus();},60);
   });
   [].forEach.call(document.querySelectorAll('.edit-user'),function(b){
     b.addEventListener('click',function(){
       fill({u:b.dataset.u, portal:b.dataset.portal==='1', ad:b.dataset.ad==='1',
             pgroup:b.dataset.pgroup, admin:b.dataset.admin==='1', dom:b.dataset.dom==='1', site:b.dataset.site,
-            nom:b.dataset.nom, prenom:b.dataset.prenom, service:b.dataset.service}, false);
+            nom:b.dataset.nom, prenom:b.dataset.prenom, service:b.dataset.service, photov:b.dataset.photov}, false);
       open();
     });
   });
@@ -622,7 +659,8 @@ $siteOptions = function (int $sel) use ($sites) {
   <?php if ($openModal): ?>
   fill(<?= json_encode(['u'=>$edit['username'],'portal'=>$edit['portal'],'ad'=>$edit['ad'],
         'pgroup'=>$edit['pgroup'],'admin'=>$edit['admin'],'dom'=>$edit['domadmin'],'site'=>$edit['site'],
-        'nom'=>$edit['nom'],'prenom'=>$edit['prenom'],'service'=>$edit['service']]) ?>, <?= $edit['is_new'] ? 'true' : 'false' ?>);
+        'nom'=>$edit['nom'],'prenom'=>$edit['prenom'],'service'=>$edit['service'],
+        'photov'=>($photoV[$edit['username']] ?? '')]) ?>, <?= $edit['is_new'] ? 'true' : 'false' ?>);
   open();
   <?php endif; ?>
 })();
