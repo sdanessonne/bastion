@@ -48,26 +48,31 @@ a{color:inherit;text-decoration:none}
 
 /* ── Layout ── */
 body:has(.sidebar){display:flex}
-.sidebar{width:230px;min-height:100vh;background:var(--panel);border-right:1px solid var(--line);
-  display:flex;flex-direction:column;padding:1.2rem .9rem;flex:none}
+.sidebar{width:230px;height:100vh;position:sticky;top:0;background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;padding:1rem .8rem;flex:none;overflow:hidden}
 .sidebar .brand{display:flex;align-items:center;gap:.7rem;font-weight:700;font-size:1.1rem;
-  padding:.3rem .4rem 1.2rem;line-height:1.1}
+  padding:.2rem .4rem .9rem;line-height:1.1;flex:none}
 .sidebar .brand small{color:var(--muted);font-weight:400;font-size:.72rem}
-.sidebar nav{display:grid;gap:.15rem}
-.nav-group-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
-  opacity:.65;font-weight:600;padding:.7rem .7rem .25rem}
-.nav-group-label:first-child{padding-top:.2rem}
-.sidebar nav a{display:flex;align-items:center;gap:.7rem;padding:.55rem .7rem;border-radius:10px;
-  color:var(--muted);font-weight:500}
+/* Seule la navigation défile — la marque et le pied restent visibles. Ascenseur discret. */
+.sidebar nav{display:grid;gap:.08rem;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.sidebar nav::-webkit-scrollbar{width:6px}
+.sidebar nav::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.sidebar nav::-webkit-scrollbar-track{background:transparent}
+.nav-group-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+  opacity:.6;font-weight:600;padding:.5rem .7rem .2rem}
+.nav-group-label:first-child{padding-top:.1rem}
+.sidebar nav a{display:flex;align-items:center;gap:.65rem;padding:.4rem .7rem;border-radius:9px;
+  color:var(--muted);font-weight:500;font-size:.92rem}
 .sidebar nav a:hover{background:var(--panel2);color:var(--text)}
 .sidebar nav a.active{background:rgba(56,189,248,.14);color:var(--accent)}
 .sidebar .ico{width:1.3rem;text-align:center}
-.sidebar-foot{margin-top:auto;padding-top:1rem;border-top:1px solid var(--line);display:grid;gap:.6rem}
+.sidebar-foot{flex:none;padding-top:.8rem;margin-top:.4rem;border-top:1px solid var(--line);display:grid;gap:.5rem}
 .who{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--muted)}
 .logout{color:var(--danger);font-size:.85rem}
 
 /* ── Menu latéral : repli en rail (desktop) + tiroir (mobile) ── */
-.sidebar{overflow-y:auto;transition:width .22s ease,transform .25s ease}
+.sidebar{transition:width .22s ease,transform .25s ease}
 .sidebar nav a .lbl{white-space:nowrap;overflow:hidden}
 .sidebar nav a{position:relative}
 .sidebar nav a.active::before{content:"";position:absolute;left:.1rem;top:.45rem;bottom:.45rem;width:3px;border-radius:3px;background:var(--accent)}
