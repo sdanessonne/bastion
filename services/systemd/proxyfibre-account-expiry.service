@@ -1,0 +1,7 @@
+[Unit]
+Description=Bastion - desactivation des comptes arrives a echeance
+After=mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proxyfibre-account-expiry

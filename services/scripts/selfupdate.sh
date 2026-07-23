@@ -275,6 +275,7 @@ case "${1:-}" in
 755 purge-logs           services/scripts/purge-logs.sh
 755 walledgarden-refresh services/scripts/walledgarden-refresh.sh
 755 weblog-ingest        services/scripts/weblog-ingest.sh
+755 account-expiry       services/scripts/account-expiry.sh
 SCRIPTS
         # custombinauth : appelé par OpenNDS à chaque (dé)connexion (quotas + journalisation),
         # hors /usr/local/sbin. Fait partie du code, doit suivre les mises à jour.

@@ -1,0 +1,9 @@
+[Unit]
+Description=Bastion - verification quotidienne des comptes a echeance
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

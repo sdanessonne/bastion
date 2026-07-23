@@ -49,6 +49,11 @@ foreach ($db->query('SELECT username,nom,prenom,service FROM pf_user_profile') a
 // Photos des fonctionnaires (stockées en base, ré-encodées ; servies par user-photo.php).
 userphoto_migre($db);
 $photoV = userphoto_all_versions($db);   // username => version de la photo (absent = pas de photo)
+
+// Désactivation programmée : date de fin d'accès par compte (fin de mission, mutation).
+try { $db->exec('CREATE TABLE IF NOT EXISTS pf_user_expiry (username VARCHAR(64) PRIMARY KEY, expires_at DATE, applied TINYINT(1) DEFAULT 0, set_by VARCHAR(64), set_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)'); } catch (Throwable $e) {}
+$expiry = [];   // username => 'YYYY-MM-DD'
+try { foreach ($db->query('SELECT username,expires_at FROM pf_user_expiry WHERE expires_at IS NOT NULL') as $r) { $expiry[(string) $r['username']] = (string) $r['expires_at']; } } catch (Throwable $e) {}
 function pf_set_profile(PDO $db, string $u, string $nom, string $prenom, string $service): void {
     if ($nom === '' && $prenom === '' && $service === '') {
         $db->prepare('DELETE FROM pf_user_profile WHERE username=?')->execute([$u]);
@@ -148,6 +153,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$pok) { $msgs[] = 'Photo : ' . $pmsg; }
         }
 
+        // ── Date de fin d'accès (désactivation programmée le jour venu, par la minuterie) ──
+        $exp = trim((string) ($_POST['expires_at'] ?? ''));
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $exp)) {
+            $db->prepare('INSERT INTO pf_user_expiry (username,expires_at,applied,set_by) VALUES (?,?,0,?)
+                          ON DUPLICATE KEY UPDATE expires_at=VALUES(expires_at), applied=0, set_by=VALUES(set_by)')
+               ->execute([$u, $exp, $_SESSION['admin'] ?? '']);
+        } else {
+            $db->prepare('DELETE FROM pf_user_expiry WHERE username=?')->execute([$u]);
+        }
+
         if (!$flash) { $flash = ['Compte « ' . $u . ' » enregistré.' . ($msgs ? ' ' . implode(' ', $msgs) : ''), $msgs ? 'err' : 'ok']; }
         audit('users.save', $u);
     }
@@ -159,6 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db->prepare('DELETE FROM pf_user_site WHERE username=?')->execute([$u]);
         $db->prepare('DELETE FROM pf_user_profile WHERE username=?')->execute([$u]);
         userphoto_supprimer($db, $u);
+        $db->prepare('DELETE FROM pf_user_expiry WHERE username=?')->execute([$u]);
         if ($dcUp && in_array($u, ad_lines('user', 'list'), true)) { ad('user', 'delete', $u); }
         // Déconnecter du portail si en ligne
         foreach (nds_clients() as $mac => $c) {
@@ -188,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->prepare('DELETE FROM pf_user_site WHERE username=?')->execute([$su]);
                 $db->prepare('DELETE FROM pf_user_profile WHERE username=?')->execute([$su]);
                 userphoto_supprimer($db, $su);
+                $db->prepare('DELETE FROM pf_user_expiry WHERE username=?')->execute([$su]);
                 if ($dcUp && in_array($su, $adList, true)) { ad('user', 'delete', $su); }
                 foreach (nds_clients() as $mac => $c) {
                     if (!empty($c['custom']) && ($d = base64_decode($c['custom'], true)) && strpos($d, 'user=' . $su) !== false) {
@@ -474,14 +491,17 @@ $siteOptions = function (int $sel) use ($sites) {
           <?php if (isset($domainAdmins[$name])): ?><span class="rbadge r-dom">Admin domaine</span><?php endif; ?>
         </td>
         <td><?php if ($sid && isset($sites[$sid])): ?><span class="rbadge r-site">🏢 <?= e($sites[$sid]['name']) ?></span><?php else: ?><span class="muted small">—</span><?php endif; ?></td>
-        <td><?php if (!empty($online[$name])): ?><span class="badge on">En ligne</span><?php else: ?><span class="badge off">Hors ligne</span><?php endif; ?></td>
+        <td><?php if (!empty($online[$name])): ?><span class="badge on">En ligne</span><?php else: ?><span class="badge off">Hors ligne</span><?php endif; ?>
+          <?php if (!empty($expiry[$name])): $et = strtotime((string) $expiry[$name]); $expd = $et < time(); ?>
+            <br><span class="rbadge" style="font-size:.62rem;background:<?= $expd ? 'rgba(248,113,113,.18)' : 'rgba(234,179,8,.18)' ?>;color:<?= $expd ? '#f87171' : '#eab308' ?>" title="Désactivation programmée">⏳ <?= $expd ? 'expiré' : 'expire le ' . e(date('d/m/Y', $et)) ?></span>
+          <?php endif; ?></td>
         <td class="row-actions">
           <button type="button" class="btn-sm edit-user"
             data-u="<?= e($name) ?>" data-portal="<?= isset($portalG[$name]) ? 1 : 0 ?>"
             data-ad="<?= isset($adUsers[$name]) ? 1 : 0 ?>" data-pgroup="<?= e($portalG[$name] ?? '') ?>"
             data-admin="<?= isset($consoleAdmins[$name]) ? 1 : 0 ?>" data-dom="<?= isset($domainAdmins[$name]) ? 1 : 0 ?>" data-site="<?= $sid ?>"
             data-nom="<?= e($profiles[$name]['nom'] ?? '') ?>" data-prenom="<?= e($profiles[$name]['prenom'] ?? '') ?>" data-service="<?= e($profiles[$name]['service'] ?? '') ?>"
-            data-photov="<?= e($photoV[$name] ?? '') ?>">Modifier</button>
+            data-photov="<?= e($photoV[$name] ?? '') ?>" data-expiry="<?= e($expiry[$name] ?? '') ?>">Modifier</button>
           <?php if ($name !== 'admin'): ?>
           <form method="post" style="display:inline" onsubmit="return confirm('Supprimer « <?= e($name) ?> » (portail + domaine + droits) ?')">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete">
@@ -541,6 +561,8 @@ $siteOptions = function (int $sel) use ($sites) {
         <span class="muted small">Matricule à 7 chiffres (ex. <code>0110480</code>) ou <code>admin-0110480</code> pour un administrateur.</span></label>
       <label class="field">Mot de passe <span class="muted small" id="f_pwdhint"></span>
         <input type="text" name="password" id="f_password" value="" placeholder="respecter la complexité si compte domaine"></label>
+      <label class="field">Date de fin d'accès <span class="muted small">(optionnel — désactivation automatique le jour venu)</span>
+        <input type="date" name="expires_at" id="f_expires"></label>
 
       <div class="u-block">
         <div class="hd">👮 Identité du fonctionnaire</div>
@@ -613,6 +635,7 @@ $siteOptions = function (int $sel) use ($sites) {
     uName.value=d.u||''; uName.readOnly=!isNew;
     hint.textContent=isNew?'':'(laisser vide = inchangé)';
     document.getElementById('f_password').value='';
+    document.getElementById('f_expires').value=d.expires||'';
     document.getElementById('f_pgroup').value=d.pgroup||'';
     document.getElementById('f_adgroup').value='';
     document.getElementById('f_site').value=String(d.site||0);
@@ -629,14 +652,14 @@ $siteOptions = function (int $sel) use ($sites) {
     set('f_ad', d.ad); set('f_admin', d.admin); set('f_dom', d.dom);
   }
   document.getElementById('newuser').addEventListener('click',function(){
-    fill({u:'',portal:1,ad:0,pgroup:'',admin:0,dom:0,site:0,nom:'',prenom:'',service:'',photov:''}, true); open();
+    fill({u:'',portal:1,ad:0,pgroup:'',admin:0,dom:0,site:0,nom:'',prenom:'',service:'',photov:'',expires:''}, true); open();
     setTimeout(function(){uName.focus();},60);
   });
   [].forEach.call(document.querySelectorAll('.edit-user'),function(b){
     b.addEventListener('click',function(){
       fill({u:b.dataset.u, portal:b.dataset.portal==='1', ad:b.dataset.ad==='1',
             pgroup:b.dataset.pgroup, admin:b.dataset.admin==='1', dom:b.dataset.dom==='1', site:b.dataset.site,
-            nom:b.dataset.nom, prenom:b.dataset.prenom, service:b.dataset.service, photov:b.dataset.photov}, false);
+            nom:b.dataset.nom, prenom:b.dataset.prenom, service:b.dataset.service, photov:b.dataset.photov, expires:b.dataset.expiry}, false);
       open();
     });
   });
@@ -663,7 +686,7 @@ $siteOptions = function (int $sel) use ($sites) {
   fill(<?= json_encode(['u'=>$edit['username'],'portal'=>$edit['portal'],'ad'=>$edit['ad'],
         'pgroup'=>$edit['pgroup'],'admin'=>$edit['admin'],'dom'=>$edit['domadmin'],'site'=>$edit['site'],
         'nom'=>$edit['nom'],'prenom'=>$edit['prenom'],'service'=>$edit['service'],
-        'photov'=>($photoV[$edit['username']] ?? '')]) ?>, <?= $edit['is_new'] ? 'true' : 'false' ?>);
+        'photov'=>($photoV[$edit['username']] ?? ''), 'expires'=>($expiry[$edit['username']] ?? '')]) ?>, <?= $edit['is_new'] ? 'true' : 'false' ?>);
   open();
   <?php endif; ?>
 })();
