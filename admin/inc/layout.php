@@ -108,9 +108,18 @@ function pf_header(string $title, string $active = ''): void {
   <aside class="sidebar">
     <div class="brand"><img class="logo" src="/assets/bastion-icon.svg" alt="Bastion"><span class="btxt">Bastion<br><small>Administration</small></span></div>
     <nav>
-      <?php foreach ($navGroups as $groupName => $items): ?>
+      <?php
+      // Filtrage du menu selon le rôle. « comptes » ne voit que la gestion des comptes/agents.
+      // « lecture » et « full » voient tout (la lecture seule est appliquée à l'écriture, pas à
+      // la navigation). Défini côté serveur dans inc/auth.php — garde-fou : admin = full.
+      $pfRole = $_SESSION['admin_role'] ?? 'full';
+      $pfAllow = ($pfRole === 'comptes') ? ['index.php', 'users.php', 'annuaire.php', 'groups.php'] : null;
+      foreach ($navGroups as $groupName => $items):
+          $vis = $pfAllow === null ? $items : array_intersect_key($items, array_flip($pfAllow));
+          if (!$vis) { continue; }
+      ?>
         <div class="nav-group-label"><?= e($groupName) ?></div>
-        <?php foreach ($items as $file => [$label, $icon]): ?>
+        <?php foreach ($vis as $file => [$label, $icon]): ?>
           <a href="/<?= $file ?>" title="<?= e($label) ?>" class="<?= $active === $file ? 'active' : '' ?>">
             <span class="ico"><?= $icon ?></span><span class="lbl"><?= e($label) ?></span>
           </a>
@@ -159,6 +168,9 @@ function pf_header(string $title, string $active = ''): void {
         </div>
       </div>
     </header>
+    <?php if (($_SESSION['admin_role'] ?? 'full') === 'lecture'): ?>
+      <div class="flash" style="margin:0 0 1rem;background:rgba(234,179,8,.12);color:#eab308;border:1px solid rgba(234,179,8,.3)">👁️ Compte en <strong>lecture seule</strong> — consultation autorisée, modifications désactivées.</div>
+    <?php endif; ?>
     <div class="page">
     <?php
 }

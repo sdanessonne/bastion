@@ -54,6 +54,11 @@ $photoV = userphoto_all_versions($db);   // username => version de la photo (abs
 try { $db->exec('CREATE TABLE IF NOT EXISTS pf_user_expiry (username VARCHAR(64) PRIMARY KEY, expires_at DATE, applied TINYINT(1) DEFAULT 0, set_by VARCHAR(64), set_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)'); } catch (Throwable $e) {}
 $expiry = [];   // username => 'YYYY-MM-DD'
 try { foreach ($db->query('SELECT username,expires_at FROM pf_user_expiry WHERE expires_at IS NOT NULL') as $r) { $expiry[(string) $r['username']] = (string) $r['expires_at']; } } catch (Throwable $e) {}
+
+// Niveaux d'accès des administrateurs console (garde-fou : « admin » toujours complet — cf. inc/auth.php).
+try { $db->exec("ALTER TABLE pf_admins ADD COLUMN IF NOT EXISTS role VARCHAR(16) DEFAULT 'full'"); } catch (Throwable $e) {}
+$adminRole = [];   // username => full|comptes|lecture
+try { foreach ($db->query('SELECT username,role FROM pf_admins') as $r) { $adminRole[(string) $r['username']] = (string) ($r['role'] ?: 'full'); } } catch (Throwable $e) {}
 function pf_set_profile(PDO $db, string $u, string $nom, string $prenom, string $service): void {
     if ($nom === '' && $prenom === '' && $service === '') {
         $db->prepare('DELETE FROM pf_user_profile WHERE username=?')->execute([$u]);
@@ -128,6 +133,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (!(bool) $db->query('SELECT 1 FROM pf_admins WHERE username=' . $db->quote($u))->fetchColumn()) {
                 $msgs[] = 'Droit console : mot de passe requis pour créer cet administrateur.';
             }
+            // Niveau d'accès (rôle). JAMAIS pour « admin » : il reste complet quoi qu'il arrive.
+            $lvl = in_array($_POST['admin_level'] ?? '', ['full', 'comptes', 'lecture'], true) ? (string) $_POST['admin_level'] : 'full';
+            if ($u !== 'admin') { try { $db->prepare('UPDATE pf_admins SET role=? WHERE username=?')->execute([$lvl, $u]); } catch (Throwable $e) {} }
         } else {
             if ($u !== 'admin') { $db->prepare('DELETE FROM pf_admins WHERE username=?')->execute([$u]); }
         }
@@ -501,7 +509,7 @@ $siteOptions = function (int $sel) use ($sites) {
             data-ad="<?= isset($adUsers[$name]) ? 1 : 0 ?>" data-pgroup="<?= e($portalG[$name] ?? '') ?>"
             data-admin="<?= isset($consoleAdmins[$name]) ? 1 : 0 ?>" data-dom="<?= isset($domainAdmins[$name]) ? 1 : 0 ?>" data-site="<?= $sid ?>"
             data-nom="<?= e($profiles[$name]['nom'] ?? '') ?>" data-prenom="<?= e($profiles[$name]['prenom'] ?? '') ?>" data-service="<?= e($profiles[$name]['service'] ?? '') ?>"
-            data-photov="<?= e($photoV[$name] ?? '') ?>" data-expiry="<?= e($expiry[$name] ?? '') ?>">Modifier</button>
+            data-photov="<?= e($photoV[$name] ?? '') ?>" data-expiry="<?= e($expiry[$name] ?? '') ?>" data-role="<?= e($adminRole[$name] ?? 'full') ?>">Modifier</button>
           <?php if ($name !== 'admin'): ?>
           <form method="post" style="display:inline" onsubmit="return confirm('Supprimer « <?= e($name) ?> » (portail + domaine + droits) ?')">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="delete">
@@ -608,6 +616,13 @@ $siteOptions = function (int $sel) use ($sites) {
         <div class="hd">🔑 Droits de gestion</div>
         <label class="u-chk"><input type="checkbox" name="role_admin" id="f_admin">
           <span class="txt">Administrateur de la console <strong>Bastion</strong><small>Accès à cette interface d'administration</small></span></label>
+        <label class="field" id="f_level_wrap" style="margin:.3rem 0 .3rem 1.8rem">Niveau d'accès de la console
+          <select name="admin_level" id="f_level" style="padding:.5rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
+            <option value="full">Complet — tout gérer</option>
+            <option value="comptes">Comptes &amp; agents seulement</option>
+            <option value="lecture">Lecture seule — consultation (aucune modification)</option>
+          </select>
+          <span class="muted small">Le compte « admin » reste toujours complet.</span></label>
         <label class="u-chk"><input type="checkbox" name="role_domadmin" id="f_dom" <?= $dcUp ? '' : 'disabled' ?>>
           <span class="txt">Administrateur du <strong>domaine</strong><small>Membre de « Domain Admins » (gère l'Active Directory)</small></span></label>
       </div>
@@ -650,16 +665,21 @@ $siteOptions = function (int $sel) use ($sites) {
     else { pimg.removeAttribute('src'); pimg.style.display='none'; pph.style.display=''; prml.style.display='none'; }
     set('f_portal', isNew?true:d.portal);
     set('f_ad', d.ad); set('f_admin', d.admin); set('f_dom', d.dom);
+    document.getElementById('f_level').value=d.role||'full';
+    var lw=document.getElementById('f_level_wrap'); if(lw) lw.style.display=document.getElementById('f_admin').checked?'':'none';
   }
+  document.getElementById('f_admin').addEventListener('change',function(){
+    var lw=document.getElementById('f_level_wrap'); if(lw) lw.style.display=this.checked?'':'none';
+  });
   document.getElementById('newuser').addEventListener('click',function(){
-    fill({u:'',portal:1,ad:0,pgroup:'',admin:0,dom:0,site:0,nom:'',prenom:'',service:'',photov:'',expires:''}, true); open();
+    fill({u:'',portal:1,ad:0,pgroup:'',admin:0,dom:0,site:0,nom:'',prenom:'',service:'',photov:'',expires:'',role:'full'}, true); open();
     setTimeout(function(){uName.focus();},60);
   });
   [].forEach.call(document.querySelectorAll('.edit-user'),function(b){
     b.addEventListener('click',function(){
       fill({u:b.dataset.u, portal:b.dataset.portal==='1', ad:b.dataset.ad==='1',
             pgroup:b.dataset.pgroup, admin:b.dataset.admin==='1', dom:b.dataset.dom==='1', site:b.dataset.site,
-            nom:b.dataset.nom, prenom:b.dataset.prenom, service:b.dataset.service, photov:b.dataset.photov, expires:b.dataset.expiry}, false);
+            nom:b.dataset.nom, prenom:b.dataset.prenom, service:b.dataset.service, photov:b.dataset.photov, expires:b.dataset.expiry, role:b.dataset.role}, false);
       open();
     });
   });
@@ -686,7 +706,8 @@ $siteOptions = function (int $sel) use ($sites) {
   fill(<?= json_encode(['u'=>$edit['username'],'portal'=>$edit['portal'],'ad'=>$edit['ad'],
         'pgroup'=>$edit['pgroup'],'admin'=>$edit['admin'],'dom'=>$edit['domadmin'],'site'=>$edit['site'],
         'nom'=>$edit['nom'],'prenom'=>$edit['prenom'],'service'=>$edit['service'],
-        'photov'=>($photoV[$edit['username']] ?? ''), 'expires'=>($expiry[$edit['username']] ?? '')]) ?>, <?= $edit['is_new'] ? 'true' : 'false' ?>);
+        'photov'=>($photoV[$edit['username']] ?? ''), 'expires'=>($expiry[$edit['username']] ?? ''),
+        'role'=>($adminRole[$edit['username']] ?? 'full')]) ?>, <?= $edit['is_new'] ? 'true' : 'false' ?>);
   open();
   <?php endif; ?>
 })();
