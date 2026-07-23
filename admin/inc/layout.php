@@ -22,6 +22,7 @@ function pf_header(string $title, string $active = ''): void {
         'Réseau & postes' => [
             'ad.php'   => ['Active Directory', '🗄️'],
             'dhcp.php' => ['Réservations DHCP', '🔌'],
+            'quarantaine.php' => ['Quarantaine réseau', '🚫'],
             'apps.php' => ['Store d\'applications', '🏪'],
             'pxe.php'  => ['Serveur PXE', '📀'],
         ],

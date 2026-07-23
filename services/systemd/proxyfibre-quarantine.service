@@ -1,0 +1,12 @@
+[Unit]
+Description=Bastion - reapplique la quarantaine reseau au demarrage
+After=nftables.service opennds.service network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proxyfibre-quarantine apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

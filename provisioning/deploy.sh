@@ -425,6 +425,8 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-syspasswd proxyfibre, /
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-power reboot, /usr/local/sbin/proxyfibre-power poweroff
 # Réservations DHCP : seul « apply » (régénère la conf depuis la base + recharge dnsmasq).
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-dhcp apply
+# Quarantaine réseau : « apply » (reconstruit la table nft dédiée) et « status ».
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-quarantine apply, /usr/local/sbin/proxyfibre-quarantine status
 # Mesure de la ligne. « _run » n'est PAS listé : lui seul sature réellement la liaison.
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-speedtest run, /usr/local/sbin/proxyfibre-speedtest state, /usr/local/sbin/proxyfibre-speedtest log
 SUD
@@ -499,6 +501,8 @@ install -m755 "${REPO_DIR}/services/scripts/walledgarden-refresh.sh" /usr/local/
 install -m644 "${REPO_DIR}/services/systemd/proxyfibre-walledgarden.service" /etc/systemd/system/proxyfibre-walledgarden.service
 systemctl daemon-reload
 systemctl enable proxyfibre-walledgarden.service >/dev/null 2>&1 || true
+# Quarantaine réseau : réappliquée au démarrage (table nft dédiée, isolée d'OpenNDS).
+systemctl enable proxyfibre-quarantine.service >/dev/null 2>&1 || true
 log "Walled garden (mises à jour Windows/Linux) déployé"
 
 # ── Serveur de temps local (chrony) ──────────────────────────────────────────
