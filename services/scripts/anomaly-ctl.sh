@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS pf_anomaly_state (
 SQL
 }
 
-state_get() { msql -e "SELECT v FROM pf_anomaly_state WHERE k='$(esc "$1")'"; }
+# --raw : SANS ça, le client mysql échappe les retours à la ligne d'une valeur multi-lignes
+# en « \n » LITTÉRAL — la référence reviendrait sur une seule ligne et TOUT paraîtrait changé.
+state_get() { mysql -N --raw "$DB" 2>/dev/null -e "SELECT v FROM pf_anomaly_state WHERE k='$(esc "$1")'"; }
 state_set() { mysql "$DB" 2>/dev/null -e "INSERT INTO pf_anomaly_state (k,v) VALUES ('$(esc "$1")','$(esc "$2")') ON DUPLICATE KEY UPDATE v=VALUES(v)"; }
 # Enregistre une anomalie (idempotent via sig : une même anomalie n'est pas répétée).
 record() { # type severity detail
