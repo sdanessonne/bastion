@@ -29,6 +29,13 @@ $K_FW_STD = 'Software\\Policies\\Microsoft\\WindowsFirewall\\StandardProfile';
 $K_FW_PUB = 'Software\\Policies\\Microsoft\\WindowsFirewall\\PublicProfile';
 $K_CLOUD  = 'Software\\Policies\\Microsoft\\Windows\\CloudContent';
 $K_DATA   = 'Software\\Policies\\Microsoft\\Windows\\DataCollection';
+$K_DEFEG  = $K_DEF . '\\Windows Defender Exploit Guard';   // ASR, Network/Controlled Folder
+$K_DEFSCAN= $K_DEF . '\\Scan';                              // options d'analyse Defender
+$K_TS     = 'Software\\Policies\\Microsoft\\Windows NT\\Terminal Services';
+$K_WINRMS = 'Software\\Policies\\Microsoft\\Windows\\WinRM\\Service';
+$K_WINRMC = 'Software\\Policies\\Microsoft\\Windows\\WinRM\\Client';
+$K_LSA    = 'SYSTEM\\CurrentControlSet\\Control\\Lsa';
+$K_OFF    = 'Software\\Policies\\Microsoft\\Office\\16.0';
 
 return [
     // ═══ Sécurité & durcissement (Ordinateur) ═══════════════════════════════
@@ -510,4 +517,130 @@ return [
     'wutarget' => ['cat'=>'Windows Update','title'=>"Notifier avant téléchargement",'icon'=>'🔔','scope'=>'Ordinateur',
         'desc'=>"Configure Windows Update pour notifier avant de télécharger et installer (postes sensibles).",
         'policies'=>[['keyname'=>$K_WUAU,'valuename'=>'AUOptions','class'=>'MACHINE','type'=>'REG_DWORD','data'=>2]]],
+    'nodeliveryp2p' => ['cat'=>'Windows Update','title'=>"Désactiver le partage P2P des mises à jour",'icon'=>'🚦','scope'=>'Ordinateur',
+        'desc'=>"Force le téléchargement des mises à jour en HTTP seul, sans pair-à-pair (Delivery Optimization) — maîtrise du trafic sur réseau contrôlé.",
+        'policies'=>[['keyname'=>'Software\\Policies\\Microsoft\\Windows\\DeliveryOptimization','valuename'=>'DODownloadMode','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
+
+    // ═══ Defender — protections avancées (Ordinateur) ═══════════════════════
+    // Ajoutées après vérification indépendante des clés ADMX (workflow verify-new-gpos).
+    'defasr' => ['cat'=>'Defender & SmartScreen','title'=>"Règles de réduction de la surface d'attaque (ASR)",'icon'=>'🧨','scope'=>'Ordinateur',
+        'desc'=>"Bloque des comportements malveillants courants : vol d'identifiants dans LSASS, contenu exécutable reçu par courriel, scripts obfusqués, macros Office lançant des processus ou des exécutables. À PILOTER d'abord (mode Bloquer, risque de faux positifs).",
+        'policies'=>[
+            // Bloquer le vol d'identifiants depuis LSASS.
+            ['keyname'=>$K_DEFEG.'\\ASR\\Rules','valuename'=>'9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2','class'=>'MACHINE','type'=>'REG_SZ','data'=>'1'],
+            // Bloquer le contenu exécutable des clients de messagerie/webmail.
+            ['keyname'=>$K_DEFEG.'\\ASR\\Rules','valuename'=>'be9ba2d9-53ea-4cdc-84e5-9b1eeee46550','class'=>'MACHINE','type'=>'REG_SZ','data'=>'1'],
+            // Bloquer JavaScript/VBScript lançant un exécutable téléchargé.
+            ['keyname'=>$K_DEFEG.'\\ASR\\Rules','valuename'=>'d3e037e1-3eb8-44c8-a917-57927947596d','class'=>'MACHINE','type'=>'REG_SZ','data'=>'1'],
+            // Bloquer l'exécution de scripts potentiellement obfusqués.
+            ['keyname'=>$K_DEFEG.'\\ASR\\Rules','valuename'=>'5beb7efe-fd9a-4556-801d-275e5ffc04cc','class'=>'MACHINE','type'=>'REG_SZ','data'=>'1'],
+            // Bloquer les applications Office créant des processus enfants.
+            ['keyname'=>$K_DEFEG.'\\ASR\\Rules','valuename'=>'d4f940ab-401b-4efc-aadc-ad5f3c50688a','class'=>'MACHINE','type'=>'REG_SZ','data'=>'1'],
+            ['keyname'=>$K_DEFEG.'\\ASR','valuename'=>'ExploitGuard_ASR_Rules','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1],
+        ]],
+    'defnetprot' => ['cat'=>'Defender & SmartScreen','title'=>"Protection réseau Defender (sites malveillants)",'icon'=>'🌐','scope'=>'Ordinateur',
+        'desc'=>"Bloque au niveau système les connexions vers des domaines et adresses IP réputés malveillants (hameçonnage, serveurs de commande).",
+        'policies'=>[['keyname'=>$K_DEFEG.'\\Network Protection','valuename'=>'EnableNetworkProtection','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1]]],
+    'defcfa' => ['cat'=>'Defender & SmartScreen','title'=>"Accès contrôlé aux dossiers (anti-rançongiciel)",'icon'=>'🔐','scope'=>'Ordinateur',
+        'desc'=>"Empêche les applications non autorisées de modifier les dossiers protégés (Documents, Images…). Protection anti-rançongiciel — prévoir une liste d'applications autorisées avant généralisation.",
+        'policies'=>[['keyname'=>$K_DEFEG.'\\Controlled Folder Access','valuename'=>'EnableControlledFolderAccess','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1]]],
+    'defremovable' => ['cat'=>'Defender & SmartScreen','title'=>"Analyser les lecteurs amovibles (Defender)",'icon'=>'💾','scope'=>'Ordinateur',
+        'desc'=>"Inclut les clés et disques USB dans l'analyse antivirus complète.",
+        'policies'=>[['keyname'=>$K_DEFSCAN,'valuename'=>'DisableRemovableDriveScanning','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
+    'defarchive' => ['cat'=>'Defender & SmartScreen','title'=>"Analyser archives et courriels (Defender)",'icon'=>'🗜️','scope'=>'Ordinateur',
+        'desc'=>"Active l'analyse antivirus du contenu des archives (zip, rar…) et des courriels.",
+        'policies'=>[
+            ['keyname'=>$K_DEFSCAN,'valuename'=>'DisableArchiveScanning','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+            ['keyname'=>$K_DEFSCAN,'valuename'=>'DisableEmailScanning','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+        ]],
+
+    // ═══ Sécurité & durcissement — compléments (Ordinateur) ═════════════════
+    'installelev' => ['cat'=>'Sécurité & durcissement','title'=>"Interdire les installations MSI élevées",'icon'=>'⬆️','scope'=>'Ordinateur',
+        'desc'=>"Désactive « AlwaysInstallElevated » : empêche l'installation de paquets MSI avec les privilèges SYSTEM (vecteur classique d'élévation de privilèges).",
+        'policies'=>[
+            ['keyname'=>'Software\\Policies\\Microsoft\\Windows\\Installer','valuename'=>'AlwaysInstallElevated','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+            ['keyname'=>'Software\\Policies\\Microsoft\\Windows\\Installer','valuename'=>'AlwaysInstallElevated','class'=>'USER','type'=>'REG_DWORD','data'=>0],
+        ]],
+    'attachscan' => ['cat'=>'Sécurité & durcissement','title'=>"Analyser les pièces jointes téléchargées",'icon'=>'📎','scope'=>'Utilisateur',
+        'desc'=>"Force l'analyse antivirus des fichiers téléchargés et des pièces jointes à l'ouverture (Gestionnaire de pièces jointes).",
+        'policies'=>[['keyname'=>'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments','valuename'=>'ScanWithAntiVirus','class'=>'USER','type'=>'REG_DWORD','data'=>3]]],
+
+    // ═══ Confidentialité & télémétrie — compléments ═════════════════════════
+    'noactivity' => ['cat'=>'Confidentialité & télémétrie','title'=>"Désactiver l'historique d'activités (Timeline)",'icon'=>'🕰️','scope'=>'Ordinateur',
+        'desc'=>"Désactive la collecte, la publication et l'envoi de l'historique d'activités Windows (Timeline).",
+        'policies'=>[
+            ['keyname'=>$K_SYSPOL,'valuename'=>'EnableActivityFeed','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+            ['keyname'=>$K_SYSPOL,'valuename'=>'PublishUserActivities','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+            ['keyname'=>$K_SYSPOL,'valuename'=>'UploadUserActivities','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+        ]],
+    'nower' => ['cat'=>'Confidentialité & télémétrie','title'=>"Désactiver les rapports d'erreurs Windows",'icon'=>'🐞','scope'=>'Ordinateur',
+        'desc'=>"Coupe l'envoi automatique des rapports d'erreurs (WER) à Microsoft.",
+        'policies'=>[['keyname'=>'Software\\Policies\\Microsoft\\Windows\\Windows Error Reporting','valuename'=>'Disabled','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1]]],
+    'noceip' => ['cat'=>'Confidentialité & télémétrie','title'=>"Désactiver le programme d'expérience (CEIP)",'icon'=>'📊','scope'=>'Ordinateur',
+        'desc'=>"Désactive le programme d'amélioration de l'expérience utilisateur (CEIP).",
+        'policies'=>[['keyname'=>'Software\\Policies\\Microsoft\\SQMClient\\Windows','valuename'=>'CEIPEnable','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
+    'noclipcloud' => ['cat'=>'Confidentialité & télémétrie','title'=>"Désactiver l'historique et la sync du presse-papiers",'icon'=>'📋','scope'=>'Ordinateur',
+        'desc'=>"Interdit l'historique du presse-papiers et sa synchronisation entre appareils (protège les données sensibles copiées).",
+        'policies'=>[
+            ['keyname'=>$K_SYSPOL,'valuename'=>'AllowClipboardHistory','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+            ['keyname'=>$K_SYSPOL,'valuename'=>'AllowCrossDeviceClipboard','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+        ]],
+    'nocdp' => ['cat'=>'Confidentialité & télémétrie','title'=>"Désactiver les expériences partagées (CDP)",'icon'=>'🤝','scope'=>'Ordinateur',
+        'desc'=>"Désactive la plateforme d'appareils connectés (partage de proximité, continuité entre appareils).",
+        'policies'=>[['keyname'=>$K_SYSPOL,'valuename'=>'EnableCdp','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
+
+    // ═══ Réseau — compléments (Ordinateur) ══════════════════════════════════
+    'hardenedunc' => ['cat'=>'Réseau','title'=>"Chemins UNC renforcés (SYSVOL/NETLOGON)",'icon'=>'🛡️','scope'=>'Ordinateur',
+        'desc'=>"Exige authentification mutuelle et intégrité pour l'accès aux partages SYSVOL et NETLOGON du domaine (correctif MS15-011 : empêche l'altération des GPO en transit).",
+        'policies'=>[
+            ['keyname'=>'Software\\Policies\\Microsoft\\Windows\\NetworkProvider\\HardenedPaths','valuename'=>'\\\\*\\NETLOGON','class'=>'MACHINE','type'=>'REG_SZ','data'=>'RequireMutualAuthentication=1, RequireIntegrity=1'],
+            ['keyname'=>'Software\\Policies\\Microsoft\\Windows\\NetworkProvider\\HardenedPaths','valuename'=>'\\\\*\\SYSVOL','class'=>'MACHINE','type'=>'REG_SZ','data'=>'RequireMutualAuthentication=1, RequireIntegrity=1'],
+        ]],
+    'nonondomain' => ['cat'=>'Réseau','title'=>"Interdire les connexions hors domaine simultanées",'icon'=>'🚧','scope'=>'Ordinateur',
+        'desc'=>"Empêche un poste connecté au réseau du domaine de se connecter en même temps à un autre réseau (Wi-Fi public, partage de connexion) — anti-pont réseau.",
+        'policies'=>[
+            ['keyname'=>'Software\\Policies\\Microsoft\\Windows\\WcmSvc\\GroupPolicy','valuename'=>'fBlockNonDomain','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1],
+            ['keyname'=>'Software\\Policies\\Microsoft\\Windows\\WcmSvc\\GroupPolicy','valuename'=>'fMinimizeConnections','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1],
+        ]],
+    'nomdns' => ['cat'=>'Réseau','title'=>"Désactiver mDNS",'icon'=>'📡','scope'=>'Ordinateur',
+        'desc'=>"Désactive la résolution de noms multicast mDNS du client DNS (réduction de la surface d'attaque locale). Peut gêner la découverte de certaines imprimantes réseau.",
+        'policies'=>[['keyname'=>'SYSTEM\\CurrentControlSet\\Services\\Dnscache\\Parameters','valuename'=>'EnableMDNS','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
+
+    // ═══ Sécurité réseau & accès distant — compléments (Ordinateur) ═════════
+    'wdigest' => ['cat'=>'Sécurité réseau & accès distant','title'=>"Ne pas conserver les identifiants en clair (WDigest)",'icon'=>'🧬','scope'=>'Ordinateur',
+        'desc'=>"Empêche le fournisseur WDigest de conserver les mots de passe en clair en mémoire (durcissement anti-Mimikatz, KB2871997).",
+        'policies'=>[['keyname'=>'SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest','valuename'=>'UseLogonCredential','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
+    'ntlmv2' => ['cat'=>'Sécurité réseau & accès distant','title'=>"Exiger NTLMv2 (refuser LM/NTLMv1)",'icon'=>'🔐','scope'=>'Ordinateur',
+        'desc'=>"Force l'authentification NTLMv2 et refuse LM et NTLMv1 (LmCompatibilityLevel=5). Peut gêner de très anciens équipements ne gérant que NTLMv1.",
+        'policies'=>[['keyname'=>$K_LSA,'valuename'=>'LmCompatibilityLevel','class'=>'MACHINE','type'=>'REG_DWORD','data'=>5]]],
+    'noremoteassist' => ['cat'=>'Sécurité réseau & accès distant','title'=>"Désactiver l'Assistance à distance",'icon'=>'🆘','scope'=>'Ordinateur',
+        'desc'=>"Refuse les demandes et offres d'Assistance à distance sur les postes.",
+        'policies'=>[['keyname'=>$K_TS,'valuename'=>'fAllowToGetHelp','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0]]],
+    'winrmnoplain' => ['cat'=>'Sécurité réseau & accès distant','title'=>"Interdire le trafic WinRM non chiffré",'icon'=>'✉️','scope'=>'Ordinateur',
+        'desc'=>"Interdit l'authentification Basic et le trafic non chiffré côté service ET client WinRM (gestion à distance).",
+        'policies'=>[
+            ['keyname'=>$K_WINRMS,'valuename'=>'AllowUnencryptedTraffic','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+            ['keyname'=>$K_WINRMS,'valuename'=>'AllowBasic','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+            ['keyname'=>$K_WINRMC,'valuename'=>'AllowUnencryptedTraffic','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+            ['keyname'=>$K_WINRMC,'valuename'=>'AllowBasic','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
+        ]],
+    'rdpenc' => ['cat'=>'Sécurité réseau & accès distant','title'=>"RDP : chiffrement élevé + couche SSL",'icon'=>'🔒','scope'=>'Ordinateur',
+        'desc'=>"Si le Bureau à distance est autorisé, impose un niveau de chiffrement élevé et la couche de sécurité SSL/TLS pour les sessions RDP.",
+        'policies'=>[
+            ['keyname'=>$K_TS,'valuename'=>'MinEncryptionLevel','class'=>'MACHINE','type'=>'REG_DWORD','data'=>3],
+            ['keyname'=>$K_TS,'valuename'=>'SecurityLayer','class'=>'MACHINE','type'=>'REG_DWORD','data'=>2],
+        ]],
+
+    // ═══ Microsoft Office — compléments (Utilisateur) ═══════════════════════
+    // Portée Utilisateur/HKCU confirmée par la vérification ; Outlook n'a pas RequireAddinSig.
+    'officeaddinsig' => ['cat'=>'Microsoft Office','title'=>"Exiger des compléments Office signés",'icon'=>'✍️','scope'=>'Utilisateur',
+        'desc'=>"Exige que les compléments (add-ins) de Word, Excel et PowerPoint soient signés numériquement.",
+        'policies'=>[
+            ['keyname'=>$K_OFF.'\\Word\\Security','valuename'=>'RequireAddinSig','class'=>'USER','type'=>'REG_DWORD','data'=>1],
+            ['keyname'=>$K_OFF.'\\Excel\\Security','valuename'=>'RequireAddinSig','class'=>'USER','type'=>'REG_DWORD','data'=>1],
+            ['keyname'=>$K_OFF.'\\PowerPoint\\Security','valuename'=>'RequireAddinSig','class'=>'USER','type'=>'REG_DWORD','data'=>1],
+        ]],
+    'officeactivex' => ['cat'=>'Microsoft Office','title'=>"Désactiver les contrôles ActiveX (Office)",'icon'=>'🧩','scope'=>'Utilisateur',
+        'desc'=>"Bloque le chargement des contrôles ActiveX dans les applications Office (vecteur d'exécution de code).",
+        'policies'=>[['keyname'=>'Software\\Policies\\Microsoft\\Office\\Common\\Security','valuename'=>'DisableAllActiveX','class'=>'USER','type'=>'REG_DWORD','data'=>1]]],
 ];
