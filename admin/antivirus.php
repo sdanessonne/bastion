@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash = ['Jeton supprimé.', 'ok'];
     } elseif ($action === 'update') {
         $out = shell_exec('sudo /usr/local/sbin/proxyfibre-clamav update 2>&1');
-        $flash = ['Base virale : mise à jour lancée.' . (preg_match('/up-to-date|is up to date|updated/i', (string) $out) ? '' : ''), 'ok'];
+        $flash = ['Base virale : mise à jour lancée.', 'ok'];
     } elseif ($action === 'scan') {
         $dir = (string) ($_POST['dir'] ?? '');
         if (!isset($SCAN_TARGETS[$dir])) {
@@ -131,6 +131,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   (<code>setup-antivirus.sh</code> ou <code>apt install clamav clamav-daemon</code>).</div>
 <?php endif; ?>
 
+<!-- État en un coup d'œil : visible sur tous les onglets. -->
 <section class="cards">
   <div class="kpi"><div class="kpi-val" style="color:<?= $daemon ? '#4ade80' : '#f87171' ?>"><?= $daemon ? 'Actif' : 'Arrêté' ?></div><div class="kpi-lbl">Moteur temps réel (clamd)</div></div>
   <div class="kpi"><div class="kpi-val" style="font-size:1rem"><?= $dbDate ? date('d/m/Y H:i', $dbDate) : '—' ?></div><div class="kpi-lbl">Base virale (dernière MAJ)</div></div>
@@ -139,20 +140,41 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   <div class="kpi"><div class="kpi-val" style="color:<?= $fresh ? '#4ade80' : '#94a3b8' ?>"><?= $fresh ? 'Auto' : 'Manuel' ?></div><div class="kpi-lbl">MAJ base (freshclam)</div></div>
 </section>
 
-<div class="split">
-  <!-- Colonne de gauche : les deux panneaux de réglage EMPILÉS. « .split » n'a que deux
-       colonnes ; les laisser en enfants directs enverrait l'historique dans la colonne
-       étroite de 320 px, illisible. -->
-  <div style="display:grid;gap:1.4rem">
+<!-- Onglets : la page réunit trois sujets distincts (protection, stations, historique). -->
+<style>
+  .av-tabs{display:flex;gap:.3rem;flex-wrap:wrap;margin:.4rem 0 1.4rem;border-bottom:1px solid var(--line)}
+  .av-tab{background:transparent;border:1px solid transparent;border-bottom:none;color:var(--muted);cursor:pointer;
+          padding:.6rem 1.05rem;font-size:.9rem;border-radius:10px 10px 0 0;font-weight:500;white-space:nowrap}
+  .av-tab:hover{color:var(--text);background:var(--bg)}
+  .av-tab.active{color:#fff;background:var(--panel);border-color:var(--line);margin-bottom:-1px}
+  .st-stats{display:flex;gap:.7rem;flex-wrap:wrap;margin:.2rem 0 1.2rem}
+  .st-stat{flex:1;min-width:120px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.65rem .85rem}
+  .st-stat .v{font-size:1.6rem;font-weight:700;line-height:1}
+  .av-sub{margin:1.3rem 0 .5rem;font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  details.av-fold{border:1px solid var(--line);border-radius:10px;background:var(--bg);margin-bottom:.6rem}
+  details.av-fold>summary{cursor:pointer;padding:.6rem .9rem;font-size:.86rem;color:var(--text);list-style:none;display:flex;align-items:center;gap:.5rem}
+  details.av-fold>summary::-webkit-details-marker{display:none}
+  details.av-fold>summary::before{content:"▸";color:var(--muted)}
+  details.av-fold[open]>summary::before{content:"▾"}
+  details.av-fold .fold-body{padding:.2rem .9rem .9rem}
+</style>
+<nav class="av-tabs" role="tablist" aria-label="Sections antivirus">
+  <button type="button" class="av-tab" data-tab="protection">🛡️ Protection &amp; analyses</button>
+  <button type="button" class="av-tab" data-tab="stations">🔌 Stations blanches</button>
+  <button type="button" class="av-tab" data-tab="histo">📜 Historique</button>
+</nav>
+
+<!-- ══ Onglet PROTECTION & ANALYSES ══ -->
+<div class="av-pane" data-pane="protection">
   <section class="panel form-panel">
-    <div class="panel-head"><h2>🛡️ Protection</h2></div>
+    <div class="panel-head"><h2>🛡️ Protection de la passerelle</h2></div>
     <div style="padding:1.2rem">
       <p class="muted small" style="margin-top:0"><?= e($version) ?></p>
-      <form method="post" style="margin-bottom:1rem">
+      <form method="post" style="margin-bottom:1.2rem">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <button name="action" value="update" class="btn">↻ Mettre à jour la base virale</button>
       </form>
-      <p class="muted small">Analyser à la demande :</p>
+      <div class="av-sub">Analyser à la demande</div>
       <?php foreach ($SCAN_TARGETS as $dir => $label): ?>
         <form method="post" style="margin-bottom:.5rem">
           <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -162,33 +184,28 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
           <span class="muted small"><?= e($dir) ?></span>
         </form>
       <?php endforeach; ?>
-      <p class="hint muted small" style="margin-top:1rem">Les fichiers déposés par les clients dans les
+      <p class="hint muted small" style="margin-top:1.1rem">Les fichiers déposés par les clients dans les
       dossiers partagés sont analysés. Une analyse planifiée quotidienne tourne aussi automatiquement.</p>
     </div>
   </section>
+</div>
 
+<!-- ══ Onglet STATIONS BLANCHES ══ -->
+<div class="av-pane" data-pane="stations">
   <section class="panel form-panel">
     <div class="panel-head"><h2>🔌 Stations blanches</h2></div>
     <div style="padding:1.2rem">
       <p class="muted small" style="margin-top:0">Les stations d'analyse de clés USB déposent leurs
       résultats ici et récupèrent leur base virale sur cette passerelle — elles n'ont pas besoin d'Internet.</p>
 
-      <!-- Bilan des analyses déposées par les stations -->
-      <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin:.2rem 0 1rem">
-        <div style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.65rem .85rem">
-          <div style="font-size:1.6rem;font-weight:700;line-height:1"><?= $stStats['n30'] ?></div>
-          <div class="muted small">analyses (30 j)</div>
-        </div>
-        <div style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.65rem .85rem">
-          <div style="font-size:1.6rem;font-weight:700;line-height:1;color:<?= $stStats['menaces30'] > 0 ? '#f87171' : '#4ade80' ?>"><?= $stStats['menaces30'] ?></div>
-          <div class="muted small">menaces (30 j)</div>
-        </div>
-        <div style="flex:1;min-width:130px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.65rem .85rem">
-          <div style="font-size:.95rem;font-weight:600;line-height:1.3"><?= $stStats['dernier'] ? e(date('d/m/Y H:i', strtotime((string) $stStats['dernier']))) : '—' ?></div>
-          <div class="muted small">dernière analyse</div>
-        </div>
+      <!-- Activité récente déposée par les stations -->
+      <div class="st-stats">
+        <div class="st-stat"><div class="v"><?= $stStats['n30'] ?></div><div class="muted small">analyses (30 j)</div></div>
+        <div class="st-stat"><div class="v" style="color:<?= $stStats['menaces30'] > 0 ? '#f87171' : '#4ade80' ?>"><?= $stStats['menaces30'] ?></div><div class="muted small">menaces (30 j)</div></div>
+        <div class="st-stat"><div class="v" style="font-size:.95rem;font-weight:600;line-height:1.3;padding:.3rem 0"><?= $stStats['dernier'] ? e(date('d/m/Y H:i', strtotime((string) $stStats['dernier']))) : '—' ?></div><div class="muted small">dernière analyse</div></div>
       </div>
 
+      <!-- Base virale servie : bannière seulement si problème, détail repliable sinon -->
       <?php if (!$baseFichiers): ?>
         <div class="flash err" style="margin:.6rem 0">
           <?php if ($baseBloquee): ?>
@@ -201,31 +218,35 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
           <?php endif; ?>
         </div>
       <?php else: ?>
-        <p class="muted small">Base servie aux stations :</p>
-        <table class="grid-table" style="margin-bottom:1rem">
-          <tbody>
-          <?php foreach ($baseFichiers as $n => $i): ?>
-            <tr><td><code><?= e($n) ?></code></td>
-                <td class="muted svc-meta"><?= number_format($i['taille'] / 1048576, 1, ',', ' ') ?> Mo</td>
-                <td class="muted svc-meta"><?= date('d/m/Y H:i', $i['date']) ?></td></tr>
-          <?php endforeach; ?>
-          </tbody>
-        </table>
+        <details class="av-fold">
+          <summary>Base virale servie aux stations <span class="muted small">(<?= count($baseFichiers) ?> fichiers)</span></summary>
+          <div class="fold-body">
+            <table class="grid-table">
+              <tbody>
+              <?php foreach ($baseFichiers as $n => $i): ?>
+                <tr><td><code><?= e($n) ?></code></td>
+                    <td class="muted svc-meta"><?= number_format($i['taille'] / 1048576, 1, ',', ' ') ?> Mo</td>
+                    <td class="muted svc-meta"><?= date('d/m/Y H:i', $i['date']) ?></td></tr>
+              <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        </details>
       <?php endif; ?>
 
-      <!-- Jetons PAR STATION : un par ordinateur, révocables un par un. -->
-      <h3 style="font-size:.95rem;margin:1.1rem 0 .2rem">🔑 Jetons par station <span class="muted small">(recommandé)</span></h3>
-      <p class="muted small" style="margin:.2rem 0 .6rem">Un jeton par ordinateur : on voit lequel se sert (et quand), et on
+      <!-- Jetons PAR STATION : le cœur de la gestion. -->
+      <div class="av-sub">🔑 Jetons par station <span style="text-transform:none;font-weight:400">(recommandé)</span></div>
+      <p class="muted small" style="margin:.2rem 0 .7rem">Un jeton par ordinateur : on voit lequel se sert (et quand), et on
       peut en révoquer un seul — poste volé ou remplacé — sans reconfigurer les autres. Le jeton n'ouvre que le dépôt
       de résultats et la base virale, <strong>rien d'autre</strong>.</p>
-      <form method="post" class="ad-inline" style="margin-bottom:.8rem">
+      <form method="post" class="ad-inline" style="margin-bottom:.9rem">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="station_token_add">
         <input type="text" name="label" required maxlength="96" placeholder="Nom du poste (ex. Accueil brigade)"
                style="flex:1;min-width:170px;padding:.5rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
         <button class="btn-sm">＋ Créer un jeton</button>
       </form>
       <?php if ($stationTokens): ?>
-      <div class="table-wrap"><table class="grid-table" style="margin-bottom:1rem">
+      <div class="table-wrap"><table class="grid-table" style="margin-bottom:.6rem">
         <thead><tr><th>Station</th><th>Jeton</th><th>Dernière activité</th><th>État</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($stationTokens as $t): $csrf = e(csrf_token()); $rev = (int) $t['revoked']; ?>
@@ -248,11 +269,13 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
         <?php endforeach; ?>
         </tbody>
       </table></div>
-      <?php else: ?><p class="muted small" style="margin-bottom:1rem">Aucun jeton par station pour l'instant. Créez-en un ci-dessus.</p><?php endif; ?>
+      <?php else: ?><p class="muted small" style="margin-bottom:.6rem">Aucun jeton par station pour l'instant. Créez-en un ci-dessus.</p><?php endif; ?>
 
-      <details style="margin-bottom:.6rem">
-        <summary class="muted small" style="cursor:pointer">Contenu de <code>station.json</code> d'un poste</summary>
-<pre style="font-size:.75rem;overflow-x:auto;background:rgba(0,0,0,.25);padding:.6rem;border-radius:6px">{
+      <!-- Références secondaires, repliées pour ne pas encombrer -->
+      <details class="av-fold">
+        <summary>Configuration d'un poste — <code>station.json</code></summary>
+        <div class="fold-body">
+<pre style="font-size:.75rem;overflow-x:auto;background:rgba(0,0,0,.25);padding:.6rem;border-radius:6px;margin:.3rem 0 0">{
   "Passerelle": "https://<?= e($lanIp ?: '192.168.182.1') ?>:8443",
   "Jeton": "&lt;le jeton de la station&gt;",
   "Kiosque": true,
@@ -261,28 +284,33 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   "DefenderEnSecondAvis": true,
   "AccepterCertificatInterne": true
 }</pre>
+        </div>
       </details>
 
-      <details style="margin-bottom:.4rem">
-        <summary class="muted small" style="cursor:pointer">Jeton partagé (hérité) — un seul pour toutes les stations</summary>
-        <p class="muted small" style="margin:.6rem 0 .4rem">Compatibilité : les stations configurées avec ce jeton unique
-        fonctionnent toujours. Préférez désormais un jeton par station (ci-dessus), révocable individuellement.</p>
-        <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.6rem">
-          <input id="jetonSt" type="password" readonly value="<?= e($stationToken) ?>"
-                 style="flex:1;font-family:monospace;font-size:.8rem" onclick="this.select()">
-          <button type="button" class="btn-sm" onclick="var c=document.getElementById('jetonSt');c.type=c.type==='password'?'text':'password';">👁 Voir</button>
+      <details class="av-fold">
+        <summary>Jeton partagé (hérité) — un seul pour toutes les stations</summary>
+        <div class="fold-body">
+          <p class="muted small" style="margin:.3rem 0 .5rem">Compatibilité : les stations configurées avec ce jeton unique
+          fonctionnent toujours. Préférez désormais un jeton par station (ci-dessus), révocable individuellement.</p>
+          <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.6rem">
+            <input id="jetonSt" type="password" readonly value="<?= e($stationToken) ?>"
+                   style="flex:1;font-family:monospace;font-size:.8rem" onclick="this.select()">
+            <button type="button" class="btn-sm" onclick="var c=document.getElementById('jetonSt');c.type=c.type==='password'?'text':'password';">👁 Voir</button>
+          </div>
+          <form method="post" onsubmit="return confirm('Générer un nouveau jeton PARTAGÉ ?\n\nToutes les stations sur ce jeton (pas les jetons par station) seront refusées tant qu\'elles n\'auront pas reçu le nouveau.');">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <button name="action" value="station_token_new" class="btn-sm">↻ Renouveler le jeton partagé</button>
+          </form>
         </div>
-        <form method="post" onsubmit="return confirm('Générer un nouveau jeton PARTAGÉ ?\n\nToutes les stations sur ce jeton (pas les jetons par station) seront refusées tant qu\'elles n\'auront pas reçu le nouveau.');">
-          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-          <button name="action" value="station_token_new" class="btn-sm">↻ Renouveler le jeton partagé</button>
-        </form>
       </details>
     </div>
   </section>
-  </div><!-- /colonne de gauche -->
+</div>
 
+<!-- ══ Onglet HISTORIQUE ══ -->
+<div class="av-pane" data-pane="histo">
   <section class="panel">
-    <div class="panel-head"><h2>Historique des analyses</h2></div>
+    <div class="panel-head"><h2>📜 Historique des analyses</h2></div>
     <div class="table-wrap">
     <table class="grid-table">
       <thead><tr><th>Date</th><th>Origine</th><th>Cible</th><th>Fichiers</th><th>Menaces</th></tr></thead>
@@ -315,4 +343,19 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     </div>
   </section>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var tabs = document.querySelectorAll('.av-tab'), panes = document.querySelectorAll('.av-pane');
+  function show(name) {
+    panes.forEach(function (p) { p.style.display = (p.dataset.pane === name) ? '' : 'none'; });
+    tabs.forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
+    try { localStorage.setItem('av_tab', name); } catch (e) {}
+  }
+  tabs.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.tab); }); });
+  var init = null; try { init = localStorage.getItem('av_tab'); } catch (e) {}
+  var valid = Array.prototype.some.call(tabs, function (b) { return b.dataset.tab === init; });
+  show(valid ? init : 'protection');
+});
+</script>
 <?php pf_footer(); ?>
