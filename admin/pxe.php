@@ -83,21 +83,31 @@ catch (Throwable $e) { /* défauts */ }
 $val = fn($k) => e($S[$k] ?? ($DEF[$k] ?? ''));
 $on  = fn($k) => ($S[$k] ?? '1') === '1';
 
-// ── État des fichiers de démarrage ───────────────────────────────────────────
+// ── État des fichiers de démarrage (avec le DÉTAIL des fichiers manquants) ────
 $B = '/var/www/html/boot'; $I = '/srv/pxe/iso';
-$ready = [
-    'debian'  => is_file("$B/debian/linux") && is_file("$B/debian/initrd.gz"),
-    'ubuntu'  => is_file("$B/ubuntu/vmlinuz") && is_file("$B/ubuntu/initrd") && is_file("$I/ubuntu.iso"),
-    'windows' => is_file("$B/wimboot") && is_file("$B/win11/boot.wim") && is_file("$B/win11/BCD")
-              && is_file("$B/win11/bootmgr") && is_file("$B/win11/boot.sdi"),
-    'local'   => true,
-    'shell'   => true,
+$REQ = [
+    'debian'  => ["$B/debian/linux", "$B/debian/initrd.gz"],
+    'ubuntu'  => ["$B/ubuntu/vmlinuz", "$B/ubuntu/initrd", "$I/ubuntu.iso"],
+    'windows' => ["$B/wimboot", "$B/win11/boot.wim", "$B/win11/BCD", "$B/win11/bootmgr", "$B/win11/boot.sdi"],
+    'local'   => [], 'shell' => [],
 ];
+$ready = []; $missing = [];
+foreach ($REQ as $k => $files) {
+    $miss = array_values(array_filter($files, fn($f) => !is_file($f)));
+    $missing[$k] = array_map(fn($f) => str_replace(["$B/", "$I/"], ['', 'iso/'], $f), $miss);
+    $ready[$k] = ($k === 'local' || $k === 'shell') ? true : empty($miss);
+}
 $banner  = is_file("$B/menu-bg.png");
 $dnsOn   = trim((string) shell_exec('systemctl is-active dnsmasq 2>/dev/null')) === 'active';
 $lanIps  = trim((string) shell_exec("hostname -I 2>/dev/null"));
 $lanIp   = '192.168.182.1';
 foreach (preg_split('/\s+/', $lanIps) as $ip) { if (str_starts_with($ip, '192.168.182.')) { $lanIp = $ip; break; } }
+
+// Synthèse pour l'en-tête.
+$osReady   = (int) $ready['debian'] + (int) $ready['ubuntu'] + (int) $ready['windows'];
+$curDefault = $S['pxe_default'] ?? 'local';
+$defReady   = $ready[$curDefault] ?? true;         // l'entrée par défaut est-elle amorçable ?
+$defEnabled = $on("pxe_{$curDefault}_enabled");    // …et activée ?
 
 // Aperçu en direct : rendu réel du menu iPXE (endpoint local, sans login).
 $ctx     = stream_context_create(['http' => ['timeout' => 3]]);
@@ -122,8 +132,47 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     border:1px solid var(--line);border-radius:8px;font-size:.95rem}
   .row3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:1rem}
   .hint{color:var(--muted);font-size:.78rem}
+  .miss{color:#fca5a5;font-size:.76rem;margin-top:.25rem}
+  .miss code{background:rgba(248,113,113,.12);color:#fca5a5;padding:.05rem .3rem;border-radius:4px}
+  details.pxe-help{border:1px solid var(--line);border-radius:12px;background:var(--bg);margin-bottom:1rem}
+  details.pxe-help>summary{cursor:pointer;padding:.8rem 1.1rem;font-weight:600;list-style:none;display:flex;align-items:center;gap:.5rem}
+  details.pxe-help>summary::-webkit-details-marker{display:none}
+  details.pxe-help>summary::before{content:"▸";color:var(--muted)}
+  details.pxe-help[open]>summary::before{content:"▾"}
+  details.pxe-help .body{padding:.2rem 1.1rem 1rem;color:var(--muted);font-size:.86rem;line-height:1.6}
   @media(max-width:720px){.row3{grid-template-columns:1fr}.pxe-entry{grid-template-columns:1fr}.pxe-entry .args{grid-column:1}}
 </style>
+
+<!-- État en un coup d'œil -->
+<section class="cards">
+  <div class="kpi"><div class="kpi-val" style="color:<?= $dnsOn ? '#4ade80' : '#f87171' ?>"><?= $dnsOn ? 'Actif' : 'Arrêté' ?></div><div class="kpi-lbl">Service PXE (TFTP/DHCP)</div></div>
+  <div class="kpi"><div class="kpi-val" style="color:<?= $osReady === 3 ? '#4ade80' : ($osReady ? '#eab308' : '#f87171') ?>"><?= $osReady ?>/3</div><div class="kpi-lbl">Systèmes prêts à installer</div></div>
+  <div class="kpi"><div class="kpi-val" style="font-size:1rem"><?= e($NAMES[$curDefault] ?? $curDefault) ?></div><div class="kpi-lbl">Entrée par défaut</div></div>
+  <div class="kpi"><div class="kpi-val" style="font-size:1rem;color:<?= $on('pxe_protected') ? '#4ade80' : '#94a3b8' ?>"><?= $on('pxe_protected') ? '🔒 Protégé' : 'Ouvert' ?></div><div class="kpi-lbl">Accès au menu</div></div>
+</section>
+
+<?php if ($osReady === 0): ?>
+  <div class="flash err">Aucun système n'est prêt : aucune installation réseau ne peut aboutir. Ajoutez les fichiers de démarrage
+  (voir « État du serveur de démarrage » en bas).</div>
+<?php elseif (!$defReady || !$defEnabled): ?>
+  <div class="flash" style="margin-bottom:1rem">⚠️ L'entrée par défaut <strong><?= e($NAMES[$curDefault] ?? $curDefault) ?></strong>
+  est <?= !$defEnabled ? 'désactivée' : 'incomplète' ?> : au bout du délai, le poste risque de ne rien pouvoir amorcer.
+  Choisissez une entrée par défaut prête (souvent <em>Disque local</em>).</div>
+<?php endif; ?>
+
+<details class="pxe-help">
+  <summary>❔ Comment amorcer un poste en réseau (PXE)</summary>
+  <div class="body">
+    <ol style="margin:.2rem 0 0;padding-left:1.2rem">
+      <li>Brancher le poste sur le <strong>réseau du commissariat</strong> (le même LAN que la passerelle).</li>
+      <li>Au démarrage, ouvrir le <strong>menu d'amorçage</strong> (souvent <code>F12</code>, parfois <code>F9</code>/<code>F8</code>/<code>Échap</code>) et choisir le <strong>démarrage réseau / PXE / IPv4</strong>.</li>
+      <li>Sinon, activer « <em>Network / PXE Boot</em> » dans le BIOS/UEFI et le placer en tête de l'ordre d'amorçage.</li>
+      <li>Le poste récupère l'amorceur iPXE, puis affiche ce menu (protégé par identifiants si l'option est cochée).</li>
+    </ol>
+    <p style="margin:.6rem 0 0">Menu servi par <code>http://<?= e($lanIp) ?>:2080/boot/menu.php</code>. En VM VirtualBox :
+    carte réseau en « accès par pont » ou « réseau interne » sur le LAN, et amorçage réseau activé.</p>
+  </div>
+</details>
 
 <form method="post">
 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -144,23 +193,25 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <label class="field">Entrée par défaut
         <select name="pxe_default">
           <?php foreach ($NAMES as $k => $n): ?>
-            <option value="<?= $k ?>" <?= ($S['pxe_default'] ?? 'local') === $k ? 'selected' : '' ?>><?= e($n) ?></option>
+            <option value="<?= $k ?>" <?= $curDefault === $k ? 'selected' : '' ?>><?= e($n) ?><?= $ready[$k] ? '' : ' — incomplet' ?></option>
           <?php endforeach; ?>
         </select>
       </label>
     </div>
     <label class="sw" style="display:inline-flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:.3rem">
-      <input type="checkbox" name="pxe_protected" <?= $on('pxe_protected') ? 'checked' : '' ?>>
+      <input type="checkbox" name="pxe_protected" id="pxe_protected" <?= $on('pxe_protected') ? 'checked' : '' ?>>
       <span>Protéger le menu par les identifiants administrateur</span>
     </label>
     <p class="hint" style="margin:.4rem 0 0">Si activé, l'installation réseau demande un nom d'utilisateur et un mot de passe
     de la console (table <code>pf_admins</code>) avant d'afficher le menu.</p>
-    <label class="field" style="max-width:24rem;margin-top:.9rem">Démarrage sur le disque si personne ne s'identifie (s)
-      <input type="number" name="pxe_login_timeout" min="0" max="3600" value="<?= (int) ($S['pxe_login_timeout'] ?? 30) ?>">
-    </label>
-    <p class="hint" style="margin:.4rem 0 0">Un décompte s'affiche sur l'écran d'identification ; à zéro, le poste démarre sur
-    son disque local. Sans ce délai, un poste amorcé en réseau sans personne devant lui resterait bloqué indéfiniment.
-    Appuyer sur une touche annule le décompte. <code>0</code> = attendre indéfiniment.</p>
+    <div id="loginto-row" style="<?= $on('pxe_protected') ? '' : 'display:none' ?>">
+      <label class="field" style="max-width:24rem;margin-top:.9rem">Démarrage sur le disque si personne ne s'identifie (s)
+        <input type="number" name="pxe_login_timeout" min="0" max="3600" value="<?= (int) ($S['pxe_login_timeout'] ?? 30) ?>">
+      </label>
+      <p class="hint" style="margin:.4rem 0 0">Un décompte s'affiche sur l'écran d'identification ; à zéro, le poste démarre sur
+      son disque local. Sans ce délai, un poste amorcé en réseau sans personne devant lui resterait bloqué indéfiniment.
+      Appuyer sur une touche annule le décompte. <code>0</code> = attendre indéfiniment.</p>
+    </div>
   </div>
 </section>
 
@@ -179,6 +230,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
             <span class="hint"><?= e($desc) ?></span>
           </div>
           <input type="text" name="pxe_<?= $k ?>_label" value="<?= $val("pxe_{$k}_label") ?>" placeholder="Libellé affiché dans le menu">
+          <?php if (!empty($missing[$k])): ?>
+            <div class="miss">Manque : <?php foreach ($missing[$k] as $i => $m): ?><?= $i ? ' · ' : '' ?><code><?= e($m) ?></code><?php endforeach; ?></div>
+          <?php endif; ?>
         </div>
         <?php if ($hasArgs): ?>
           <div class="args">
@@ -203,7 +257,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
         border-radius:10px;overflow:auto;max-height:340px;font-family:ui-monospace,monospace;
         font-size:.78rem;line-height:1.5"><?= e($preview) ?></pre>
       <p class="muted small" style="margin:.6rem 0 0">Rendu réel servi aux clients (reflète les réglages
-      enregistrés). La partie login n'apparaît pas ici (aperçu authentifié).</p>
+      <strong>enregistrés</strong> — enregistrez pour rafraîchir). La partie login n'apparaît pas ici (aperçu authentifié).</p>
     </div>
   </section>
 
@@ -245,15 +299,22 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <?php foreach (['debian' => 'Debian (linux + initrd.gz)', 'ubuntu' => 'Ubuntu (vmlinuz + initrd + ISO)', 'windows' => 'Windows 11 (wimboot + boot.wim)'] as $k => $lbl): ?>
       <tr><td><strong><?= e($NAMES[$k]) ?></strong></td>
         <td><span class="badge <?= $ready[$k] ? 'on' : 'off' ?>"><?= $ready[$k] ? 'Prêt' : 'Incomplet' ?></span></td>
-        <td class="muted"><?= e($lbl) ?></td></tr>
+        <td class="muted"><?php if ($ready[$k]): ?><?= e($lbl) ?><?php else: ?>Manque : <?php foreach ($missing[$k] as $i => $m): ?><?= $i ? ', ' : '' ?><code><?= e($m) ?></code><?php endforeach; ?><?php endif; ?></td></tr>
       <?php endforeach; ?>
     </tbody>
   </table>
   </div>
   <p class="muted small" style="padding:0 1.2rem 1rem">
-    Amorçage client : <strong>démarrage réseau (PXE)</strong> sur le LAN.
+    Les fichiers manquants s'ajoutent via <code>setup-pxe.sh</code> (Debian/Ubuntu) ou l'intégration d'une ISO (Windows).
     Menu servi par <code>http://<?= e($lanIp) ?>:2080/boot/menu.php</code>.
-    Les fichiers manquants s'ajoutent via <code>setup-pxe.sh</code> (Debian/Ubuntu) ou l'intégration d'ISO (Windows).
   </p>
 </section>
+
+<script>
+  // Le délai « démarrage sur disque » ne concerne que le menu PROTÉGÉ : on le masque sinon.
+  (function () {
+    var pc = document.getElementById('pxe_protected'), lr = document.getElementById('loginto-row');
+    if (pc && lr) { pc.addEventListener('change', function () { lr.style.display = pc.checked ? '' : 'none'; }); }
+  })();
+</script>
 <?php pf_footer(); ?>
