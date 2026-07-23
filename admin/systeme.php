@@ -37,6 +37,28 @@ if (isset($_GET['apt'])) {
     exit;
 }
 
+// ── Mise à jour « tout en un » : lancement AJAX (JSON) ───────────────────────
+// Un seul bouton côté console orchestre système (apt) PUIS Bastion (git). Chaque
+// verbe ne fait que LANCER l'unité systemd correspondante (non bloquant) ; le suivi
+// se fait ensuite par sondage de « ?apt=state » / « ?apt=gitstate ». Liste FERMÉE.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'update_ajax') {
+    csrf_check();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    session_write_close();
+    $map = [
+        'apt_check' => 'sudo /usr/local/sbin/proxyfibre-apt check',
+        'apt_apply' => 'sudo /usr/local/sbin/proxyfibre-apt apply',
+        'git_check' => 'sudo /usr/local/sbin/proxyfibre-selfupdate check',
+        'git_apply' => 'sudo /usr/local/sbin/proxyfibre-selfupdate apply',
+    ];
+    $act = (string) ($_POST['act'] ?? '');
+    if (!isset($map[$act])) { http_response_code(400); echo '{"ok":false,"error":"action inconnue"}'; exit; }
+    $r = trim((string) shell_exec($map[$act] . ' 2>&1'));
+    echo json_encode(['ok' => !str_starts_with($r, 'ERREUR'), 'r' => $r], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 $db = pf_db();
 
 $aptFlash = null;
@@ -231,207 +253,123 @@ $dispo   = $apt !== [];
   .apt-pkg:last-child{border-bottom:0}
   .apt-pkg .v{color:var(--muted);font-family:ui-monospace,monospace;font-size:.76rem}
 </style>
-<section class="panel">
-  <div class="panel-head"><h2>⬆️ Mise à jour du système</h2>
-    <span class="muted small"><?= e($apt['version'] ?? 'Debian') ?></span>
-  </div>
-
-  <?php if (!$dispo): ?>
-    <div style="padding:1.2rem"><p class="muted" style="margin:0">Le service de mise à jour ne répond pas
-      (<code>proxyfibre-apt</code> absent, ou non autorisé en sudo).</p></div>
-  <?php else: ?>
-    <?php if ($aptFlash): ?>
-      <div style="padding:0 1.2rem"><div class="flash <?= e($aptFlash[1]) ?>"><?= e($aptFlash[0]) ?></div></div>
-    <?php endif; ?>
-
-    <div class="apt-head">
-      <div>
-        <div class="apt-num <?= $nSecu > 0 ? 'danger' : ($nTotal > 0 ? 'warn' : 'ok') ?>"><?= $nTotal ?></div>
-        <div class="muted small">
-          <?= $nTotal === 0 ? 'système à jour' : ($nTotal === 1 ? 'mise à jour disponible' : 'mises à jour disponibles') ?>
-          <?php if ($nSecu > 0): ?> — dont <strong style="color:#f87171"><?= $nSecu ?> de sécurité</strong><?php endif; ?>
-        </div>
-      </div>
-      <div class="muted small" style="line-height:1.7">
-        Dernière recherche : <?= $dtCheck ? e(date('d/m/Y à H:i', $dtCheck)) : 'jamais' ?><br>
-        Dernière installation : <?= $dtMaj ? e(date('d/m/Y à H:i', $dtMaj)) : 'jamais' ?>
-        <?php if ($nRet > 0): ?><br><span style="color:#eab308"><?= $nRet ?> paquet(s) retenu(s)</span> — ils exigent
-          un changement de dépendances, à traiter à la main<?php endif; ?>
-      </div>
-      <div class="apt-actions">
-        <form method="post" style="margin:0">
-          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-          <input type="hidden" name="do" value="apt"><input type="hidden" name="act" value="check">
-          <button class="btn-sm" id="aptCheck" <?= $enCours ? 'disabled' : '' ?>>↻ Rechercher</button>
-        </form>
-        <form method="post" style="margin:0" onsubmit="return confirm('Installer <?= $nTotal ?> mise(s) à jour ?\n\nLes services concernés seront redémarrés : une brève coupure du portail est possible.\nVos fichiers de configuration sont préservés.')">
-          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-          <input type="hidden" name="do" value="apt"><input type="hidden" name="act" value="apply">
-          <button class="btn" id="aptApply" <?= ($enCours || $nTotal === 0) ? 'disabled' : '' ?>>Installer</button>
-        </form>
-      </div>
-    </div>
-
-    <?php if (!empty($apt['reboot'])): ?>
-      <div style="padding:0 1.2rem 1rem"><div class="flash warn" style="margin:0">
-        ⚠️ Un <strong>redémarrage</strong> reste nécessaire pour terminer une mise à jour précédente (noyau ou
-        bibliothèque système). À planifier hors service : le réseau du commissariat sera coupé pendant l'opération.
-      </div></div>
-    <?php endif; ?>
-
-    <div id="aptJauge" hidden style="padding:0 1.2rem 1rem">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.4rem">
-        <span class="muted small" id="aptPhase">Préparation…</span>
-        <strong id="aptPct" style="font-variant-numeric:tabular-nums">0 %</strong>
-      </div>
-      <div class="bar"><div class="fill" id="aptFill" style="width:0%;background:#38bdf8"></div></div>
-    </div>
-
-    <div style="padding:0 1.2rem 1rem" id="aptPkgs"></div>
-    <pre id="aptLog" hidden></pre>
-
-    <div style="padding:0 1.2rem 1.2rem"><p class="hint" style="margin:0">Seule la commande
-      <code>apt upgrade</code> est lancée : elle ne <strong>supprime jamais</strong> un paquet, contrairement à
-      <code>full-upgrade</code> qui pourrait retirer un service pour résoudre une dépendance. Vos fichiers de
-      configuration modifiés (Samba, dnsmasq, OpenNDS, RADIUS) sont <strong>conservés</strong> en cas de conflit.</p></div>
-  <?php endif; ?>
-</section>
-
-<script>
-(function(){
-  var elLog=document.getElementById('aptLog'), elPkgs=document.getElementById('aptPkgs'),
-      bChk=document.getElementById('aptCheck'), bApp=document.getElementById('aptApply');
-  if(!elPkgs) return;
-  function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
-
-  async function pkgs(){
-    try{
-      var r=await fetch('systeme.php?apt=list',{cache:'no-store'}); if(!r.ok)return;
-      var l=await r.json();
-      elPkgs.innerHTML = !l.length ? '' : l.map(function(p){
-        return '<div class="apt-pkg"><span>'+esc(p.pkg)
-             + (p.secu?' <span class="badge off" style="font-size:.68rem">sécurité</span>':'')
-             + '</span><span class="v">'+esc(p.cur)+' → '+esc(p.new)+'</span></div>';
-      }).join('');
-    }catch(e){}
-  }
-
-  var suivi=null, vuActif=false;
-  async function suivre(){
-    try{
-      var r=await fetch('systeme.php?apt=state',{cache:'no-store'}); if(!r.ok)return;
-      var s=await r.json();
-      var actif = s.en_cours || s.check_en_cours;
-      if(bChk) bChk.disabled = actif;
-      if(bApp) bApp.disabled = actif || s.total===0;
-      // Jauge. « pct » vaut -1 tant qu'apt n'a rien annoncé (résolution des dépendances) :
-      // on montre alors une barre indéterminée plutôt qu'un 0 % figé qui ferait croire
-      // à un blocage.
-      var jauge=document.getElementById('aptJauge');
-      if(jauge){
-        if(actif){
-          jauge.hidden=false;
-          var p = (typeof s.pct==='number' && s.pct>=0) ? s.pct : null;
-          document.getElementById('aptFill').style.width = (p===null?8:p)+'%';
-          document.getElementById('aptPct').textContent  = (p===null?'…':p+' %');
-          document.getElementById('aptPhase').textContent =
-            s.phase || (s.check_en_cours ? 'Recherche des mises à jour…' : 'Préparation…');
-        } else { jauge.hidden=true; }
-      }
-      if(actif){
-        vuActif=true; elLog.hidden=false;
-        var lr=await fetch('systeme.php?apt=log',{cache:'no-store'});
-        if(lr.ok){
-          var d=await lr.json();
-          // Ne pas arracher la vue si l'administrateur a remonté pour lire : on ne
-          // recolle en bas que s'il y était déjà.
-          var enBas = elLog.scrollTop + elLog.clientHeight >= elLog.scrollHeight - 20;
-          elLog.textContent = d.log || '(démarrage…)';
-          if(enBas) elLog.scrollTop = elLog.scrollHeight;
-        }
-      } else if(vuActif){
-        // L'opération vient de se terminer : on recharge pour repartir d'un état franc
-        // (compteurs, « redémarrage requis », date de dernière installation).
-        clearInterval(suivi); suivi=null;
-        location.reload();
-      }
-    }catch(e){}
-  }
-
-  pkgs();
-  suivre();
-  suivi = setInterval(suivre, 2500);
-})();
-</script>
-
-
 <?php
 $gPret   = !empty($git['pret']);
 $gClone  = !empty($git['clone']);
-$gActif  = !empty($git['en_cours']);
 $gRetard = (int) ($git['retard'] ?? 0);
+$sysN    = $dispo ? $nTotal : 0;
+$gitN    = ($gPret && $gClone) ? $gRetard : 0;
+$toutAJour = ($dispo ? $nTotal === 0 : true) && (($gPret && $gClone) ? $gRetard === 0 : true);
+$aDeployer = ($sysN + $gitN) > 0;
 ?>
+<style>
+  .upd-row{display:flex;align-items:center;gap:.9rem;padding:.8rem 0;border-bottom:1px solid var(--line)}
+  .upd-row:last-of-type{border-bottom:0}
+  .upd-ico{font-size:1.5rem;width:2.1rem;text-align:center;flex:none}
+  .upd-info{flex:1;min-width:0}
+  .upd-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
+  .upd-bar-lbl{display:block;font-size:.82rem;margin-bottom:.35rem}
+  #updProg .bar{margin-bottom:.2rem}
+  #updLog{background:#0b1120;border:1px solid var(--line);border-radius:8px;padding:.8rem;margin:1rem 0 0;
+          font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;color:#cbd5e1;
+          max-height:19rem;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .fill-anim{background-image:linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.18) 50%,rgba(255,255,255,.18) 75%,transparent 75%,transparent);
+             background-size:14px 14px;animation:aptRayures 1s linear infinite}
+</style>
 <section class="panel">
-  <div class="panel-head"><h2>🐙 Mise à jour de Bastion</h2>
-    <?php if ($gPret && $gClone): ?>
-      <span class="badge <?= $gRetard > 0 ? 'warn' : 'on' ?>">
-        <?= $gRetard > 0 ? $gRetard . ' version(s) de retard' : 'à jour' ?></span>
-    <?php endif; ?>
+  <div class="panel-head"><h2>🔄 Mise à jour</h2>
+    <span class="badge <?= $toutAJour ? 'on' : ($nSecu > 0 ? 'off' : 'warn') ?>">
+      <?= $toutAJour ? 'tout est à jour' : (($sysN + $gitN) . ' mise(s) à jour disponible(s)') ?></span>
   </div>
   <div style="padding:1.2rem">
+    <?php if ($aptFlash): ?><div class="flash <?= e($aptFlash[1]) ?>"><?= e($aptFlash[0]) ?></div><?php endif; ?>
     <?php if ($gitFlash): ?><div class="flash <?= e($gitFlash[1]) ?>"><?= e($gitFlash[0]) ?></div><?php endif; ?>
 
-    <?php if ($gPret && $gClone): ?>
-      <div class="apt-head" style="padding:0 0 1rem">
-        <div>
-          <div class="apt-num <?= $gRetard > 0 ? 'warn' : 'ok' ?>"><?= $gRetard ?></div>
-          <div class="muted small"><?= $gRetard === 0 ? 'Bastion est à jour' : 'version(s) disponible(s)' ?></div>
+    <!-- Résumé combiné : système + Bastion, d'un coup d'œil -->
+    <div class="upd-summary">
+      <div class="upd-row">
+        <div class="upd-ico">🖥️</div>
+        <div class="upd-info"><strong>Système</strong> <span class="muted small"><?= e($apt['version'] ?? 'Debian') ?></span>
+          <div class="muted small"><?php
+            if (!$dispo) { echo 'service de mise à jour indisponible'; }
+            elseif ($nTotal === 0) { echo 'à jour'; }
+            else { echo $nTotal . ' mise(s) à jour' . ($nSecu > 0 ? ' — dont ' . $nSecu . ' de sécurité' : ''); }
+          ?></div>
         </div>
-        <div class="muted small" style="line-height:1.7">
-          Version installée : <code><?= e($git['local'] ?: '—') ?></code>
-          <?php if (!empty($git['sujet'])): ?><br><?= e($git['sujet']) ?><?php endif; ?>
-          <?php if (!empty($git['distant']) && $git['distant'] !== $git['local']): ?>
-            <br>Disponible : <code><?= e($git['distant']) ?></code><?php endif; ?>
-        </div>
-        <div class="apt-actions">
-          <form method="post" style="margin:0">
-            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <input type="hidden" name="do" value="git"><input type="hidden" name="act" value="check">
-            <button class="btn-sm" <?= $gActif ? 'disabled' : '' ?>>↻ Rechercher</button>
-          </form>
-          <form method="post" style="margin:0" onsubmit="return confirm('Mettre à jour Bastion vers la dernière version du dépôt ?\n\nLa console et le portail seront remplacés par le code du dépôt.\nLes réglages, les comptes et les journaux ne sont pas touchés.')">
-            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <input type="hidden" name="do" value="git"><input type="hidden" name="act" value="apply">
-            <button class="btn" <?= ($gActif || $gRetard === 0) ? 'disabled' : '' ?>>Mettre à jour</button>
-          </form>
-        </div>
+        <div class="apt-num <?= !$dispo ? '' : ($nSecu > 0 ? 'danger' : ($nTotal > 0 ? 'warn' : 'ok')) ?>" style="font-size:1.7rem">
+          <?= !$dispo ? '—' : ($nTotal > 0 ? $nTotal : '✓') ?></div>
       </div>
-      <div id="gitJauge" hidden style="padding-bottom:1rem">
-        <div class="muted small" style="margin-bottom:.4rem" id="gitPhase">Opération en cours…</div>
-        <div class="bar"><div class="fill" id="gitFill" style="width:8%;background:#38bdf8"></div></div>
+      <div class="upd-row">
+        <div class="upd-ico">🐙</div>
+        <div class="upd-info"><strong>Bastion</strong> <span class="muted small">application</span>
+          <div class="muted small"><?php
+            if (!$gPret) { echo 'dépôt non configuré (voir ci-dessous)'; }
+            elseif (!$gClone) { echo 'dépôt configuré — lancez une vérification'; }
+            elseif ($gRetard === 0) { echo 'à jour · version ' . e($git['local'] ?: '—'); }
+            else { echo $gRetard . ' version(s) de retard'; }
+          ?></div>
+        </div>
+        <div class="apt-num <?= (!$gPret || !$gClone) ? '' : ($gRetard > 0 ? 'warn' : 'ok') ?>" style="font-size:1.7rem">
+          <?= (!$gPret || !$gClone) ? '—' : ($gRetard > 0 ? $gRetard : '✓') ?></div>
       </div>
-      <pre id="gitLog" hidden style="margin:0 0 1rem"></pre>
-    <?php elseif (!$gPret): ?>
-      <p class="hint" style="margin:0 0 1rem">Aucun dépôt configuré. Renseignez l'adresse de votre dépôt GitHub :
-        Bastion pourra alors se mettre à jour d'un clic, sans passer par SSH.</p>
-    <?php else: ?>
-      <p class="hint" style="margin:0 0 1rem">Dépôt configuré mais pas encore rattaché — lancez une première recherche.</p>
-      <form method="post" style="margin:0 0 1rem">
-        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-        <input type="hidden" name="do" value="git"><input type="hidden" name="act" value="check">
-        <button class="btn-sm">↻ Rattacher et rechercher</button>
-      </form>
+    </div>
+
+    <!-- Actions « tout en un » : un bouton vérifie/installe système ET Bastion -->
+    <div class="upd-actions">
+      <button class="btn-sm" id="updCheck">↻ Tout vérifier</button>
+      <button class="btn" id="updApply" <?= $aDeployer ? '' : 'disabled' ?>>⬆️ Tout mettre à jour</button>
+    </div>
+
+    <!-- Progression unifiée (deux étapes : système puis Bastion) -->
+    <div id="updProg" hidden style="margin-top:1.2rem">
+      <div id="rowSys">
+        <span class="upd-bar-lbl">🖥️ Système <span class="muted" id="sysPhase"></span></span>
+        <div class="bar"><div class="fill" id="sysFill" style="width:0%;background:#38bdf8"></div></div>
+      </div>
+      <div id="rowGit" style="margin-top:.8rem">
+        <span class="upd-bar-lbl">🐙 Bastion <span class="muted" id="gitPhase"></span></span>
+        <div class="bar"><div class="fill" id="gitFill" style="width:0%;background:#a78bfa"></div></div>
+      </div>
+    </div>
+    <pre id="updLog" hidden></pre>
+
+    <?php if (!empty($apt['reboot'])): ?>
+      <div class="flash warn" style="margin-top:1rem">⚠️ Un <strong>redémarrage</strong> reste nécessaire pour terminer
+        une mise à jour précédente (noyau ou bibliothèque système). À planifier hors service : le réseau du commissariat
+        sera coupé pendant l'opération.</div>
     <?php endif; ?>
 
-    <details <?= $gPret ? '' : 'open' ?>>
-      <summary class="muted small" style="cursor:pointer;margin-bottom:.6rem">Configuration du dépôt</summary>
-      <form method="post" style="margin-top:.6rem">
+    <!-- Détails système (paquets, dates, garanties) -->
+    <?php if ($dispo): ?>
+    <details style="margin-top:1.1rem">
+      <summary class="muted small" style="cursor:pointer">Détails du système &amp; paquets</summary>
+      <div style="margin-top:.7rem">
+        <div class="muted small" style="line-height:1.7">
+          Dernière recherche : <?= $dtCheck ? e(date('d/m/Y à H:i', $dtCheck)) : 'jamais' ?><br>
+          Dernière installation : <?= $dtMaj ? e(date('d/m/Y à H:i', $dtMaj)) : 'jamais' ?>
+          <?php if ($nRet > 0): ?><br><span style="color:#eab308"><?= $nRet ?> paquet(s) retenu(s)</span> — changement de dépendances, à traiter à la main<?php endif; ?>
+        </div>
+        <div id="aptPkgs" style="margin-top:.6rem"></div>
+        <p class="hint" style="margin:.6rem 0 0">Seule la commande <code>apt upgrade</code> est lancée : elle ne
+          <strong>supprime jamais</strong> un paquet (contrairement à <code>full-upgrade</code>). Vos fichiers de
+          configuration modifiés (Samba, dnsmasq, OpenNDS, RADIUS) sont <strong>conservés</strong> en cas de conflit.</p>
+      </div>
+    </details>
+    <?php endif; ?>
+
+    <!-- Configuration du dépôt Bastion (adresse, jeton, clé de déploiement, test SSH) -->
+    <details style="margin-top:.6rem" <?= $gPret ? '' : 'open' ?>>
+      <summary class="muted small" style="cursor:pointer">Configuration du dépôt Bastion</summary>
+      <?php if (!$gPret): ?>
+        <p class="hint" style="margin:.7rem 0">Aucun dépôt configuré. Renseignez l'adresse de votre dépôt GitHub :
+          Bastion pourra alors se mettre à jour d'un clic.</p>
+      <?php endif; ?>
+      <form method="post" style="margin-top:.7rem">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="do" value="git"><input type="hidden" name="act" value="conf">
         <div class="row3">
           <label class="field" style="grid-column:span 2">Adresse du dépôt
-            <input type="text" name="git_repo" value="<?= e($git['repo'] ?? '') ?>"
-                   placeholder="https://github.com/mon-compte/bastion.git">
+            <input type="text" name="git_repo" value="<?= e($git['repo'] ?? '') ?>" placeholder="https://github.com/mon-compte/bastion.git">
           </label>
           <label class="field">Branche
             <input type="text" name="git_branch" value="<?= e($git['branche'] ?? 'main') ?>" placeholder="main">
@@ -439,53 +377,42 @@ $gRetard = (int) ($git['retard'] ?? 0);
         </div>
         <label class="field" style="max-width:30rem;margin-top:.6rem">Jeton d'accès — dépôt privé uniquement
           <input type="password" name="git_token" autocomplete="new-password"
-                 placeholder="<?= !empty($git['jeton']) ? '•••••••• (jeton enregistré — laisser vide pour le conserver… non : le retaper pour le changer)' : 'ghp_… (laisser vide si le dépôt est public)' ?>">
+                 placeholder="<?= !empty($git['jeton']) ? '•••••••• (jeton enregistré — le retaper pour le changer)' : 'ghp_… (laisser vide si le dépôt est public)' ?>">
         </label>
-        <p class="hint" style="margin:.4rem 0 .8rem">Inutile si vous utilisez une adresse <code>git@…</code> : la clé
-          ci-dessous s'en charge, et c'est préférable — rien à stocker, révocable d'un clic, limité à un seul dépôt.
-          Le jeton, lui, est conservé hors du dépôt, lisible par le seul compte root, et n'est jamais écrit dans
-          l'adresse (il apparaîtrait sinon dans les journaux).</p>
+        <p class="hint" style="margin:.4rem 0 .8rem">Inutile avec une adresse <code>git@…</code> : la clé ci-dessous
+          s'en charge (rien à stocker, révocable, limitée à un dépôt). Le jeton est conservé hors du dépôt, lisible du
+          seul root, jamais écrit dans l'adresse.</p>
         <button class="btn-sm">Enregistrer le dépôt</button>
       </form>
-    </details>
 
-    <?php if ($gitKey !== '' && !str_starts_with($gitKey, 'ERREUR')): ?>
-    <details style="margin-top:1rem" <?= $gPret ? '' : 'open' ?>>
-      <summary class="muted small" style="cursor:pointer;margin-bottom:.6rem">Clé d'accès de cette passerelle</summary>
-      <p class="hint" style="margin:.6rem 0">Ajoutez cette clé sur votre dépôt GitHub :
-        <em>dépôt → Settings → Deploy keys → Add deploy key</em>. <strong>Ne cochez pas « Allow write access »</strong> :
-        la passerelle n'a besoin que de lire.</p>
-      <p class="hint" style="margin:0 0 .6rem">Une clé dédiée plutôt qu'un jeton de compte : cette machine est exposée
-        et porte un serveur web. Si elle était compromise, une clé en lecture seule ne donnerait accès qu'à
-        <em>ce seul dépôt</em> — un jeton personnel ouvrirait tout votre compte GitHub, en écriture.
-        La clé privée, elle, ne quitte jamais la passerelle.</p>
-      <div style="display:flex;gap:.5rem;align-items:flex-start">
-        <textarea id="gitKey" readonly rows="3" onclick="this.select()"
-          style="flex:1;font-family:ui-monospace,monospace;font-size:.72rem;line-height:1.5;resize:vertical;
-                 background:#0b1120;color:#cbd5e1;border:1px solid var(--line);border-radius:8px;padding:.6rem"><?= e($gitKey) ?></textarea>
-        <button type="button" class="btn-sm" id="gitKeyCopy" style="flex:none">Copier</button>
+      <?php if ($gitKey !== '' && !str_starts_with($gitKey, 'ERREUR')): ?>
+      <div style="margin-top:1rem">
+        <p class="hint" style="margin:.6rem 0">Clé de déploiement — ajoutez-la sur GitHub : <em>dépôt → Settings →
+          Deploy keys → Add deploy key</em>. <strong>Ne cochez pas « Allow write access »</strong>.</p>
+        <div style="display:flex;gap:.5rem;align-items:flex-start">
+          <textarea id="gitKey" readonly rows="3" onclick="this.select()"
+            style="flex:1;font-family:ui-monospace,monospace;font-size:.72rem;line-height:1.5;resize:vertical;background:#0b1120;color:#cbd5e1;border:1px solid var(--line);border-radius:8px;padding:.6rem"><?= e($gitKey) ?></textarea>
+          <button type="button" class="btn-sm" id="gitKeyCopy" style="flex:none">Copier</button>
+        </div>
+        <?php
+        $emp = trim((string) shell_exec('printf %s ' . escapeshellarg($gitKey) . ' | ssh-keygen -lf /dev/stdin 2>/dev/null'));
+        $emp = preg_match('/(SHA256:\S+)/', $emp, $mm) ? $mm[1] : '';
+        ?>
+        <?php if ($emp !== ''): ?><p class="hint" style="margin:.5rem 0 0">Empreinte : <code><?= e($emp) ?></code></p><?php endif; ?>
+        <form method="post" style="margin:.8rem 0 0">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <input type="hidden" name="do" value="git"><input type="hidden" name="act" value="testssh">
+          <button class="btn-sm" <?= $gPret ? '' : 'disabled' ?>>Tester l'accès au dépôt</button>
+          <?php if (!$gPret): ?><span class="muted small" style="margin-left:.5rem">enregistrez d'abord une adresse</span><?php endif; ?>
+        </form>
       </div>
-      <?php
-      // Un TUBE, pas un « here-string » : shell_exec passe par sh (dash), qui ne connaît
-      // pas la syntaxe « <<< » de bash — elle échouait sur « redirection unexpected ».
-      $emp = trim((string) shell_exec('printf %s ' . escapeshellarg($gitKey)
-           . ' | ssh-keygen -lf /dev/stdin 2>/dev/null'));
-      $emp = preg_match('/(SHA256:\S+)/', $emp, $mm) ? $mm[1] : '';
-      ?>
-      <?php if ($emp !== ''): ?>
-      <p class="hint" style="margin:.5rem 0 0">Empreinte : <code><?= e($emp) ?></code> — GitHub l'affiche après ajout,
-        elle doit correspondre.</p>
       <?php endif; ?>
-      <form method="post" style="margin:.8rem 0 0">
-        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-        <input type="hidden" name="do" value="git"><input type="hidden" name="act" value="testssh">
-        <button class="btn-sm" <?= $gPret ? '' : 'disabled' ?>>Tester l'accès au dépôt</button>
-        <?php if (!$gPret): ?><span class="muted small" style="margin-left:.5rem">enregistrez d'abord une adresse de dépôt</span><?php endif; ?>
-      </form>
     </details>
-    <?php endif; ?>
   </div>
 </section>
+
+
+<!-- (Le suivi de « Mise à jour de Bastion » est désormais intégré au panneau unifié ci-dessus.) -->
 
 <section class="panel form-panel">
   <div class="panel-head"><h2>🔑 Compte système</h2></div>
@@ -524,44 +451,121 @@ $gRetard = (int) ($git['retard'] ?? 0);
 </section>
 
 <script>
-(function(){
-  var b=document.getElementById('gitKeyCopy'), t=document.getElementById('gitKey');
-  if(b && t) b.addEventListener('click', function(){
+/* Bouton « Copier » de la clé de déploiement. */
+(function () {
+  var b = document.getElementById('gitKeyCopy'), t = document.getElementById('gitKey');
+  if (b && t) b.addEventListener('click', function () {
     t.select();
-    // navigator.clipboard exige un contexte sécurisé : la console est en HTTPS, mais
-    // execCommand reste le repli si le certificat auto-signé fait tiquer le navigateur.
-    var fini = function(){ b.textContent='Copié'; setTimeout(function(){ b.textContent='Copier'; }, 1600); };
-    if(navigator.clipboard) navigator.clipboard.writeText(t.value).then(fini, function(){ document.execCommand('copy'); fini(); });
+    var fini = function () { b.textContent = 'Copié'; setTimeout(function () { b.textContent = 'Copier'; }, 1600); };
+    if (navigator.clipboard) navigator.clipboard.writeText(t.value).then(fini, function () { document.execCommand('copy'); fini(); });
     else { document.execCommand('copy'); fini(); }
   });
 })();
-(function(){
-  var j=document.getElementById('gitJauge'), lg=document.getElementById('gitLog'),
-      fill=document.getElementById('gitFill'), ph=document.getElementById('gitPhase');
-  if(!j) return;
-  var vu=false, pct=0, t=setInterval(async function(){
-    try{
-      var r=await fetch('systeme.php?apt=gitstate',{cache:'no-store'}); if(!r.ok)return;
-      var s=await r.json();
-      if(s.en_cours){
-        vu=true; j.hidden=false; lg.hidden=false;
-        // La jauge n'AVANCE que : une étape franchie ne revient jamais en arrière, même si
-        // deux sondages se croisent. Le pourcentage vient des étapes réelles du script.
-        var np = Math.max(pct, Math.min(100, parseInt(s.progres,10)||0));
-        pct = np;
-        if(fill) fill.style.width = pct + '%';
-        if(ph) ph.textContent = (s.etape || 'Opération en cours…') + ' — ' + pct + ' %';
-        var lr=await fetch('systeme.php?apt=gitlog',{cache:'no-store'});
-        if(lr.ok){ var d=await lr.json(); lg.textContent=d.log||'(démarrage…)'; lg.scrollTop=lg.scrollHeight; }
-      } else if(vu){
-        // Fin de l'opération : on remplit la barre avant de recharger, pour que l'œil voie
-        // qu'elle est allée au bout plutôt que de disparaître à mi-course.
-        if(fill) fill.style.width='100%';
-        if(ph) ph.textContent='Terminé — 100 %';
-        clearInterval(t); setTimeout(function(){ location.reload(); }, 700);
-      }
-    }catch(e){}
-  }, 1500);
+
+/* Mise à jour « tout en un » : orchestre le système (apt) PUIS Bastion (git) — séquentiellement
+   pour éviter que les deux ne se disputent apache/dpkg — avec une progression unifiée. */
+(function () {
+  var CSRF = "<?= e(csrf_token()) ?>";
+  var SYS_DISPO = <?= $dispo ? 'true' : 'false' ?>;
+  var SYS_MAJ   = <?= ($dispo && $nTotal > 0) ? 'true' : 'false' ?>;
+  var GIT_PRET  = <?= $gPret ? 'true' : 'false' ?>;
+  var GIT_MAJ   = <?= ($gPret && $gClone && $gRetard > 0) ? 'true' : 'false' ?>;
+  var btnC = document.getElementById('updCheck'), btnA = document.getElementById('updApply');
+  if (!btnC) return;
+  var prog = document.getElementById('updProg'), log = document.getElementById('updLog');
+  var pcts = { apt: 0, git: 0 };
+
+  function post(act) {
+    return fetch('systeme.php', { method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'do=update_ajax&act=' + act + '&csrf=' + encodeURIComponent(CSRF) })
+      .then(function (r) { return r.json(); }).catch(function () { return { ok: false }; });
+  }
+  function state(which) {
+    return fetch('systeme.php?apt=' + (which === 'git' ? 'gitstate' : 'state'), { cache: 'no-store' })
+      .then(function (r) { return r.json(); }).catch(function () { return {}; });
+  }
+  function actif(which, s) { return which === 'git' ? !!s.en_cours : (!!s.en_cours || !!s.check_en_cours); }
+  function pctOf(which, s) {
+    if (which === 'git') { var p = parseInt(s.progres, 10); return isNaN(p) ? 0 : Math.min(100, p); }
+    return (typeof s.pct === 'number' && s.pct >= 0) ? s.pct : -1;
+  }
+  function phaseOf(which, s) {
+    return which === 'git' ? (s.etape || '…') : (s.phase || (s.check_en_cours ? 'recherche…' : '…'));
+  }
+  function setBar(which, pct, phase) {
+    var fill = document.getElementById(which === 'git' ? 'gitFill' : 'sysFill');
+    var ph   = document.getElementById(which === 'git' ? 'gitPhase' : 'sysPhase');
+    if (fill) { fill.style.width = (pct === null ? 8 : pct) + '%'; fill.classList.toggle('fill-anim', pct !== 100); }
+    if (ph) ph.textContent = phase ? ('· ' + phase + (pct !== null && pct >= 0 ? ' ' + pct + '%' : '')) : '';
+  }
+  function waitFor(which) {
+    return new Promise(function (resolve) {
+      var seen = false, n = 0;
+      var iv = setInterval(async function () {
+        var s = await state(which); n++;
+        var a = actif(which, s);
+        if (a) {
+          seen = true; prog.hidden = false; log.hidden = false;
+          var p = pctOf(which, s);
+          if (p >= 0) pcts[which] = Math.max(pcts[which], p);   // la barre n'avance jamais à reculons
+          setBar(which, p < 0 ? null : pcts[which], phaseOf(which, s));
+          var lg = await fetch('systeme.php?apt=' + (which === 'git' ? 'gitlog' : 'log'), { cache: 'no-store' })
+                     .then(function (r) { return r.json(); }).catch(function () { return {}; });
+          if (lg && lg.log) { log.textContent = lg.log; log.scrollTop = log.scrollHeight; }
+        }
+        // Résout quand : on l'a vu actif puis inactif, OU après ~10 sondages sans jamais le voir
+        // actif (rien à faire / opération déjà finie).
+        if ((seen && !a) || (!seen && n > 8)) { clearInterval(iv); if (seen) setBar(which, 100, 'terminé'); resolve(s); }
+      }, 1300);
+    });
+  }
+  function busy(b) { btnC.disabled = b; btnA.disabled = b; }
+
+  async function toutVerifier() {
+    busy(true); prog.hidden = false; var jobs = [];
+    if (SYS_DISPO) { await post('apt_check'); jobs.push(waitFor('apt')); }
+    if (GIT_PRET)  { await post('git_check'); jobs.push(waitFor('git')); }
+    if (!jobs.length) { busy(false); return; }
+    await Promise.all(jobs);
+    setTimeout(function () { location.reload(); }, 700);
+  }
+  async function toutMaj() {
+    busy(true); prog.hidden = false;
+    if (SYS_MAJ) { await post('apt_apply'); await waitFor('apt'); }   // système d'abord…
+    if (GIT_MAJ) { await post('git_apply'); await waitFor('git'); }   // …puis Bastion
+    setTimeout(function () { location.reload(); }, 900);
+  }
+
+  btnC.addEventListener('click', toutVerifier);
+  btnA.addEventListener('click', function () {
+    if (!confirm('Tout mettre à jour ?\n\nSystème : les services concernés peuvent redémarrer (brève coupure du portail possible).\nBastion : la console et le portail sont remplacés par le dépôt.\nRéglages, comptes et journaux sont préservés.')) return;
+    toutMaj();
+  });
+
+  /* Liste des paquets système (volet Détails). */
+  (function () {
+    var box = document.getElementById('aptPkgs'); if (!box) return;
+    function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    fetch('systeme.php?apt=list', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (l) {
+      box.innerHTML = (!l || !l.length) ? '' : l.map(function (p) {
+        return '<div class="apt-pkg"><span>' + esc(p.pkg) + (p.secu ? ' <span class="badge off" style="font-size:.68rem">sécurité</span>' : '')
+             + '</span><span class="v">' + esc(p.cur) + ' → ' + esc(p.new) + '</span></div>';
+      }).join('');
+    }).catch(function () {});
+  })();
+
+  /* Reprise : si une opération tourne déjà au chargement (lancée ailleurs), on l'affiche. */
+  (async function () {
+    var sa = SYS_DISPO ? await state('apt') : {}, sg = GIT_PRET ? await state('git') : {};
+    if (actif('apt', sa) || actif('git', sg)) {
+      busy(true); prog.hidden = false; var jobs = [];
+      if (actif('apt', sa)) jobs.push(waitFor('apt'));
+      if (actif('git', sg)) jobs.push(waitFor('git'));
+      await Promise.all(jobs);
+      setTimeout(function () { location.reload(); }, 700);
+    }
+  })();
 })();
 </script>
 
