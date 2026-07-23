@@ -363,6 +363,7 @@ $gpoLinked = $dcUp ? ad_lines_cached('gpolinks', 20, 'gpo', 'domainlinks') : [];
 // Ordinateurs : description perso (pf_computer_desc) + dernier fonctionnaire connecté (audit d'auth).
 $computerDesc = [];
 $lastByWs = [];
+$computerDetail = [];   // nom (maj) => ['os'=>…, 'll'=>epoch dernière ouverture]
 if ($dcUp) {
     try {
         pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_computer_desc (name VARCHAR(64) PRIMARY KEY, description TEXT)');
@@ -376,6 +377,12 @@ if ($dcUp) {
         if (substr($user, -1) === '$') { continue; }   // ignorer les comptes machine (ex. W-91$)
         if ($ws === '' && preg_match('/ipv4:([0-9.]+)/', $p[2], $m)) { $ws = 'IP:' . $m[1]; }
         if ($ws !== '') { $lastByWs[$ws] = ['user' => $user, 'ts' => substr($p[3], 0, 16)]; } // dernière ligne = plus récent
+    }
+    // Inventaire des postes : système d'exploitation + dernière ouverture de session (depuis l'AD).
+    foreach (explode("\n", ad_cache('compdetail', 120, 'computer', 'detail')) as $l) {
+        $p = explode("\t", $l);
+        if (trim($p[0] ?? '') === '') { continue; }
+        $computerDetail[strtoupper(trim($p[0]))] = ['os' => trim($p[1] ?? ''), 'll' => (int) trim($p[2] ?? '0')];
     }
 }
 
@@ -625,10 +632,20 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
     <?php else: foreach ($computers as $c):
         $cn = rtrim($c, '$');                       // nom sans le $ final du compte machine
         $wu = $lastByWs[strtoupper($cn)] ?? null;
-        $cd = $computerDesc[strtoupper($cn)] ?? ''; ?>
+        $cd = $computerDesc[strtoupper($cn)] ?? '';
+        $dt = $computerDetail[strtoupper($cn)] ?? null; ?>
       <details class="gpo-item">
-        <summary>💻 <?= e($cn) ?><?php if ($wu): ?> <span class="muted" style="font-weight:400">— 👤 <?= e($wu['user']) ?></span><?php endif; ?></summary>
+        <summary>💻 <?= e($cn) ?>
+          <?php if ($dt && $dt['os'] !== ''): ?><span class="gpo-pill scope" style="font-weight:400"><?= e($dt['os']) ?></span><?php endif; ?>
+          <?php if ($wu): ?> <span class="muted" style="font-weight:400">— 👤 <?= e($wu['user']) ?></span><?php endif; ?></summary>
         <div class="gpo-body">
+          <?php if ($dt): ?>
+          <p class="expl"><strong>Système :</strong> <?= $dt['os'] !== '' ? e($dt['os']) : '<span class="muted">inconnu</span>' ?>
+            · <strong>Dernière ouverture de session :</strong>
+            <?php if ($dt['ll'] > 0): $stale = $dt['ll'] < time() - 30 * 86400; ?>
+              <span style="color:<?= $stale ? '#eab308' : 'inherit' ?>"><?= e(date('d/m/Y H:i', $dt['ll'])) ?><?= $stale ? ' — inactif depuis plus de 30 jours' : '' ?></span>
+            <?php else: ?><span class="muted">jamais / inconnue</span><?php endif; ?></p>
+          <?php endif; ?>
           <p class="expl">👤 <strong>Dernier fonctionnaire connecté :</strong>
             <?php if ($wu): ?><?= e($wu['user']) ?> <span class="muted small">(<?= e($wu['ts']) ?>)</span>
             <?php else: ?><span class="muted">aucune ouverture de session enregistrée</span><?php endif; ?></p>

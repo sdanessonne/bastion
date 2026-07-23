@@ -27,6 +27,35 @@ case "$cat" in
     case "$sub" in
       list)   exec "$ST" computer list ;;
       delete) exec "$ST" computer delete "$a" ;;
+      detail)
+        # Inventaire : pour chaque poste du domaine, « nom TAB systeme TAB derniere_ouverture ».
+        # Lecture en un seul appel via SamDB (rapide) ; lastLogonTimestamp est un FILETIME Windows
+        # (100 ns depuis 1601) converti en horodatage Unix.
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        python3 - "$dn" <<'PY' 2>/dev/null
+import sys, ldb
+from samba.samdb import SamDB
+from samba.auth import system_session
+from samba.param import LoadParm
+lp = LoadParm(); lp.load_default()
+db = SamDB(url='/var/lib/samba/private/sam.ldb', session_info=system_session(), lp=lp)
+res = db.search(base=sys.argv[1], expression='(objectClass=computer)',
+                attrs=['sAMAccountName', 'operatingSystem', 'lastLogonTimestamp'])
+def val(e, k):
+    return str(e[k][0]) if (k in e and len(e[k])) else ''
+for e in res:
+    name = val(e, 'sAMAccountName').rstrip('$')
+    if not name:
+        continue
+    osname = val(e, 'operatingSystem')
+    ll = ''
+    v = val(e, 'lastLogonTimestamp')
+    if v.isdigit() and int(v) > 0:
+        ll = str(int(int(v) / 10000000 - 11644473600))
+    print(name + '\t' + osname + '\t' + ll)
+PY
+        ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;
     esac ;;
   group)
