@@ -197,6 +197,28 @@ $feat = [
     ['Serveur PXE',             true,  'installation OS par le réseau (Debian/Ubuntu/Windows)'],
 ];
 
+// ── Santé de la passerelle : charge processeur, mémoire, disque (lecture locale rapide) ──
+$ncpu  = max(1, (int) trim((string) shell_exec('nproc 2>/dev/null')));
+$la    = explode(' ', trim((string) @file_get_contents('/proc/loadavg')));
+$load1 = (float) ($la[0] ?? 0);
+$cpuPct = min(100, (int) round($load1 / $ncpu * 100));
+$memTot = $memAvail = 0;
+foreach (explode("\n", (string) @file_get_contents('/proc/meminfo')) as $l) {
+    if (preg_match('/^MemTotal:\s+(\d+)/', $l, $m))     { $memTot = (int) $m[1]; }
+    if (preg_match('/^MemAvailable:\s+(\d+)/', $l, $m)) { $memAvail = (int) $m[1]; }
+}
+$memPct = $memTot > 0 ? (int) round(($memTot - $memAvail) / $memTot * 100) : 0;
+$dfPct = 0; $dfUsed = $dfTot = '';
+if (preg_match('~(\d+)%\s+(\S+)\s+(\S+)~', trim((string) shell_exec("df -Ph / 2>/dev/null | awk 'NR==2{print \$5\" \"\$3\" \"\$2}'")), $m)) {
+    $dfPct = (int) $m[1]; $dfUsed = $m[2]; $dfTot = $m[3];
+}
+$uptime = trim((string) shell_exec('uptime -p 2>/dev/null'));
+$sante = [
+    ['Processeur', $cpuPct, sprintf('charge %.2f · %d cœur(s)', $load1, $ncpu)],
+    ['Mémoire',    $memPct, $memTot ? number_format(($memTot - $memAvail) / 1048576, 1, ',', ' ') . ' / ' . number_format($memTot / 1048576, 1, ',', ' ') . ' Go' : ''],
+    ['Disque système', $dfPct, ($dfUsed && $dfTot) ? "$dfUsed / $dfTot" : ''],
+];
+
 pf_header('Système', 'systeme.php');
 ?>
 <section class="cards">
@@ -221,6 +243,28 @@ pf_header('Système', 'systeme.php');
     <?php endforeach; ?>
     </tbody>
   </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>💓 Santé de la passerelle</h2>
+    <?php if ($uptime !== ''): ?><span class="muted small">en service <?= e($uptime) ?></span><?php endif; ?></div>
+  <div style="padding:1.2rem;display:grid;gap:1rem">
+    <?php foreach ($sante as [$lbl, $pct, $sub]):
+      $col = $pct >= 90 ? '#f87171' : ($pct >= 75 ? '#eab308' : '#4ade80'); ?>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.3rem">
+          <span><strong><?= e($lbl) ?></strong> <span class="muted small"><?= e($sub) ?></span></span>
+          <strong style="font-variant-numeric:tabular-nums;color:<?= $col ?>"><?= $pct ?> %</strong>
+        </div>
+        <div style="height:10px;background:var(--bg);border-radius:6px;overflow:hidden">
+          <div style="height:100%;border-radius:6px;width:<?= $pct ?>%;background:<?= $col ?>;transition:width .4s"></div></div>
+      </div>
+    <?php endforeach; ?>
+    <?php if ($dfPct >= 90): ?>
+      <div class="flash err" style="margin:0">⚠️ Disque système presque plein (<?= $dfPct ?> %) — les journaux et les
+      sauvegardes risquent d'échouer. Purgez d'anciennes données ou agrandissez le disque.</div>
+    <?php endif; ?>
   </div>
 </section>
 

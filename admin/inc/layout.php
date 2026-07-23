@@ -13,6 +13,7 @@ function pf_header(string $title, string $active = ''): void {
         ],
         'Accès & sécurité' => [
             'users.php'     => ['Utilisateurs & droits', '👤'],
+            'annuaire.php'  => ['Annuaire', '📇'],
             'groups.php'    => ['Groupes & quotas', '⚙'],
             'filter.php'    => ['Filtrage', '⛔'],
             'antivirus.php' => ['Antivirus', '🛡️'],

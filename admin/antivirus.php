@@ -100,6 +100,13 @@ catch (Throwable $e) {}
 $stationTokens = [];   // jetons par station (révocables)
 try { $stationTokens = $db->query('SELECT * FROM pf_station_tokens ORDER BY revoked, label')->fetchAll(); }
 catch (Throwable $e) {}
+// Bilan des analyses de clés USB déposées par les stations (30 derniers jours).
+$stStats = ['n30' => 0, 'menaces30' => 0, 'dernier' => null];
+try {
+    $r = $db->query("SELECT COUNT(*) n, COALESCE(SUM(GREATEST(infected,0)),0) m, MAX(ts) d
+                     FROM pf_avscan WHERE launched_by LIKE 'station:%' AND ts >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetch();
+    if ($r) { $stStats = ['n30' => (int) $r['n'], 'menaces30' => (int) $r['m'], 'dernier' => $r['d']]; }
+} catch (Throwable $e) {}
 $baseFichiers = [];
 $baseBloquee  = [];
 foreach (['main.cvd', 'main.cld', 'daily.cvd', 'daily.cld', 'bytecode.cvd', 'bytecode.cld'] as $f) {
@@ -162,6 +169,22 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     <div style="padding:1.2rem">
       <p class="muted small" style="margin-top:0">Les stations d'analyse de clés USB déposent leurs
       résultats ici et récupèrent leur base virale sur cette passerelle — elles n'ont pas besoin d'Internet.</p>
+
+      <!-- Bilan des analyses déposées par les stations -->
+      <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin:.2rem 0 1rem">
+        <div style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.65rem .85rem">
+          <div style="font-size:1.6rem;font-weight:700;line-height:1"><?= $stStats['n30'] ?></div>
+          <div class="muted small">analyses (30 j)</div>
+        </div>
+        <div style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.65rem .85rem">
+          <div style="font-size:1.6rem;font-weight:700;line-height:1;color:<?= $stStats['menaces30'] > 0 ? '#f87171' : '#4ade80' ?>"><?= $stStats['menaces30'] ?></div>
+          <div class="muted small">menaces (30 j)</div>
+        </div>
+        <div style="flex:1;min-width:130px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.65rem .85rem">
+          <div style="font-size:.95rem;font-weight:600;line-height:1.3"><?= $stStats['dernier'] ? e(date('d/m/Y H:i', strtotime((string) $stStats['dernier']))) : '—' ?></div>
+          <div class="muted small">dernière analyse</div>
+        </div>
+      </div>
 
       <?php if (!$baseFichiers): ?>
         <div class="flash err" style="margin:.6rem 0">
