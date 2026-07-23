@@ -141,7 +141,7 @@ $pages = $db->query('SELECT * FROM pf_cms_pages ORDER BY menu_order,title')->fet
 $newsL = $db->query('SELECT * FROM pf_cms_news ORDER BY created_at DESC, id DESC LIMIT 50')->fetchAll();
 $media = is_dir($MEDIA) ? array_values(array_filter(scandir($MEDIA), fn($f) => preg_match('/\.(png|jpe?g|gif|webp)$/i', $f))) : [];
 
-pf_header('Intranet — Contenu', 'cms.php');
+pf_header('Portail intranet', 'cms.php');
 if ($flash) { pf_flash($flash[0], $flash[1]); }
 ?>
 <style>
@@ -165,14 +165,19 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   .cms-tab{background:transparent;border:1px solid transparent;border-bottom:none;color:var(--muted);cursor:pointer;padding:.6rem 1.05rem;font-size:.9rem;border-radius:10px 10px 0 0;font-weight:500}
   .cms-tab:hover{color:var(--text);background:var(--bg)}
   .cms-tab.active{color:#fff;background:var(--panel);border-color:var(--line);margin-bottom:-1px}
+  .cms-frame{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--panel);height:calc(100vh - 15rem);min-height:480px;display:block}
 </style>
 <div class="cms">
-<nav class="cms-tabs" role="tablist" aria-label="Sections du contenu intranet">
+<nav class="cms-tabs" role="tablist" aria-label="Sections du portail intranet">
+  <button type="button" class="cms-tab" data-tab="accueil">🏠 Accueil</button>
   <button type="button" class="cms-tab" data-tab="pages">📄 Pages</button>
   <button type="button" class="cms-tab" data-tab="actus">📰 Actualités</button>
   <button type="button" class="cms-tab" data-tab="media">🖼️ Médiathèque</button>
 </nav>
-<div class="cmspane" data-cmstab="pages">
+<div class="cmspane" data-cmstab="accueil">
+  <iframe class="cms-frame" title="Accueil du portail intranet (contenu et liens)" src="intranet.php?embed=1"></iframe>
+</div>
+<div class="cmspane" data-cmstab="pages" hidden>
 <div class="split">
   <section class="panel form-panel">
     <div class="panel-head"><h2><?= $editP['id'] ? 'Modifier la page' : 'Nouvelle page' ?></h2>
@@ -314,7 +319,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   var init = qp.has('p') ? 'pages' : (qp.has('n') ? 'actus' : null);
   if(!init){ try{ init=localStorage.getItem('cms_tab'); }catch(e){} }
   var valid=Array.prototype.some.call(tabs,function(b){return b.dataset.tab===init;});
-  show(valid?init:'pages');
+  show(valid?init:'accueil');
 })();
 // Éditeur : barre d'outils Markdown + aperçu live.
 function mdInsert(ta, before, after, ph){

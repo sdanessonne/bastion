@@ -23,8 +23,7 @@ function pf_header(string $title, string $active = ''): void {
             'pxe.php'  => ['Serveur PXE', '📀'],
         ],
         'Intranet' => [
-            'intranet.php'   => ['Portail intranet', '🏠'],
-            'cms.php'        => ['Pages & actualités', '📝'],
+            'cms.php'        => ['Portail intranet', '🏠'],
             'assistance.php' => ['Assistance', '📨'],
         ],
         'Journalisation' => [
