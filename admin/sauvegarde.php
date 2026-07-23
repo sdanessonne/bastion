@@ -48,7 +48,7 @@ if (isset($_GET['api'])) {
     }
     if ($api === 'start' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         csrf_check();
-        $op   = ($_POST['op'] ?? '') === 'restore' ? 'restore' : 'create';
+        $op   = in_array($_POST['op'] ?? '', ['restore', 'verify'], true) ? (string) $_POST['op'] : 'create';
         $name = basename((string) ($_POST['name'] ?? ''));
         $out  = trim(bk('start', $op, $name));
         echo json_encode(['ok' => $out === 'started', 'msg' => $out]);
@@ -165,7 +165,10 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
 <!-- ── Sauvegardes manuelles ── -->
 <section class="panel">
   <div class="panel-head"><h2>💾 Sauvegardes</h2>
-    <button class="btn" id="btncreate">➕ Créer une sauvegarde</button>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn-sm" id="btnverify" title="Restaure la dernière sauvegarde dans un espace jetable pour prouver qu'elle est vraiment récupérable (non destructif)">🧪 Tester la restauration</button>
+      <button class="btn" id="btncreate">➕ Créer une sauvegarde</button>
+    </div>
   </div>
   <p class="muted small" style="padding:.2rem 1.2rem 0">Chaque sauvegarde contient la <strong>base de données</strong>
   (comptes, groupes, filtrage, journaux, intranet, réglages), la <strong>configuration</strong>, les <strong>médias</strong>
@@ -237,7 +240,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       done=document.getElementById('gdone'), poll=null;
 
   function show(op){
-    title.innerHTML='<span class="spin"></span>'+(op==='restore'?'Restauration en cours…':'Sauvegarde en cours…');
+    title.innerHTML='<span class="spin"></span>'+(op==='verify'?'Test de restauration en cours…':(op==='restore'?'Restauration en cours…':'Sauvegarde en cours…'));
     bar.className='gauge-bar run'; bar.style.width='5%'; pct.textContent='5 %';
     step.textContent='Démarrage…'; note.style.display=''; done.style.display='none';
     ov.classList.add('open');
@@ -247,10 +250,18 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     if(s.state==='done'){
       clearInterval(poll); poll=null;
       bar.className='gauge-bar'; bar.style.width='100%'; pct.textContent='100 %';
-      title.innerHTML='✅ Terminé'; step.textContent=(s.op==='restore'?'Restauration effectuée.':'Sauvegarde créée : '+s.result);
-      note.textContent=(s.op==='restore'?'Reconnectez-vous si besoin.':'La liste va se rafraîchir.');
-      done.style.display='block';
-      setTimeout(function(){location.reload();}, s.op==='restore'?2500:1400);
+      if(s.op==='verify'){
+        var okv=/base=ok/.test(s.result||'')&&/ad=ok/.test(s.result||'');
+        title.innerHTML=okv?'✅ Sauvegarde restaurable':'⚠ Vérification incomplète';
+        step.textContent='Résultat : '+(s.result||'—');
+        note.textContent=okv?'La base et l\'Active Directory se restaurent correctement.':'Un composant n\'a pas pu être restauré — vérifiez la sauvegarde.';
+        done.style.display='block';
+      } else {
+        title.innerHTML='✅ Terminé'; step.textContent=(s.op==='restore'?'Restauration effectuée.':'Sauvegarde créée : '+s.result);
+        note.textContent=(s.op==='restore'?'Reconnectez-vous si besoin.':'La liste va se rafraîchir.');
+        done.style.display='block';
+        setTimeout(function(){location.reload();}, s.op==='restore'?2500:1400);
+      }
     } else if(s.state==='error'){
       clearInterval(poll); poll=null;
       bar.className='gauge-bar err'; title.innerHTML='⚠ Échec';
@@ -272,6 +283,8 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   }
 
   document.getElementById('btncreate').addEventListener('click',function(){ start('create'); });
+  var btnv=document.getElementById('btnverify');
+  if(btnv) btnv.addEventListener('click',function(){ start('verify'); });
   [].forEach.call(document.querySelectorAll('.btnrestore'),function(b){
     b.addEventListener('click',function(){
       if(confirm('RESTAURER cette sauvegarde ? Les données actuelles (base, config, médias) seront REMPLACÉES.'))
