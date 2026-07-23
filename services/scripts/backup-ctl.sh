@@ -5,6 +5,7 @@
 #   create              → crée une archive horodatée (progression -> fichier d'état), affiche son nom
 #   list                → nom<TAB>taille<TAB>date par sauvegarde
 #   restore <fichier>   → restaure (base + config + médias) [DESTRUCTIF]
+#   verify  [fichier]   → EXERCICE de restauration non destructif (base + AD vers du jetable)
 #   delete  <fichier>   → supprime une sauvegarde
 #   path    <fichier>   → chemin absolu (pour le téléchargement)
 #   start   <create|restore> [f] → lance l'opération en arrière-plan (progression via 'status')
@@ -123,6 +124,57 @@ do_restore() {
   echo "restaure (base + config + medias). AD non restaure automatiquement (voir stg/ad)."
 }
 
+do_verify() {
+  # EXERCICE DE RESTAURATION non destructif : déchiffre l'archive, restaure la base dans
+  # une base JETABLE et l'AD dans un répertoire JETABLE, compte les objets, puis nettoie.
+  # Prouve que la sauvegarde est réellement RESTAURABLE (pas seulement présente et lisible).
+  if [ -n "${1:-}" ]; then safe "$1"; f="$DIR/$(basename "$1")"
+  else f=$(ls -1t "$DIR"/bastion-*.tar.gz "$DIR"/bastion-*.tar.gz.gpg 2>/dev/null | head -1); fi
+  [ -f "$f" ] || { setstatus error verify 0 "Aucune sauvegarde" "aucune"; echo "aucune sauvegarde" >&2; exit 2; }
+  setstatus running verify 8 "Préparation ($(basename "$f"))"
+  stg=$(mktemp -d); enc="non"
+  case "$f" in
+    *.gpg)
+      enc="oui"
+      have_key || { setstatus error verify 0 "Clé de chiffrement absente" "cle_absente"; echo "cle absente" >&2; rm -rf "$stg"; exit 4; }
+      setstatus running verify 15 "Déchiffrement"
+      gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-file "$KEYFILE" -o "$stg/a.tar.gz" --decrypt "$f" 2>/dev/null \
+        || { setstatus error verify 0 "Déchiffrement impossible (mauvaise phrase ?)" "dechiffrement"; echo "dechiffrement KO" >&2; rm -rf "$stg"; exit 4; }
+      tar xzf "$stg/a.tar.gz" -C "$stg" 2>/dev/null; rm -f "$stg/a.tar.gz" ;;
+    *) tar xzf "$f" -C "$stg" 2>/dev/null ;;
+  esac
+  [ -f "$stg/manifest.txt" ] && rman="ok" || rman="absent"
+  # 1) BASE : restaurer dans une base jetable, compter les tables.
+  setstatus running verify 40 "Test de restauration de la base"
+  rdb="absent"
+  if [ -f "$stg/db.sql" ]; then
+    rdb="ECHEC"
+    mysql -e "DROP DATABASE IF EXISTS radius_verify; CREATE DATABASE radius_verify" 2>/dev/null
+    if mysql radius_verify < "$stg/db.sql" 2>/dev/null; then
+      nt=$(mysql -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='radius_verify'" 2>/dev/null)
+      rdb="ok (${nt:-0} tables)"
+    fi
+    mysql -e "DROP DATABASE IF EXISTS radius_verify" 2>/dev/null
+  fi
+  # 2) AD : restaurer la sauvegarde du domaine dans un répertoire jetable, compter les comptes.
+  setstatus running verify 70 "Test de restauration de l'Active Directory"
+  rad="absent"
+  adf=$(ls -1 "$stg"/ad/*.tar.bz2 2>/dev/null | head -1)
+  if [ -n "$adf" ]; then
+    rad="ECHEC"; tdir=$(mktemp -d)
+    if samba-tool domain backup restore --backup-file="$adf" --newservername=VERIFYDC --targetdir="$tdir" >/dev/null 2>&1; then
+      nu=$(samba-tool user list -H "$tdir/private/sam.ldb" 2>/dev/null | grep -c .)
+      rad="ok (${nu:-0} comptes)"
+    fi
+    rm -rf "$tdir"
+  fi
+  rm -rf "$stg"
+  res="chiffree=$enc manifest=$rman base=$rdb ad=$rad"
+  setstatus done verify 100 "Vérification terminée" "$res"
+  echo "$res"
+  case "$rdb::$rad" in ok*::ok*) : ;; *) exit 1 ;; esac
+}
+
 case "$action" in
   list)
     for f in "$DIR"/bastion-*.tar.gz "$DIR"/bastion-*.tar.gz.gpg; do
@@ -132,6 +184,7 @@ case "$action" in
 
   create)  do_create ;;
   restore) do_restore "$arg" ;;
+  verify)  do_verify "$arg" ;;
 
   start)
     # Lance l'opération en arrière-plan ; la console suit via 'status'.
@@ -141,6 +194,7 @@ case "$action" in
     case "$op" in
       create)  setstatus running create 1 "Démarrage…"; setsid "$0" create  >/dev/null 2>&1 & ;;
       restore) safe "$name"; setstatus running restore 1 "Démarrage…"; setsid "$0" restore "$name" >/dev/null 2>&1 & ;;
+      verify)  setstatus running verify 1 "Démarrage…"; setsid "$0" verify "$name" >/dev/null 2>&1 & ;;
       *) echo "op invalide" >&2; exit 2 ;;
     esac
     echo "started" ;;
