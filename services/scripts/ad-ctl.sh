@@ -235,10 +235,27 @@ PY
       domainlinks)
         # Liste (un GUID par ligne, en MAJUSCULES) les GPO actuellement LIÉES à la racine du
         # domaine (attribut gPLink) : la console distingue ainsi GPO active / désactivée.
+        # Lecture via le module Python de Samba (accès local root) — « ldbsearch » n'est pas
+        # toujours installé (paquet ldb-tools absent), au contraire des liaisons Python de samba.
         rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
         dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
-        ldbsearch -H /var/lib/samba/private/sam.ldb -b "$dn" -s base gPLink 2>/dev/null \
-          | sed -n 's/^gPLink: //p' | grep -oiE '\{[0-9A-Fa-f-]+\}' | tr 'a-f' 'A-F' | sort -u
+        python3 - "$dn" <<'PY' 2>/dev/null
+import sys, re, ldb
+from samba.samdb import SamDB
+from samba.auth import system_session
+from samba.param import LoadParm
+lp = LoadParm(); lp.load_default()
+db = SamDB(url='/var/lib/samba/private/sam.ldb', session_info=system_session(), lp=lp)
+res = db.search(base=sys.argv[1], scope=ldb.SCOPE_BASE, attrs=['gPLink'])
+if res and 'gPLink' in res[0]:
+    raw = res[0]['gPLink'][0]
+    val = raw.decode('utf-8', 'replace') if isinstance(raw, (bytes, bytearray)) else str(raw)
+    seen = set()
+    for m in re.findall(r'\{[0-9A-Fa-f-]+\}', val):
+        u = m.upper()
+        if u not in seen:
+            seen.add(u); print(u)
+PY
         ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;
     esac
