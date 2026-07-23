@@ -1,0 +1,50 @@
+name: CI Bastion
+
+# Contrôles de non-régression à chaque push / pull request : on attrape les erreurs
+# de syntaxe PHP, shell et Python AVANT qu'elles n'atteignent la passerelle (le
+# déploiement se fait par « proxyfibre-selfupdate » qui tire cette branche).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint PHP (php -l)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends php-cli >/dev/null
+          php -v
+          err=0
+          while IFS= read -r f; do
+            php -l "$f" >/dev/null || { echo "::error file=$f::erreur de syntaxe PHP"; err=1; }
+          done < <(find admin portal -name '*.php' 2>/dev/null)
+          exit $err
+
+      - name: Vérifier la syntaxe shell (sh -n / bash -n)
+        run: |
+          err=0
+          while IFS= read -r f; do
+            head -1 "$f" | grep -q 'bash' && chk="bash -n" || chk="sh -n"
+            $chk "$f" || { echo "::error file=$f::erreur de syntaxe shell"; err=1; }
+          done < <(find services provisioning -name '*.sh' 2>/dev/null)
+          exit $err
+
+      - name: Compiler les scripts Python (py_compile)
+        run: |
+          err=0
+          while IFS= read -r f; do
+            python3 -m py_compile "$f" || { echo "::error file=$f::erreur de syntaxe Python"; err=1; }
+          done < <(find services -name '*.py' 2>/dev/null)
+          exit $err
+
+      - name: ShellCheck (informatif, ne bloque pas)
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck >/dev/null 2>&1 || true
+          find services provisioning -name '*.sh' -print0 2>/dev/null \
+            | xargs -0 -r shellcheck -S error || true

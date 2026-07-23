@@ -279,6 +279,7 @@ case "${1:-}" in
 755 account-expiry       services/scripts/account-expiry.sh
 755 dhcp                 services/scripts/dhcp-ctl.sh
 755 quarantine           services/scripts/quarantine-ctl.sh
+755 selftest             services/scripts/selftest.sh
 SCRIPTS
         # custombinauth : appelé par OpenNDS à chaque (dé)connexion (quotas + journalisation),
         # hors /usr/local/sbin. Fait partie du code, doit suivre les mises à jour.
@@ -304,6 +305,17 @@ SCRIPTS
         # Apache garde le bytecode PHP en cache : sans rechargement, l'ancienne console
         # continuerait de s'exécuter. « reload » et non « restart » : pas de coupure.
         systemctl reload apache2 2>/dev/null && echo "  serveur web rechargé"
+
+        # Contrôle anti-régression rapide (NON bloquant) : signale immédiatement une page
+        # cassée ou un service arrêté par la mise à jour, plutôt que de le découvrir en prod.
+        # Le rapport complet est conservé dans /var/log/proxyfibre-selftest.log.
+        if [ -x /usr/local/sbin/proxyfibre-selftest ]; then
+            if /usr/local/sbin/proxyfibre-selftest quick >/var/log/proxyfibre-selftest.log 2>&1; then
+                echo "  auto-test : OK ($(sed -n 's/^Résumé : //p' /var/log/proxyfibre-selftest.log))"
+            else
+                echo "  auto-test : ÉCHEC — $(sed -n 's/^Résumé : //p' /var/log/proxyfibre-selftest.log) (voir /var/log/proxyfibre-selftest.log)"
+            fi
+        fi
 
         date +%s > "$LAST"
         etape 100 "Terminé"
