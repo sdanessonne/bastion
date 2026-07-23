@@ -312,7 +312,8 @@ l'interface :
   "BoutonEteindre": true,
   "MajAuto": true,
   "DefenderEnSecondAvis": true,
-  "AccepterCertificatInterne": true
+  "AccepterCertificatInterne": true,
+  "ChiffrementCleAutorise": false
 }
 ```
 
@@ -322,6 +323,31 @@ saisie en silence.
 
 `station.json` porte le jeton : il est exclu du dépôt Git. Un secret poussé une fois y reste
 pour toujours, même supprimé — l'historique le garde.
+
+## Préparer une clé de service chiffrée (BitLocker To Go)
+
+Fonction **optionnelle et volontairement séparée de l'analyse**. Une station de constat ne
+modifie jamais un support (une clé peut être un scellé) ; ici, l'agent **prépare une clé DU
+SERVICE** en la chiffrant. À réserver aux stations dédiées à cet usage.
+
+- **Activation** : `"ChiffrementCleAutorise": true` dans `station.json`. Sans cela, la
+  fonction n'existe pas pour l'agent.
+- **Ouverture** : **Ctrl+Shift+P** (comme les réglages : peu découvrable). Un écran dédié
+  s'ouvre, avec un **avertissement** et une **confirmation obligatoire** (« cette clé n'est
+  pas un scellé ») avant tout chiffrement.
+- **Déverrouillage** : par **mot de passe** (BitLocker To Go — le TPM ne s'applique pas aux
+  lecteurs amovibles). La clé s'ouvre ensuite sur n'importe quel PC Windows.
+- **Clé de récupération** : générée automatiquement, **affichée à l'agent** *et* **escrowée
+  sur la passerelle** (console → Antivirus → Stations → « Clés USB chiffrées »). La station
+  étant hors domaine, elle ne peut pas l'envoyer dans l'AD — d'où l'escrow central.
+- **Prérequis** : Windows **Pro/Entreprise** (BitLocker), et la station lancée **en tant
+  qu'administrateur** (`Enable-BitLocker` exige l'élévation). Sans ces conditions, l'écran le
+  dit et ne fait rien.
+- **Chiffrement de l'espace utilisé** (rapide) en **AES-XTS 256**.
+
+> Le mot de passe transite par variable d'environnement (jamais sur la ligne de commande).
+> Durcissement possible plus tard : un service d'aide élevé, pour ne pas lancer toute la
+> station en administrateur.
 
 ## Mise à jour des signatures
 

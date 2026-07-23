@@ -321,4 +321,38 @@ public sealed class BastionApi
         catch (TaskCanceledException) { return "Passerelle injoignable (délai dépassé) : analyse non tracée."; }
         catch (Exception ex)          { return "Passerelle injoignable : analyse non tracée. " + ex.Message; }
     }
+
+    /// <summary>
+    /// Escrow de la clé de récupération BitLocker d'une clé USB préparée à la station.
+    ///
+    /// La station est HORS DOMAINE : elle ne peut pas sauvegarder la clé de récupération dans
+    /// l'AD comme le fait BitLocker sur les postes. On la centralise donc sur la passerelle
+    /// (console → Antivirus → Stations), pour qu'un mot de passe oublié ne condamne pas la clé.
+    /// Rend null si l'escrow a réussi, sinon le motif d'échec.
+    /// </summary>
+    public async Task<string?> EnvoyerCleRecuperationAsync(string volume, string cleRecuperation, CancellationToken jeton)
+    {
+        if (!_cfg.RemonteeActive) return "Aucune passerelle configurée : clé de récupération non centralisée.";
+
+        var champs = Champs("station.bitlocker");
+        champs["poste"]     = Environment.MachineName;
+        champs["operateur"] = Environment.UserName;
+        champs["volume"]    = volume;
+        champs["recovery"]  = cleRecuperation;
+
+        try
+        {
+            var url = _cfg.Passerelle.TrimEnd('/') + "/api.php";
+            using var rep = await _http.PostAsync(url, new FormUrlEncodedContent(champs), jeton);
+            var corps = await rep.Content.ReadAsStringAsync(jeton);
+            if (!rep.IsSuccessStatusCode)
+                return $"La passerelle a répondu {(int)rep.StatusCode} : clé de récupération non centralisée.";
+            using var doc = JsonDocument.Parse(corps);
+            return doc.RootElement.TryGetProperty("ok", out var ok) && ok.GetBoolean()
+                ? null
+                : "Réponse inattendue de la passerelle : clé de récupération non centralisée.";
+        }
+        catch (TaskCanceledException) { return "Passerelle injoignable (délai dépassé) : clé de récupération non centralisée."; }
+        catch (Exception ex)          { return "Passerelle injoignable : clé de récupération non centralisée. " + ex.Message; }
+    }
 }

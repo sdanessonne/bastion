@@ -50,6 +50,16 @@ public sealed class Config
     /// </summary>
     public bool AccepterCertificatInterne { get; set; } = true;
 
+    /// <summary>
+    /// Autorise la fonction « préparer une clé de service chiffrée » (BitLocker To Go).
+    ///
+    /// DÉSACTIVÉE par défaut : une station d'analyse CONSTATE, elle ne modifie jamais un
+    /// support (une clé peut être un scellé). Cette fonction, elle, MODIFIE la clé — elle
+    /// n'a de sens que sur une station dédiée à préparer les clés DU SERVICE, et derrière un
+    /// avertissement explicite. À n'activer que sur ces stations-là.
+    /// </summary>
+    public bool ChiffrementCleAutorise { get; set; } = false;
+
     private static string Chemin =>
         Path.Combine(AppContext.BaseDirectory, "station.json");
 

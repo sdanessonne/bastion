@@ -89,6 +89,9 @@ public sealed class MainForm : Form
             // Réglages : peu découvrable, comme le reste. Une borne n'expose pas de bouton
             // « configurer » à l'agent qui vient analyser sa clé.
             if (e.Control && e.Shift && e.KeyCode == Keys.R) OuvrirReglages();
+            // Préparer une clé de service chiffrée — MASQUÉ sauf si la station est configurée
+            // pour cela (ChiffrementCleAutorise). Une station d'analyse ordinaire ne l'expose pas.
+            if (e.Control && e.Shift && e.KeyCode == Keys.P && _cfg.ChiffrementCleAutorise) OuvrirPreparationCle();
         };
         // Alt+F4 ne doit pas fermer une borne par mégarde ; la sortie de secours reste.
         FormClosing += (_, e) =>
@@ -407,6 +410,24 @@ public sealed class MainForm : Form
         _trace.ForeColor = Grise;
         _trace.Text = "✓ Réglages enregistrés." + (_cfg.Kiosque != etaitDevant
             ? " Le mode borne prendra effet au prochain démarrage." : "");
+    }
+
+    /// <summary>
+    /// Ouvre la fenêtre de préparation d'une clé de service chiffrée (BitLocker To Go).
+    /// N'est appelée que si la fonction est autorisée dans la configuration de la station.
+    /// </summary>
+    private void OuvrirPreparationCle()
+    {
+        if (_analyseEnCours) return;
+        var etaitDevant = TopMost;   // même précaution qu'aux réglages : TopMost cacherait la fenêtre
+        TopMost = false;
+        try { using var f = new PreparationCleForm(_api); f.ShowDialog(this); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Impossible d'ouvrir la préparation de clé : " + ex.Message,
+                "Bastion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally { TopMost = etaitDevant; }
     }
 
     private async Task MajAsync(bool manuel)
