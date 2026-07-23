@@ -178,6 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'gpo_create':   $out = ad('gpo', 'create', (string) ($_POST['name'] ?? '')); break;
         case 'kms_auto':     $out = ad('gpo', 'activation', '192.168.182.1'); break;
         case 'sysvol_reset': $out = ad('gpo', 'sysvolreset', ''); break;
+        case 'bitlocker_deploy': $out = ad('bitlocker', 'deploy', ''); break;
         case 'gpo_cert':
             // Déploie le certificat racine Bastion dans le magasin de confiance des postes.
             $ca = '/etc/proxyfibre/bastion-ca.crt';
@@ -359,6 +360,17 @@ if ($dcUp) {
 // GPO actuellement liées à la racine du domaine (GUID en majuscules) : sert à distinguer,
 // dans la liste, une stratégie ACTIVE d'une stratégie DÉSACTIVÉE (déliée mais conservée).
 $gpoLinked = $dcUp ? ad_lines_cached('gpolinks', 20, 'gpo', 'domainlinks') : [];
+
+// Clés de récupération BitLocker séquestrées dans l'AD, par poste (nom en majuscules).
+$bitlockerKeys = [];
+if ($dcUp) {
+    foreach (explode("\n", ad_cache('blkeys', 60, 'bitlocker', 'keys')) as $l) {
+        $p = explode("\t", $l);
+        $comp = trim($p[0] ?? '');
+        if ($comp === '' || $comp === '?') { continue; }
+        $bitlockerKeys[strtoupper($comp)][] = ['pw' => trim($p[1] ?? ''), 'when' => trim($p[2] ?? '')];
+    }
+}
 
 // Ordinateurs : description perso (pf_computer_desc) + dernier fonctionnaire connecté (audit d'auth).
 $computerDesc = [];
@@ -650,6 +662,12 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
             <?php if ($wu): ?><?= e($wu['user']) ?> <span class="muted small">(<?= e($wu['ts']) ?>)</span>
             <?php else: ?><span class="muted">aucune ouverture de session enregistrée</span><?php endif; ?></p>
           <?php if ($cd !== ''): ?><p class="expl"><strong>Description :</strong> <?= nl2br(e($cd)) ?></p><?php endif; ?>
+          <?php $bk = $bitlockerKeys[strtoupper($cn)] ?? []; if ($bk): ?>
+            <p class="expl" style="margin-bottom:.2rem">🔐 <strong>Clé(s) de récupération BitLocker</strong> <span class="muted small">(séquestrées dans l'AD)</span> :</p>
+            <?php foreach ($bk as $k): ?>
+              <div class="mono" style="user-select:all;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.35rem .5rem;margin:.2rem 0 .3rem;font-size:.82rem"><?= e($k['pw']) ?><?php if ($k['when']): ?> <span class="muted small">· <?= e($k['when']) ?></span><?php endif; ?></div>
+            <?php endforeach; ?>
+          <?php endif; ?>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="computer_desc">
             <input type="hidden" name="name" value="<?= e($cn) ?>">
@@ -916,6 +934,27 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
       <form method="post" onsubmit="return confirm('Déployer le certificat racine Bastion sur tous les postes du domaine ?')">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_cert">
         <button class="btn">🔐 Déployer le certificat</button>
+      </form>
+      <?php endif; ?>
+    </div>
+
+    <!-- Chiffrement BitLocker -->
+    <?php $blGpo = in_array('Bastion — Chiffrement BitLocker', array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
+    <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#3a2f14,#231a08);padding:1rem 1.2rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <span style="font-size:1.8rem">🔐</span>
+      <div style="flex:1;min-width:240px">
+        <div style="font-weight:600">Chiffrement BitLocker des disques — clé dans l'Active Directory</div>
+        <div class="ad-help" style="margin:.2rem 0 0">Chiffre le disque système des postes et <strong>sauvegarde la clé de
+        récupération dans l'AD</strong> (visible sous chaque ordinateur ci-dessous). S\'active au démarrage sur les postes
+        dotés d\'un <strong>TPM prêt</strong> (édition Pro/Entreprise), de façon transparente ; la clé est séquestrée
+        <em>avant</em> le chiffrement. Les postes sans TPM ne sont pas touchés.</div>
+        <div class="ad-help" style="margin:.35rem 0 0;color:#eab308">⚠️ Opération à fort impact : <strong>testez d\'abord sur un poste pilote</strong>.</div>
+      </div>
+      <?php if ($blGpo): ?><span class="badge on">✓ Déployé</span>
+      <?php else: ?>
+      <form method="post" onsubmit="return confirm('Déployer le chiffrement BitLocker sur les postes du domaine ?\n\nLes disques système des postes avec TPM seront chiffrés au prochain démarrage ; la clé de récupération est sauvegardée dans l\'AD au préalable. Testez d\'abord sur un poste pilote.')">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="bitlocker_deploy">
+        <button class="btn">🔐 Déployer BitLocker</button>
       </form>
       <?php endif; ?>
     </div>

@@ -303,6 +303,51 @@ PY
         list|create|sysvolreset|domainlinks) : ;;
         *) "$ST" ntacl sysvolreset >/dev/null 2>&1 || true ;;
     esac ;;
+  bitlocker)
+    ADPASS=$(sed -n 's/^AD_ADMIN_PASS="\{0,1\}\([^"]*\)"\{0,1\}/\1/p' /etc/proxyfibre/ad.env 2>/dev/null || true)
+    case "$sub" in
+      deploy)
+        # GPO « Bastion — Chiffrement BitLocker » : séquestre AD + script de démarrage.
+        name="Bastion — Chiffrement BitLocker"
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
+        python3 /usr/local/sbin/proxyfibre-gpo-bitlocker "$guid" >/dev/null 2>&1 \
+          || { echo "ERROR: generation GPO BitLocker echouee ($guid)" >&2; exit 1; }
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
+          || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
+        "$ST" ntacl sysvolreset >/dev/null 2>&1 || true
+        echo "$guid bitlocker deployee"
+        ;;
+      keys)
+        # Clés de récupération BitLocker séquestrées dans l'AD : « poste TAB mot-de-passe TAB date ».
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        python3 - "$dn" <<'PY' 2>/dev/null
+import sys, ldb
+from samba.samdb import SamDB
+from samba.auth import system_session
+from samba.param import LoadParm
+lp = LoadParm(); lp.load_default()
+db = SamDB(url='/var/lib/samba/private/sam.ldb', session_info=system_session(), lp=lp)
+res = db.search(base=sys.argv[1], expression='(objectClass=msFVE-RecoveryInformation)',
+                attrs=['msFVE-RecoveryPassword', 'whenCreated'])
+for e in res:
+    pw = str(e['msFVE-RecoveryPassword'][0]) if 'msFVE-RecoveryPassword' in e else ''
+    when = (str(e['whenCreated'][0])[:8] if 'whenCreated' in e else '')
+    parts = str(e.dn).split(',')
+    comp = parts[1][3:] if (len(parts) > 1 and parts[1][:3].upper() == 'CN=') else ''
+    if pw:
+        print((comp or '?') + '\t' + pw + '\t' + when)
+PY
+        ;;
+      *) echo "sous-action refusee" >&2; exit 2 ;;
+    esac ;;
   share)
     SHFILE=/etc/samba/shares.conf
     # Chemin (« path = … ») d'une section de partage, ou vide si la section n'existe pas.
