@@ -178,7 +178,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'gpo_create':   $out = ad('gpo', 'create', (string) ($_POST['name'] ?? '')); break;
         case 'kms_auto':     $out = ad('gpo', 'activation', '192.168.182.1'); break;
         case 'sysvol_reset': $out = ad('gpo', 'sysvolreset', ''); break;
-        case 'bitlocker_deploy': $out = ad('bitlocker', 'deploy', ''); break;
+        case 'bitlocker_deploy':
+            $blm = (string) ($_POST['bl_mode'] ?? 'tpm');
+            if ($blm === 'tpmpin_common') {
+                $blpin = preg_replace('/\D/', '', (string) ($_POST['bl_pin'] ?? ''));
+                $out = (strlen((string) $blpin) < 6 || strlen((string) $blpin) > 20)
+                    ? 'ERROR: PIN de 6 à 20 chiffres requis.'
+                    : ad('bitlocker', 'deploy', 'tpmpin', (string) $blpin);
+            } elseif ($blm === 'tpmpin_manual') {
+                $out = ad('bitlocker', 'deploy', 'tpmpin');
+            } else {
+                $out = ad('bitlocker', 'deploy', 'tpm');
+            }
+            break;
         case 'gpo_cert':
             // Déploie le certificat racine Bastion dans le magasin de confiance des postes.
             $ca = '/etc/proxyfibre/bastion-ca.crt';
@@ -940,24 +952,59 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
 
     <!-- Chiffrement BitLocker -->
     <?php $blGpo = in_array('Bastion — Chiffrement BitLocker', array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
-    <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#3a2f14,#231a08);padding:1rem 1.2rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-      <span style="font-size:1.8rem">🔐</span>
-      <div style="flex:1;min-width:240px">
-        <div style="font-weight:600">Chiffrement BitLocker des disques — clé dans l'Active Directory</div>
-        <div class="ad-help" style="margin:.2rem 0 0">Chiffre le disque système des postes et <strong>sauvegarde la clé de
-        récupération dans l'AD</strong> (visible sous chaque ordinateur ci-dessous). S\'active au démarrage sur les postes
-        dotés d\'un <strong>TPM prêt</strong> (édition Pro/Entreprise), de façon transparente ; la clé est séquestrée
-        <em>avant</em> le chiffrement. Les postes sans TPM ne sont pas touchés.</div>
-        <div class="ad-help" style="margin:.35rem 0 0;color:#eab308">⚠️ Opération à fort impact : <strong>testez d\'abord sur un poste pilote</strong>.</div>
+    <style>.bl-opt{display:flex;gap:.5rem;align-items:flex-start;font-size:.9rem;cursor:pointer}.bl-opt input{margin-top:.2rem;flex:none}</style>
+    <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#3a2f14,#231a08);padding:1rem 1.2rem;margin-bottom:1rem">
+      <div style="display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+        <span style="font-size:1.8rem">🔐</span>
+        <div style="flex:1;min-width:240px">
+          <div style="font-weight:600">Chiffrement BitLocker des disques — clé dans l'Active Directory
+            <?php if ($blGpo): ?><span class="badge on" style="margin-left:.4rem">✓ Déployé</span><?php endif; ?></div>
+          <div class="ad-help" style="margin:.2rem 0 0">Chiffre le disque système des postes et <strong>sauvegarde la clé de
+          récupération dans l'AD</strong> (visible sous chaque ordinateur ci-dessous). S'active au démarrage sur les postes
+          dotés d'un <strong>TPM prêt</strong> (édition Pro/Entreprise) ; la clé est séquestrée <em>avant</em> le chiffrement.
+          Les postes sans TPM ne sont pas touchés.</div>
+          <div class="ad-help" style="margin:.35rem 0 0;color:#eab308">⚠️ Opération à fort impact : <strong>testez d'abord sur un poste pilote</strong>.</div>
+        </div>
       </div>
-      <?php if ($blGpo): ?><span class="badge on">✓ Déployé</span>
-      <?php else: ?>
-      <form method="post" onsubmit="return confirm('Déployer le chiffrement BitLocker sur les postes du domaine ?\n\nLes disques système des postes avec TPM seront chiffrés au prochain démarrage ; la clé de récupération est sauvegardée dans l\'AD au préalable. Testez d\'abord sur un poste pilote.')">
+      <form method="post" onsubmit="return blConfirm(this)" style="margin-top:.9rem;border-top:1px solid var(--line);padding-top:.8rem">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="bitlocker_deploy">
-        <button class="btn">🔐 Déployer BitLocker</button>
+        <div class="ad-help" style="margin-bottom:.45rem">Mode de déverrouillage au démarrage :</div>
+        <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem">
+          <label class="bl-opt"><input type="radio" name="bl_mode" value="tpm" checked> <span><strong>TPM seul</strong> — démarrage transparent, aucun code. Recommandé pour les <strong>postes fixes</strong>.</span></label>
+          <label class="bl-opt"><input type="radio" name="bl_mode" value="tpmpin_common"> <span><strong>TPM + PIN commun</strong> — un même code pour tout le parc, posé automatiquement. Un code est demandé à chaque démarrage.</span></label>
+          <label class="bl-opt"><input type="radio" name="bl_mode" value="tpmpin_manual"> <span><strong>TPM + PIN par poste</strong> — la GPO impose un code ; vous le définissez, unique, sur chaque poste (le plus sûr). Recommandé pour les <strong>portables</strong>.</span></label>
+        </div>
+        <div id="blpinrow" style="display:none;margin-bottom:.6rem">
+          <input type="text" name="bl_pin" inputmode="numeric" pattern="\d{6,20}" maxlength="20" autocomplete="off" placeholder="PIN commun — 6 à 20 chiffres"
+                 style="padding:.45rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;max-width:260px">
+          <div class="ad-help" style="color:#eab308;margin-top:.25rem">⚠️ Un PIN commun est <strong>lisible dans SYSVOL</strong> par les comptes du domaine — à réserver au « frein anti-vol opportuniste ».</div>
+        </div>
+        <button class="btn">🔐 <?= $blGpo ? 'Redéployer / changer de mode' : 'Déployer BitLocker' ?></button>
       </form>
-      <?php endif; ?>
     </div>
+    <script>
+    (function(){
+      var rows=document.getElementById('blpinrow');
+      Array.prototype.forEach.call(document.querySelectorAll('input[name=bl_mode]'), function(r){
+        r.addEventListener('change',function(){
+          var v=document.querySelector('input[name=bl_mode]:checked').value;
+          if(rows) rows.style.display=(v==='tpmpin_common')?'':'none';
+        });
+      });
+    })();
+    function blConfirm(f){
+      var m=f.querySelector('input[name=bl_mode]:checked').value;
+      if(m==='tpmpin_common'){
+        var p=(f.bl_pin.value||'').trim();
+        if(!/^\d{6,20}$/.test(p)){ alert('Saisissez un PIN de 6 à 20 chiffres.'); return false; }
+        return confirm('Déployer BitLocker en TPM + PIN COMMUN ?\n\nUn code sera demandé à chaque démarrage. Ce PIN sera lisible dans SYSVOL. Testez d\'abord sur un poste pilote.');
+      }
+      if(m==='tpmpin_manual'){
+        return confirm('Déployer BitLocker en TPM + PIN PAR POSTE ?\n\nLa GPO impose un code au démarrage, mais NE chiffre pas automatiquement : vous définirez le PIN sur chaque poste (procédure fournie). Testez d\'abord sur un poste pilote.');
+      }
+      return confirm('Déployer le chiffrement BitLocker (TPM seul) ?\n\nLes disques des postes avec TPM seront chiffrés au prochain démarrage, de façon transparente ; la clé est sauvegardée dans l\'AD au préalable. Testez d\'abord sur un poste pilote.');
+    }
+    </script>
 
     <!-- Catalogue prêt à déployer -->
     <h3 style="font-size:.95rem;margin:.2rem 0 .3rem">📚 Catalogue de stratégies — déploiement en un clic (<?= count($GPO_CATALOG) ?>)</h3>

@@ -308,21 +308,34 @@ PY
     case "$sub" in
       deploy)
         # GPO « Bastion — Chiffrement BitLocker » : séquestre AD + script de démarrage.
+        # $a = mode (tpm|tpmpin) ; $b = PIN de service commun optionnel (6-20 chiffres).
         name="Bastion — Chiffrement BitLocker"
+        case "$a" in
+          ''|tpm) modearg="tpm" ;;
+          tpmpin)
+            if [ -n "$b" ]; then
+              case "$b" in *[!0-9]*) echo "ERROR: PIN non numerique" >&2; exit 2 ;; esac
+              { [ "${#b}" -ge 6 ] && [ "${#b}" -le 20 ]; } || { echo "ERROR: PIN de 6 a 20 chiffres" >&2; exit 2; }
+              modearg="tpmpin:$b"
+            else
+              modearg="tpmpin"
+            fi ;;
+          *) echo "ERROR: mode BitLocker inconnu (tpm|tpmpin)" >&2; exit 2 ;;
+        esac
         guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
             /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
         if [ -z "$guid" ]; then
           guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
           [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
         fi
-        python3 /usr/local/sbin/proxyfibre-gpo-bitlocker "$guid" >/dev/null 2>&1 \
+        python3 /usr/local/sbin/proxyfibre-gpo-bitlocker "$guid" "$modearg" >/dev/null 2>&1 \
           || { echo "ERROR: generation GPO BitLocker echouee ($guid)" >&2; exit 1; }
         rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
         dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
         "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         "$ST" ntacl sysvolreset >/dev/null 2>&1 || true
-        echo "$guid bitlocker deployee"
+        echo "$guid bitlocker deployee ($modearg)"
         ;;
       keys)
         # Clés de récupération BitLocker séquestrées dans l'AD : « poste TAB mot-de-passe TAB date ».
