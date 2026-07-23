@@ -14,8 +14,11 @@ case "${1:-}" in
     echo "# Bastion — réservations DHCP (généré automatiquement, ne pas éditer)" > "$tmp"
     # Chaque ligne est REVALIDÉE ici (MAC + IPv4) avant d'entrer dans la configuration :
     # la validation PHP ne suffit pas comme unique rempart.
-    mysql -N radius -e "SELECT CONCAT(mac,'\t',ip,'\t',COALESCE(label,'')) FROM pf_dhcp ORDER BY ip" 2>/dev/null | \
-    while IFS="$(printf '\t')" read -r mac ip label; do
+    # mysql -N sépare déjà les colonnes par une VRAIE tabulation ; on lit donc les 3 colonnes
+    # directement (read assigne le reste de la ligne à « label », espaces compris). Pas de
+    # CONCAT('\t') : selon le mode SQL, « \t » ressort en backslash-t littéral, pas en tabulation.
+    mysql -N radius -e "SELECT mac, ip, COALESCE(label,'') FROM pf_dhcp ORDER BY INET_ATON(ip)" 2>/dev/null | \
+    while read -r mac ip label; do
         echo "$mac" | grep -qiE '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || continue
         echo "$ip"  | grep -qE  '^([0-9]{1,3}\.){3}[0-9]{1,3}$'   || continue
         name=$(printf '%s' "$label" | tr -cd 'A-Za-z0-9._-')
