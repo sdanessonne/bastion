@@ -17,10 +17,10 @@ function bk_parse(string $raw): array {
 // ── Téléchargement (avant tout affichage) ────────────────────────────────────
 if (isset($_GET['dl'])) {
     $name = basename((string) $_GET['dl']);
-    if (preg_match('/^bastion-[0-9-]+\.tar\.gz$/', $name)) {
+    if (preg_match('/^bastion-[0-9-]+\.tar\.gz(\.gpg)?$/', $name)) {
         $path = trim(bk('path', $name));
         if (is_file($path)) {
-            header('Content-Type: application/gzip');
+            header('Content-Type: ' . (substr($name, -4) === '.gpg' ? 'application/octet-stream' : 'application/gzip'));
             header('Content-Disposition: attachment; filename="' . $name . '"');
             header('Content-Length: ' . filesize($path));
             readfile($path);
@@ -69,13 +69,31 @@ if (isset($_GET['api'])) {
 require_once __DIR__ . '/inc/layout.php';
 
 $flash = null;
+$newpass = null;    // phrase secrète fraîchement générée (affichée une fois)
+$revealed = null;   // phrase secrète ré-affichée sur demande
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
-    if (($_POST['do'] ?? '') === 'delete') {
+    $do = $_POST['do'] ?? '';
+    if ($do === 'delete') {
         bk('delete', (string) ($_POST['name'] ?? ''));
         $flash = ['Sauvegarde supprimée.', 'ok'];
+    } elseif ($do === 'keygen') {
+        $r = trim(bk('key', 'gen'));
+        if ($r !== '' && $r !== 'existe' && $r !== 'echec') {
+            $newpass = $r;
+            if (function_exists('audit')) { audit('backup.key.gen'); }   // jamais la phrase elle-même
+            $flash = ['Chiffrement activé. Notez la phrase secrète ci-dessous — elle ne sera plus affichée ainsi.', 'ok'];
+        } else {
+            $flash = [$r === 'existe' ? 'Une clé de chiffrement existe déjà.' : 'Échec de génération de la clé.', 'warn'];
+        }
+    } elseif ($do === 'keyshow') {
+        $revealed = trim(bk('key', 'show'));
+        if (function_exists('audit')) { audit('backup.key.show'); }
     }
 }
+// État du chiffrement.
+$keySt = bk_parse(bk('key', 'status'));
+$encOn = ($keySt['key'] ?? '') === 'yes';
 
 $rows = [];
 foreach (explode("\n", bk('list')) as $l) {
@@ -93,6 +111,41 @@ $autoNext = trim((string) ($auto['next'] ?? ''));   // déjà mis en forme par l
 pf_header('Sauvegarde', 'sauvegarde.php');
 if ($flash) { pf_flash($flash[0], $flash[1]); }
 ?>
+<!-- ── Chiffrement des sauvegardes ── -->
+<section class="panel">
+  <div class="panel-head"><h2>🔐 Chiffrement des sauvegardes</h2>
+    <span class="badge <?= $encOn ? 'on' : 'off' ?>"><?= $encOn ? 'Actif · AES-256' : 'Inactif' ?></span>
+  </div>
+  <div style="padding:1.1rem 1.2rem">
+    <?php if (!$encOn): ?>
+      <p class="muted small" style="margin:0 0 .9rem">⚠️ <strong>Vos sauvegardes ne sont pas chiffrées.</strong>
+      Chaque archive contient l'annuaire Active Directory — <strong>empreintes de mots de passe</strong> et
+      <strong>clés de récupération BitLocker</strong> — ainsi que toute la base. Une archive qui fuite exposerait
+      le secret le plus sensible du commissariat.</p>
+      <form method="post">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="keygen">
+        <button class="btn">🔒 Activer le chiffrement (AES-256)</button>
+      </form>
+    <?php else: ?>
+      <p class="muted small" style="margin:0 0 .9rem">✅ Les nouvelles sauvegardes sont chiffrées en <strong>AES-256</strong>.
+      Il vous faut la <strong>phrase secrète</strong> pour restaurer sur une autre machine : conservez-la
+      <strong>hors de la passerelle</strong> (coffre, gestionnaire de mots de passe).</p>
+      <form method="post" style="display:inline">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="keyshow">
+        <button class="btn-sm">👁 Afficher la phrase secrète</button>
+      </form>
+    <?php endif; ?>
+    <?php if ($newpass !== null || $revealed !== null): $pw = $newpass ?? $revealed; ?>
+      <div class="passbox">
+        <p style="margin:0 0 .5rem"><strong>Phrase secrète de chiffrement</strong> — notez-la et conservez-la en lieu sûr, <em>hors de la passerelle</em> :</p>
+        <code class="passval" id="passval"><?= e($pw) ?></code>
+        <button type="button" class="btn-sm" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('passval').textContent)">Copier</button>
+        <p class="muted small" style="margin:.6rem 0 0">Sans cette phrase, une sauvegarde chiffrée est <strong>irrécupérable</strong> — Bastion ne peut pas la retrouver à votre place.</p>
+      </div>
+    <?php endif; ?>
+  </div>
+</section>
+
 <!-- ── Sauvegarde automatique ── -->
 <section class="panel">
   <div class="panel-head"><h2>🗓️ Sauvegarde automatique</h2>
@@ -125,7 +178,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <tr><td colspan="4" class="muted center">Aucune sauvegarde. Créez-en une ci-dessus.</td></tr>
     <?php else: foreach ($rows as $r): ?>
       <tr>
-        <td class="mono svc-meta"><?= e($r['name']) ?></td>
+        <td class="mono svc-meta"><?= e($r['name']) ?><?php if (substr($r['name'], -4) === '.gpg'): ?> <span title="Chiffrée AES-256" style="color:var(--accent)">🔐</span><?php endif; ?></td>
         <td class="muted"><?= e($r['date']) ?></td>
         <td><?= e($fmt($r['size'])) ?></td>
         <td class="row-actions">
@@ -171,6 +224,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     border-radius:50%;transition:transform .22s cubic-bezier(.16,1,.3,1),background .2s ease}
   .switch input:checked + .slider{background:rgba(56,189,248,.25);border-color:var(--accent)}
   .switch input:checked + .slider::before{transform:translateX(24px);background:var(--accent)}
+  .passbox{margin-top:1rem;padding:.9rem 1rem;border:1px solid var(--accent);border-radius:10px;background:rgba(56,189,248,.06)}
+  .passval{display:inline-block;font-size:1.05rem;letter-spacing:.04em;padding:.35rem .6rem;background:var(--bg);
+    border:1px solid var(--line);border-radius:6px;user-select:all;word-break:break-all;margin-right:.4rem}
 </style>
 <script>
 (function(){

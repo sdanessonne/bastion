@@ -11,17 +11,21 @@
 #   status              → état courant : state / op / pct / step / result
 #   prune   [n]         → ne conserver que les n plus récentes (défaut 8)
 #   auto    <status|enable|disable|run> → sauvegarde automatique hebdomadaire (timer systemd)
+#   key     <status|gen|show> → phrase secrète de chiffrement AES-256 (gpg) des archives
+# Les archives contiennent l'AD (empreintes + clés BitLocker) : chiffrées si une clé existe.
 set -eu
 
 DIR=/srv/pxe/backups
 [ -d /srv/pxe ] || DIR=/var/backups/bastion
 mkdir -p "$DIR"
 STATUS=/dev/shm/proxyfibre-backup.status
+KEYFILE=/etc/proxyfibre/backup.key   # phrase secrète (600 root) ; absente = sauvegardes en clair
 
 action="${1:-}"
 arg="${2:-}"
-# Sécurité : n'accepter que des noms de sauvegarde Bastion.
-safe() { case "$(basename "$1")" in bastion-*.tar.gz) return 0 ;; *) echo "fichier refuse" >&2; exit 2 ;; esac; }
+have_key() { [ -s "$KEYFILE" ]; }
+# Sécurité : n'accepter que des noms de sauvegarde Bastion (clair ou chiffré .gpg).
+safe() { case "$(basename "$1")" in bastion-*.tar.gz|bastion-*.tar.gz.gpg) return 0 ;; *) echo "fichier refuse" >&2; exit 2 ;; esac; }
 
 # Écrit l'état de progression (lu par la console via 'status').
 setstatus() { # state op pct step [result]
@@ -60,19 +64,50 @@ do_create() {
     echo "realm: $(testparm -s --parameter-name=realm 2>/dev/null || echo -)"
   } > "$stg/manifest.txt"
   setstatus running create 90 "Compression de l'archive"
-  out="$DIR/bastion-$ts.tar.gz"
-  tar czf "$out" -C "$stg" .
-  chmod 640 "$out"; chgrp www-data "$out" 2>/dev/null || true
+  raw="$DIR/bastion-$ts.tar.gz"
+  tar czf "$raw" -C "$stg" .
   rm -rf "$stg"
-  setstatus done create 100 "Terminé" "bastion-$ts.tar.gz"
-  echo "bastion-$ts.tar.gz"
+  # Chiffrement (si une phrase secrète est configurée) : l'archive contient l'AD
+  # — empreintes de mots de passe ET clés de récupération BitLocker — et la base ;
+  # elle doit être protégée au repos et surtout hors de la passerelle.
+  if have_key; then
+    setstatus running create 96 "Chiffrement (AES-256)"
+    if gpg --batch --yes --quiet --pinentry-mode loopback \
+           --passphrase-file "$KEYFILE" --cipher-algo AES256 \
+           -o "$raw.gpg" --symmetric "$raw" 2>/dev/null; then
+      rm -f "$raw"; name="bastion-$ts.tar.gz.gpg"
+    else
+      name="bastion-$ts.tar.gz"   # échec du chiffrement → garder l'archive plutôt que rien
+    fi
+  else
+    name="bastion-$ts.tar.gz"
+  fi
+  out="$DIR/$name"
+  chmod 640 "$out"; chgrp www-data "$out" 2>/dev/null || true
+  setstatus done create 100 "Terminé" "$name"
+  echo "$name"
 }
 
 do_restore() {
   safe "$1"; f="$DIR/$(basename "$1")"
   [ -f "$f" ] || { setstatus error restore 0 "Introuvable" "introuvable"; echo "introuvable" >&2; exit 2; }
-  setstatus running restore 10 "Extraction de l'archive"
-  stg=$(mktemp -d); tar xzf "$f" -C "$stg"
+  stg=$(mktemp -d)
+  case "$f" in
+    *.gpg)
+      have_key || { setstatus error restore 0 "Clé de chiffrement absente" "cle_absente"; echo "cle de chiffrement absente" >&2; rm -rf "$stg"; exit 4; }
+      setstatus running restore 5 "Déchiffrement"
+      if ! gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-file "$KEYFILE" \
+               -o "$stg/archive.tar.gz" --decrypt "$f" 2>/dev/null; then
+        setstatus error restore 0 "Déchiffrement impossible (mauvaise phrase ?)" "dechiffrement"; echo "dechiffrement impossible" >&2; rm -rf "$stg"; exit 4
+      fi
+      setstatus running restore 10 "Extraction de l'archive"
+      tar xzf "$stg/archive.tar.gz" -C "$stg"; rm -f "$stg/archive.tar.gz"
+      ;;
+    *)
+      setstatus running restore 10 "Extraction de l'archive"
+      tar xzf "$f" -C "$stg"
+      ;;
+  esac
   setstatus running restore 40 "Base de données"
   [ -f "$stg/db.sql" ]         && mysql radius < "$stg/db.sql" 2>/dev/null || true
   setstatus running restore 60 "Configuration"
@@ -90,7 +125,7 @@ do_restore() {
 
 case "$action" in
   list)
-    for f in "$DIR"/bastion-*.tar.gz; do
+    for f in "$DIR"/bastion-*.tar.gz "$DIR"/bastion-*.tar.gz.gpg; do
       [ -f "$f" ] || continue
       printf '%s\t%s\t%s\n' "$(basename "$f")" "$(stat -c%s "$f")" "$(stat -c%y "$f" | cut -d. -f1)"
     done ;;
@@ -116,11 +151,28 @@ case "$action" in
   prune)
     keep="${arg:-8}"
     n=0
-    for f in $(ls -1t "$DIR"/bastion-*.tar.gz 2>/dev/null); do
+    for f in $(ls -1t "$DIR"/bastion-*.tar.gz "$DIR"/bastion-*.tar.gz.gpg 2>/dev/null); do
       n=$((n+1))
       [ "$n" -le "$keep" ] || rm -f "$f"
     done
     echo "conserve $keep" ;;
+
+  key)
+    # Phrase secrète de chiffrement des sauvegardes (AES-256 via gpg).
+    case "$arg" in
+      status)  if have_key; then echo "key=yes"; echo "algo=AES256"; else echo "key=no"; fi ;;
+      gen)
+        # Génère une phrase aléatoire (si absente) et l'affiche UNE fois pour archivage hors-machine.
+        if have_key && [ "${3:-}" != "force" ]; then echo "existe"; exit 0; fi
+        mkdir -p /etc/proxyfibre
+        pass=$(openssl rand -base64 30 | tr -d '\n/+=' | cut -c1-32)
+        [ -n "$pass" ] || { echo "echec" >&2; exit 1; }
+        printf '%s' "$pass" > "$KEYFILE"
+        chmod 600 "$KEYFILE"; chown root:root "$KEYFILE" 2>/dev/null || true
+        echo "$pass" ;;
+      show)    have_key && cat "$KEYFILE" || { echo "aucune" >&2; exit 2; } ;;
+      *) echo "usage: key status|gen [force]|show" >&2; exit 2 ;;
+    esac ;;
 
   delete) safe "$arg"; rm -f "$DIR/$(basename "$arg")"; echo "supprime" ;;
   path)   safe "$arg"; echo "$DIR/$(basename "$arg")" ;;
@@ -143,5 +195,5 @@ case "$action" in
       *) echo "usage: auto status|enable|disable|run" >&2; exit 2 ;;
     esac ;;
 
-  *) echo "usage: create | list | restore <f> | delete <f> | path <f> | start <op> [f] | status | prune [n] | auto <...>" >&2; exit 2 ;;
+  *) echo "usage: create | list | restore <f> | delete <f> | path <f> | start <op> [f] | status | prune [n] | auto <...> | key <status|gen|show>" >&2; exit 2 ;;
 esac
