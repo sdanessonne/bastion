@@ -207,6 +207,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 @unlink($tmp);
             } else { $out = 'ERROR: modèle inconnu.'; }
             break;
+        case 'gpo_unlink': $out = ad('gpo', 'unlink', (string) ($_POST['guid'] ?? '')); break;   // désactiver (délier)
+        case 'gpo_link':   $out = ad('gpo', 'link',   (string) ($_POST['guid'] ?? '')); break;   // réactiver (relier)
+        case 'gpo_delete': $out = ad('gpo', 'delete', (string) ($_POST['guid'] ?? '')); break;   // désinstaller (supprimer)
         case 'share_create': $out = ad('share', 'create', (string) ($_POST['name'] ?? '')); break;
         case 'share_delete': $out = ad('share', 'delete', (string) ($_POST['name'] ?? '')); break;
         case 'share_set':
@@ -351,6 +354,9 @@ if ($dcUp) {
         foreach (pf_db()->query('SELECT guid,description FROM pf_gpo_desc') as $r) { $gpoDesc[strtoupper($r['guid'])] = $r['description']; }
     } catch (Throwable $e) {}
 }
+// GPO actuellement liées à la racine du domaine (GUID en majuscules) : sert à distinguer,
+// dans la liste, une stratégie ACTIVE d'une stratégie DÉSACTIVÉE (déliée mais conservée).
+$gpoLinked = $dcUp ? ad_lines_cached('gpolinks', 20, 'gpo', 'domainlinks') : [];
 
 // Ordinateurs : description perso (pf_computer_desc) + dernier fonctionnaire connecté (audit d'auth).
 $computerDesc = [];
@@ -417,6 +423,52 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   <div class="kpi"><div class="kpi-val"><?= count($gpos) ?></div><div class="kpi-lbl">Stratégies (GPO)</div></div>
   <div class="kpi"><div class="kpi-val"><?= count($shares) ?></div><div class="kpi-lbl">Dossiers partagés</div></div>
 </section>
+
+<!-- Onglets : la page Active Directory est vaste — on regroupe ses sections. -->
+<style>
+  .ad-tabs{display:flex;gap:.3rem;flex-wrap:wrap;margin:0 0 1.4rem;border-bottom:1px solid var(--line)}
+  .ad-tab{background:transparent;border:1px solid transparent;border-bottom:none;color:var(--muted);cursor:pointer;
+          padding:.6rem 1.05rem;font-size:.9rem;border-radius:10px 10px 0 0;font-weight:500;white-space:nowrap}
+  .ad-tab:hover{color:var(--text);background:var(--bg)}
+  .ad-tab.active{color:#fff;background:var(--panel);border-color:var(--line);margin-bottom:-1px}
+</style>
+<nav class="ad-tabs" role="tablist" aria-label="Sections Active Directory">
+  <button type="button" class="ad-tab" data-tab="ensemble">🌳 Vue d'ensemble</button>
+  <button type="button" class="ad-tab" data-tab="comptes">👮 Comptes &amp; groupes</button>
+  <button type="button" class="ad-tab" data-tab="postes">💻 Postes</button>
+  <button type="button" class="ad-tab" data-tab="partages">📁 Partages &amp; lecteurs</button>
+  <button type="button" class="ad-tab" data-tab="gpo">📋 Stratégies (GPO)</button>
+</nav>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Chaque section (h2) est rattachée à un onglet par mot-clé de son titre — aucune section
+  // à baliser à la main. Titre inconnu → « Vue d'ensemble » par défaut.
+  var map = [
+    ['Arborescence', 'ensemble'], ['Nom de domaine', 'ensemble'], ['Activation Windows', 'ensemble'],
+    ['Fonctionnaires', 'comptes'], ['Groupes &', 'comptes'],
+    ['Ordinateurs', 'postes'], ["Fond d'écran", 'postes'],
+    ['Dossiers partagés', 'partages'], ['Lecteurs réseau', 'partages'],
+    ['Stratégies de groupe', 'gpo']
+  ];
+  var secs = document.querySelectorAll('section.ad-sec');
+  secs.forEach(function (s) {
+    var h = s.querySelector('.panel-head h2'); var t = h ? h.textContent : '';
+    var tab = 'ensemble';
+    for (var i = 0; i < map.length; i++) { if (t.indexOf(map[i][0]) >= 0) { tab = map[i][1]; break; } }
+    s.setAttribute('data-adtab', tab);
+  });
+  var tabs = document.querySelectorAll('.ad-tab');
+  function show(name) {
+    secs.forEach(function (s) { s.style.display = (s.getAttribute('data-adtab') === name) ? '' : 'none'; });
+    tabs.forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
+    try { localStorage.setItem('ad_tab', name); } catch (e) {}
+  }
+  tabs.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.tab); }); });
+  var init = null; try { init = localStorage.getItem('ad_tab'); } catch (e) {}
+  var valid = Array.prototype.some.call(tabs, function (b) { return b.dataset.tab === init; });
+  show(valid ? init : 'ensemble');
+});
+</script>
 
 <!-- ARBORESCENCE DE L'ANNUAIRE -->
 <style>
@@ -948,7 +1000,27 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
         </summary>
         <div class="gpo-body">
           <?php if ($note !== '' && $note !== $desc): ?><p class="expl"><strong>Note de l'administrateur :</strong><br><?= nl2br(e($note)) ?></p><?php endif; ?>
-          <p class="ad-help">Identifiant : <code><?= e($g['guid'] ?? '—') ?></code> · Lien : <strong>domaine</strong></p>
+          <?php $linked = in_array($guid, $gpoLinked, true); ?>
+          <p class="ad-help">Identifiant : <code><?= e($g['guid'] ?? '—') ?></code> · État :
+            <strong style="color:<?= $linked ? '#4ade80' : '#eab308' ?>"><?= $linked ? 'active (liée au domaine)' : 'désactivée (déliée)' ?></strong></p>
+          <?php if (!$builtin): ?>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.7rem">
+              <?php if ($linked): ?>
+                <form method="post" style="margin:0" onsubmit="return confirm('Désactiver « <?= e($name) ?> » ?\n\nLa stratégie sera déliée du domaine et cessera de s\'appliquer aux postes. Elle n\'est PAS supprimée — vous pourrez la réactiver.')">
+                  <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_unlink">
+                  <input type="hidden" name="guid" value="<?= e($g['guid'] ?? '') ?>"><button class="btn-sm">⏸ Désactiver</button></form>
+              <?php else: ?>
+                <form method="post" style="margin:0">
+                  <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_link">
+                  <input type="hidden" name="guid" value="<?= e($g['guid'] ?? '') ?>"><button class="btn-sm">▶ Réactiver</button></form>
+              <?php endif; ?>
+              <form method="post" style="margin:0" onsubmit="return confirm('SUPPRIMER définitivement « <?= e($name) ?> » ?\n\nCette action est IRRÉVERSIBLE : la stratégie et ses réglages sont effacés du domaine.')">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_delete">
+                <input type="hidden" name="guid" value="<?= e($g['guid'] ?? '') ?>"><button class="btn-sm btn-danger">🗑 Désinstaller</button></form>
+            </div>
+          <?php else: ?>
+            <p class="ad-help" style="margin-bottom:.7rem">🔒 Stratégie système Windows — ni désactivable ni supprimable depuis la console.</p>
+          <?php endif; ?>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_desc">
             <input type="hidden" name="guid" value="<?= e($g['guid'] ?? '') ?>">

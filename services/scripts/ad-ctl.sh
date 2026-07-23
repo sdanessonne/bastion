@@ -202,6 +202,44 @@ PY
           && echo "permissions SYSVOL reparees" \
           || { echo "ERROR: reparation SYSVOL echouee" >&2; exit 1; }
         ;;
+      link|unlink)
+        # DÉSACTIVE (unlink) / RÉACTIVE (link) une GPO en la déliant/reliant à la racine du
+        # domaine. Désactiver ≠ supprimer : la GPO reste, elle cesse simplement de s'appliquer.
+        # $a = GUID. Les deux GPO par défaut de Windows sont protégées.
+        [ -n "$a" ] || { echo "ERROR: GUID requis" >&2; exit 2; }
+        case "$(printf '%s' "$a" | tr 'a-f' 'A-F')" in
+          "{31B2F340-016D-11D2-945F-00C04FB984F9}"|"{6AC1786C-016F-11D2-945F-00C04FB984F9}")
+            echo "ERROR: GPO systeme Windows protegee" >&2; exit 3 ;;
+        esac
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        if [ "$sub" = "unlink" ]; then
+          "$ST" gpo dellink "$dn" "$a" -U "Administrator%${ADPASS}" >/dev/null 2>&1 \
+            && echo "gpo $a desactivee (deliee du domaine)" || { echo "ERROR: desactivation echouee" >&2; exit 1; }
+        else
+          "$ST" gpo setlink "$dn" "$a" -U "Administrator%${ADPASS}" >/dev/null 2>&1 \
+            && echo "gpo $a reactivee (reliee au domaine)" || { echo "ERROR: reactivation echouee" >&2; exit 1; }
+        fi
+        ;;
+      delete)
+        # SUPPRIME définitivement une GPO (objet LDAP + arborescence SYSVOL). $a = GUID.
+        # Irréversible. Les deux GPO par défaut de Windows sont protégées.
+        [ -n "$a" ] || { echo "ERROR: GUID requis" >&2; exit 2; }
+        case "$(printf '%s' "$a" | tr 'a-f' 'A-F')" in
+          "{31B2F340-016D-11D2-945F-00C04FB984F9}"|"{6AC1786C-016F-11D2-945F-00C04FB984F9}")
+            echo "ERROR: GPO systeme Windows protegee" >&2; exit 3 ;;
+        esac
+        "$ST" gpo del "$a" -U "Administrator%${ADPASS}" >/dev/null 2>&1 \
+          && echo "gpo $a supprimee" || { echo "ERROR: suppression echouee" >&2; exit 1; }
+        ;;
+      domainlinks)
+        # Liste (un GUID par ligne, en MAJUSCULES) les GPO actuellement LIÉES à la racine du
+        # domaine (attribut gPLink) : la console distingue ainsi GPO active / désactivée.
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        ldbsearch -H /var/lib/samba/private/sam.ldb -b "$dn" -s base gPLink 2>/dev/null \
+          | sed -n 's/^gPLink: //p' | grep -oiE '\{[0-9A-Fa-f-]+\}' | tr 'a-f' 'A-F' | sort -u
+        ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;
     esac
     # ── Réparation systématique des permissions SYSVOL après toute écriture de GPO ──
@@ -212,7 +250,7 @@ PY
     # l'AD : on le lance après chaque modification, plutôt que d'espérer que la recopie a
     # tenu. Ignoré pour les sous-actions en lecture seule et le reset manuel (déjà fait).
     case "$sub" in
-        list|create|sysvolreset) : ;;
+        list|create|sysvolreset|domainlinks) : ;;
         *) "$ST" ntacl sysvolreset >/dev/null 2>&1 || true ;;
     esac ;;
   share)
