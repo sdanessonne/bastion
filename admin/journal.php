@@ -15,6 +15,7 @@ $jtabs = [
     'recherche'   => ['Recherche agent',  '🔎', 'recherche.php'],
     'weblog'      => ['Navigation',        '🌐', 'weblog.php'],
     'logs'        => ['Journaux légaux',   '📄', 'logs.php'],
+    'audit'       => ['Audit console',     '🛡️', 'audit.php'],
     'requisition' => ['Réquisition',       '⚖️', 'requisition.php'],
 ];
 ?>

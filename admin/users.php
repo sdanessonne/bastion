@@ -8,6 +8,7 @@
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/userphoto.php';
+require_once __DIR__ . '/inc/audit.php';
 $db = pf_db();
 
 function ad(...$args): string {
@@ -148,6 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$flash) { $flash = ['Compte « ' . $u . ' » enregistré.' . ($msgs ? ' ' . implode(' ', $msgs) : ''), $msgs ? 'err' : 'ok']; }
+        audit('users.save', $u);
     }
 
     if ($action === 'delete' && $u !== '') {
@@ -165,6 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         $flash = ['Compte « ' . $u . ' » supprimé (portail + domaine + droits).', 'ok'];
+        audit('users.delete', $u);
     }
 
     // ── Actions en masse sur une sélection ──────────────────────────────────

@@ -3,6 +3,7 @@
 /** Bastion Admin — Active Directory (Samba AD DC) : fonctionnaires, ordinateurs, GPO, partages. */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/audit.php';
 
 function ad(...$args): string {
     $cmd = 'sudo /usr/local/sbin/proxyfibre-ad';
@@ -285,6 +286,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     ad_cache_clear();
     $err = preg_match('/refuse|ERROR|Failed|Traceback|invalide|usage:/i', $out);
+    audit('ad.' . ($do ?: 'action'), (string) ($_POST['name'] ?? $_POST['guid'] ?? $_POST['tpl'] ?? '') . ($err ? ' [échec]' : ''));
     $flash = [trim($out) !== '' ? trim($out) : 'Opération effectuée.', $err ? 'err' : 'ok'];
 }
 

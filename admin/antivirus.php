@@ -3,6 +3,7 @@
 /** Bastion Admin — antivirus ClamAV (état, mise à jour, analyse des partages). */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/audit.php';
 $db = pf_db();
 try {
     $db->exec('CREATE TABLE IF NOT EXISTS pf_avscan (
@@ -50,12 +51,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'station_token_revoke') {
         $db->prepare('UPDATE pf_station_tokens SET revoked=1 WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
+        audit('antivirus.token_revoke', 'jeton #' . (int) ($_POST['id'] ?? 0));
         $flash = ['Jeton révoqué — la station est refusée dès sa prochaine requête.', 'ok'];
     } elseif ($action === 'station_token_restore') {
         $db->prepare('UPDATE pf_station_tokens SET revoked=0 WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
         $flash = ['Jeton réactivé.', 'ok'];
     } elseif ($action === 'station_token_delete') {
         $db->prepare('DELETE FROM pf_station_tokens WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
+        audit('antivirus.token_delete', 'jeton #' . (int) ($_POST['id'] ?? 0));
         $flash = ['Jeton supprimé.', 'ok'];
     } elseif ($action === 'update') {
         $out = shell_exec('sudo /usr/local/sbin/proxyfibre-clamav update 2>&1');

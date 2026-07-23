@@ -3,6 +3,7 @@
 /** Bastion Admin — vue d'ensemble système (état de toutes les fonctions). */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/audit.php';
 
 // ── Mise à jour Debian : point d'entrée AJAX ─────────────────────────────────
 // Doit passer AVANT toute sortie HTML. La console interroge l'état et le journal
@@ -55,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'update_aj
     $act = (string) ($_POST['act'] ?? '');
     if (!isset($map[$act])) { http_response_code(400); echo '{"ok":false,"error":"action inconnue"}'; exit; }
     $r = trim((string) shell_exec($map[$act] . ' 2>&1'));
+    if ($act === 'apt_apply' || $act === 'git_apply') { audit('systeme.update', $act); }
     echo json_encode(['ok' => !str_starts_with($r, 'ERREUR'), 'r' => $r], JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -152,6 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'syspw') {
         // Trace d'audit : QUI a changé QUEL compte. Jamais le mot de passe lui-même.
         error_log(sprintf('[bastion] syspasswd admin=%s compte=%s resultat=%s',
             $_SESSION['admin'] ?? '?', $compte, str_starts_with($out, 'OK') ? 'ok' : 'echec'));
+        audit('systeme.syspasswd', 'compte=' . $compte . (str_starts_with($out, 'OK') ? '' : ' [échec]'));
         $pwFlash = str_starts_with($out, 'OK')
             ? ["Mot de passe du compte système « $compte » changé.", 'ok']
             : [$out ?: 'Changement impossible.', 'err'];
