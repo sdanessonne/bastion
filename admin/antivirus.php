@@ -16,6 +16,14 @@ try {
     // chaque visite de cette page invaliderait les postes déjà configurés.
     $db->exec("CREATE TABLE IF NOT EXISTS pf_settings (k VARCHAR(64) PRIMARY KEY, v TEXT)");
     $db->exec("INSERT IGNORE INTO pf_settings (k,v) VALUES ('station_token', SHA2(CONCAT(RAND(),UUID(),NOW(6)),256))");
+    // Jetons PAR STATION (révocables un par un) : chaque ordinateur reçoit le sien. On voit
+    // ainsi lequel se sert encore, et l'on peut révoquer un poste volé sans reconfigurer tous
+    // les autres — contrairement au jeton partagé, dont le renouvellement invalide tout le parc.
+    $db->exec('CREATE TABLE IF NOT EXISTS pf_station_tokens (
+        id INT AUTO_INCREMENT PRIMARY KEY, label VARCHAR(96) NOT NULL DEFAULT \'\',
+        token CHAR(64) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_by VARCHAR(64) DEFAULT NULL, last_seen DATETIME NULL, last_ip VARCHAR(45) DEFAULT NULL,
+        last_poste VARCHAR(96) DEFAULT NULL, revoked TINYINT(1) NOT NULL DEFAULT 0)');
 } catch (Throwable $e) {}
 
 $SCAN_TARGETS = ['/srv/partage' => 'Dossiers partagés', '/var/www' => 'Serveur web'];
@@ -29,7 +37,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // configuration recopié. Toutes les stations devront être reconfigurées — c'est le
         // prix, et c'est annoncé.
         $db->exec("REPLACE INTO pf_settings (k,v) VALUES ('station_token', SHA2(CONCAT(RAND(),UUID(),NOW(6)),256))");
-        $flash = ['Nouveau jeton généré. Les stations blanches doivent être reconfigurées avec celui-ci.', 'ok'];
+        $flash = ['Nouveau jeton partagé généré. Les stations sur ce jeton doivent être reconfigurées.', 'ok'];
+    } elseif ($action === 'station_token_add') {
+        $label = substr(trim((string) ($_POST['label'] ?? '')), 0, 96);
+        if ($label === '') {
+            $flash = ['Donnez un nom à la station (ex. « Poste accueil »).', 'err'];
+        } else {
+            // Le jeton est engendré côté base (SHA2 d'aléa + UUID + horodatage µs) : haute entropie.
+            $db->prepare("INSERT INTO pf_station_tokens (label,token,created_by) VALUES (?, SHA2(CONCAT(RAND(),UUID(),NOW(6)),256), ?)")
+               ->execute([$label, $_SESSION['admin'] ?? '']);
+            $flash = ['Jeton créé pour « ' . $label . ' ». Reportez-le dans le station.json de ce poste.', 'ok'];
+        }
+    } elseif ($action === 'station_token_revoke') {
+        $db->prepare('UPDATE pf_station_tokens SET revoked=1 WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
+        $flash = ['Jeton révoqué — la station est refusée dès sa prochaine requête.', 'ok'];
+    } elseif ($action === 'station_token_restore') {
+        $db->prepare('UPDATE pf_station_tokens SET revoked=0 WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
+        $flash = ['Jeton réactivé.', 'ok'];
+    } elseif ($action === 'station_token_delete') {
+        $db->prepare('DELETE FROM pf_station_tokens WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
+        $flash = ['Jeton supprimé.', 'ok'];
     } elseif ($action === 'update') {
         $out = shell_exec('sudo /usr/local/sbin/proxyfibre-clamav update 2>&1');
         $flash = ['Base virale : mise à jour lancée.' . (preg_match('/up-to-date|is up to date|updated/i', (string) $out) ? '' : ''), 'ok'];
@@ -69,6 +96,9 @@ $installed = trim((string) shell_exec('command -v clamscan 2>/dev/null')) !== ''
 // ── Ce que la passerelle sert aux stations blanches ───────────────────────────
 $stationToken = '';
 try { $stationToken = (string) $db->query("SELECT v FROM pf_settings WHERE k='station_token'")->fetchColumn(); }
+catch (Throwable $e) {}
+$stationTokens = [];   // jetons par station (révocables)
+try { $stationTokens = $db->query('SELECT * FROM pf_station_tokens ORDER BY revoked, label')->fetchAll(); }
 catch (Throwable $e) {}
 $baseFichiers = [];
 $baseBloquee  = [];
@@ -157,21 +187,48 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
         </table>
       <?php endif; ?>
 
-      <p class="muted small">Jeton des stations — à reporter dans <code>station.json</code>.
-      Il n'ouvre que le dépôt de résultats et la base virale, <strong>rien d'autre</strong> :
-      une station est un poste en libre accès.</p>
-      <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.8rem">
-        <input id="jetonSt" type="password" readonly value="<?= e($stationToken) ?>"
-               style="flex:1;font-family:monospace;font-size:.8rem" onclick="this.select()">
-        <button type="button" class="btn-sm" onclick="var c=document.getElementById('jetonSt');
-                c.type = c.type === 'password' ? 'text' : 'password';">👁 Voir</button>
-      </div>
+      <!-- Jetons PAR STATION : un par ordinateur, révocables un par un. -->
+      <h3 style="font-size:.95rem;margin:1.1rem 0 .2rem">🔑 Jetons par station <span class="muted small">(recommandé)</span></h3>
+      <p class="muted small" style="margin:.2rem 0 .6rem">Un jeton par ordinateur : on voit lequel se sert (et quand), et on
+      peut en révoquer un seul — poste volé ou remplacé — sans reconfigurer les autres. Le jeton n'ouvre que le dépôt
+      de résultats et la base virale, <strong>rien d'autre</strong>.</p>
+      <form method="post" class="ad-inline" style="margin-bottom:.8rem">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="station_token_add">
+        <input type="text" name="label" required maxlength="96" placeholder="Nom du poste (ex. Accueil brigade)"
+               style="flex:1;min-width:170px;padding:.5rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
+        <button class="btn-sm">＋ Créer un jeton</button>
+      </form>
+      <?php if ($stationTokens): ?>
+      <div class="table-wrap"><table class="grid-table" style="margin-bottom:1rem">
+        <thead><tr><th>Station</th><th>Jeton</th><th>Dernière activité</th><th>État</th><th></th></tr></thead>
+        <tbody>
+        <?php foreach ($stationTokens as $t): $csrf = e(csrf_token()); $rev = (int) $t['revoked']; ?>
+          <tr<?= $rev ? ' style="opacity:.55"' : '' ?>>
+            <td><strong><?= e($t['label']) ?></strong><br><span class="muted svc-meta">créé le <?= e(date('d/m/Y', strtotime((string) $t['created_at']))) ?><?= $t['created_by'] ? ' · ' . e($t['created_by']) : '' ?></span></td>
+            <td style="max-width:160px"><input type="password" readonly value="<?= e($t['token']) ?>"
+                   onclick="this.type=this.type==='password'?'text':'password';this.select()" title="Cliquer pour afficher / copier"
+                   style="width:100%;font-family:monospace;font-size:.7rem;background:#0d1728;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:.25rem .4rem"></td>
+            <td class="muted svc-meta"><?php if ($t['last_seen']): ?><?= e(date('d/m/Y H:i', strtotime((string) $t['last_seen']))) ?><?php if ($t['last_poste']): ?><br><?= e($t['last_poste']) ?><?php endif; ?><?php if ($t['last_ip']): ?> · <?= e($t['last_ip']) ?><?php endif; ?><?php else: ?>jamais utilisé<?php endif; ?></td>
+            <td><span class="badge <?= $rev ? 'off' : 'on' ?>"><?= $rev ? 'révoqué' : 'actif' ?></span></td>
+            <td class="row-actions">
+              <?php if ($rev): ?>
+                <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="station_token_restore"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button class="btn-sm">Réactiver</button></form>
+                <form method="post" style="display:inline" onsubmit="return confirm('Supprimer définitivement ce jeton ?')"><input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="station_token_delete"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button class="btn-sm btn-danger">Suppr.</button></form>
+              <?php else: ?>
+                <form method="post" style="display:inline" onsubmit="return confirm('Révoquer « <?= e($t['label']) ?> » ? Cette station sera refusée immédiatement.')"><input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="station_token_revoke"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button class="btn-sm btn-danger">Révoquer</button></form>
+              <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table></div>
+      <?php else: ?><p class="muted small" style="margin-bottom:1rem">Aucun jeton par station pour l'instant. Créez-en un ci-dessus.</p><?php endif; ?>
 
-      <details style="margin-bottom:1rem">
-        <summary class="muted small" style="cursor:pointer">Contenu de <code>station.json</code></summary>
+      <details style="margin-bottom:.6rem">
+        <summary class="muted small" style="cursor:pointer">Contenu de <code>station.json</code> d'un poste</summary>
 <pre style="font-size:.75rem;overflow-x:auto;background:rgba(0,0,0,.25);padding:.6rem;border-radius:6px">{
   "Passerelle": "https://<?= e($lanIp ?: '192.168.182.1') ?>:8443",
-  "Jeton": "&lt;le jeton ci-dessus&gt;",
+  "Jeton": "&lt;le jeton de la station&gt;",
   "Kiosque": true,
   "BoutonEteindre": true,
   "MajAuto": true,
@@ -180,11 +237,20 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
 }</pre>
       </details>
 
-      <form method="post" onsubmit="return confirm('Générer un nouveau jeton ?\n\nToutes les stations blanches déjà configurées seront refusées tant qu\'elles n\'auront pas reçu le nouveau.');">
-        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-        <button name="action" value="station_token_new" class="btn-sm">↻ Générer un nouveau jeton</button>
-        <span class="muted small">en cas de vol ou de fuite</span>
-      </form>
+      <details style="margin-bottom:.4rem">
+        <summary class="muted small" style="cursor:pointer">Jeton partagé (hérité) — un seul pour toutes les stations</summary>
+        <p class="muted small" style="margin:.6rem 0 .4rem">Compatibilité : les stations configurées avec ce jeton unique
+        fonctionnent toujours. Préférez désormais un jeton par station (ci-dessus), révocable individuellement.</p>
+        <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.6rem">
+          <input id="jetonSt" type="password" readonly value="<?= e($stationToken) ?>"
+                 style="flex:1;font-family:monospace;font-size:.8rem" onclick="this.select()">
+          <button type="button" class="btn-sm" onclick="var c=document.getElementById('jetonSt');c.type=c.type==='password'?'text':'password';">👁 Voir</button>
+        </div>
+        <form method="post" onsubmit="return confirm('Générer un nouveau jeton PARTAGÉ ?\n\nToutes les stations sur ce jeton (pas les jetons par station) seront refusées tant qu\'elles n\'auront pas reçu le nouveau.');">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <button name="action" value="station_token_new" class="btn-sm">↻ Renouveler le jeton partagé</button>
+        </form>
+      </details>
     </div>
   </section>
   </div><!-- /colonne de gauche -->

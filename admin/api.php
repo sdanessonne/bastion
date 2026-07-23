@@ -35,9 +35,35 @@ $expectStation = '';
 try { $expectStation = (string) $db->query("SELECT v FROM pf_settings WHERE k='station_token'")->fetchColumn(); }
 catch (Throwable $e) { }
 
-$estAdmin   = $expected !== '' && $given !== '' && hash_equals($expected, $given);
-$estStation = $expectStation !== '' && $given !== '' && hash_equals($expectStation, $given);
+$estAdmin = $expected !== '' && $given !== '' && hash_equals($expected, $given);
+
+// Jeton station : soit le jeton PARTAGÉ historique (pf_settings.station_token), soit un jeton
+// PAR STATION (table pf_station_tokens) — révocable un par un depuis la console. Toutes les
+// comparaisons restent à temps constant (hash_equals) : jamais d'égalité SQL sur le secret.
+$estStation = false;
+$stationTokId = null;   // id du jeton par-station reconnu, pour tracer sa dernière activité
+if ($given !== '') {
+    if ($expectStation !== '' && hash_equals($expectStation, $given)) {
+        $estStation = true;
+    } else {
+        try {
+            foreach ($db->query('SELECT id,token FROM pf_station_tokens WHERE revoked=0') as $r) {
+                if (hash_equals((string) $r['token'], $given)) { $estStation = true; $stationTokId = (int) $r['id']; break; }
+            }
+        } catch (Throwable $e) { /* table pas encore créée : seul le jeton partagé s'applique */ }
+    }
+}
 if (!$estAdmin && !$estStation) { jout(['error' => 'unauthorized'], 401); }
+
+// Traçabilité : un jeton par-station note sa dernière activité (quand, IP, poste). La console
+// montre ainsi quel ordinateur se sert de quel jeton — et repère un jeton dormant ou compromis.
+if ($stationTokId) {
+    try {
+        $poste = substr(trim((string) ($_POST['poste'] ?? $_GET['poste'] ?? '')), 0, 96);
+        $db->prepare("UPDATE pf_station_tokens SET last_seen=NOW(), last_ip=?, last_poste=COALESCE(NULLIF(?,''),last_poste) WHERE id=?")
+           ->execute([(string) ($_SERVER['REMOTE_ADDR'] ?? ''), $poste, $stationTokId]);
+    } catch (Throwable $e) {}
+}
 
 $action = (string) ($_GET['action'] ?? $_POST['action'] ?? '');
 
