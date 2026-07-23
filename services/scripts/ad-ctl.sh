@@ -215,19 +215,69 @@ PY
         *) "$ST" ntacl sysvolreset >/dev/null 2>&1 || true ;;
     esac ;;
   share)
+    SHFILE=/etc/samba/shares.conf
+    # Chemin (« path = … ») d'une section de partage, ou vide si la section n'existe pas.
+    share_path() {
+      awk -v s="[$1]" '
+        $0==s {insec=1; next}
+        insec && /^[[:space:]]*\[/ {insec=0}
+        insec && /^[[:space:]]*path[[:space:]]*=/ { sub(/^[^=]*=[[:space:]]*/,""); print; exit }
+      ' "$SHFILE" 2>/dev/null
+    }
+    # Les partages qui servent le déploiement PXE (source Windows, images master) pointent vers
+    # /srv/pxe et sont gérés par l'installation PXE : les modifier ou les retirer depuis cette
+    # console casserait le déploiement réseau. On les protège.
+    share_protege() { case "$(share_path "$1")" in /srv/pxe*) return 0 ;; *) return 1 ;; esac; }
     case "$sub" in
-      list) cat /etc/samba/shares.conf 2>/dev/null || true ;;
+      list) cat "$SHFILE" 2>/dev/null || true ;;
       create)
         name=$(printf '%s' "$a" | tr -cd 'A-Za-z0-9_-')
         [ -n "$name" ] || { echo "nom invalide" >&2; exit 2; }
         mkdir -p "/srv/partage/$name"
         chmod 2770 "/srv/partage/$name" 2>/dev/null || true
-        if ! grep -q "^\[$name\]" /etc/samba/shares.conf 2>/dev/null; then
+        if ! grep -q "^\[$name\]" "$SHFILE" 2>/dev/null; then
           printf '\n[%s]\n   path = /srv/partage/%s\n   read only = no\n   browseable = yes\n' \
-            "$name" "$name" >> /etc/samba/shares.conf
+            "$name" "$name" >> "$SHFILE"
           smbcontrol all reload-config >/dev/null 2>&1 || true
         fi
         echo "partage $name cree" ;;
+      delete)
+        # SUPPRIME UNIQUEMENT LA DÉFINITION DU PARTAGE — jamais le dossier de données (le retrait
+        # d'un partage ne doit pas détruire les fichiers des agents : c'est réversible en le recréant).
+        name=$(printf '%s' "$a" | tr -cd 'A-Za-z0-9_-')
+        [ -n "$name" ] || { echo "nom invalide" >&2; exit 2; }
+        grep -q "^\[$name\]" "$SHFILE" 2>/dev/null || { echo "ERROR: partage inconnu" >&2; exit 1; }
+        share_protege "$name" && { echo "ERROR: partage systeme (PXE) protege" >&2; exit 3; }
+        # Retire la section [name] et ses lignes, jusqu'à la section suivante (ou la fin du fichier).
+        awk -v s="[$name]" '
+          $0==s {skip=1; next}
+          skip && /^[[:space:]]*\[/ {skip=0}
+          !skip {print}
+        ' "$SHFILE" > "$SHFILE.tmp" && mv "$SHFILE.tmp" "$SHFILE"
+        smbcontrol all reload-config >/dev/null 2>&1 || true
+        echo "partage $name retire (dossier de donnees conserve)" ;;
+      set)
+        # Modifie les drapeaux d'un partage : $a=nom  $b=lecture-seule(0|1)  $c=visible(0|1).
+        name=$(printf '%s' "$a" | tr -cd 'A-Za-z0-9_-')
+        ro=$(printf '%s'  "$b" | tr -cd '01'); br=$(printf '%s' "$c" | tr -cd '01')
+        [ -n "$name" ] || { echo "nom invalide" >&2; exit 2; }
+        grep -q "^\[$name\]" "$SHFILE" 2>/dev/null || { echo "ERROR: partage inconnu" >&2; exit 1; }
+        share_protege "$name" && { echo "ERROR: partage systeme (PXE) protege" >&2; exit 3; }
+        roval=no;  [ "$ro" = "1" ] && roval=yes
+        brval=yes; [ "$br" = "0" ] && brval=no
+        # Réécrit « read only » et « browseable » DANS la bonne section ; ajoute les directives
+        # si elles manquaient. Les autres lignes (path, comment, guest ok…) sont préservées.
+        awk -v s="[$name]" -v ro="$roval" -v br="$brval" '
+          function flush(){ if(insec){ if(!seen_ro) print "   read only = " ro; if(!seen_br) print "   browseable = " br } }
+          $0==s { print; insec=1; seen_ro=0; seen_br=0; next }
+          insec && /^[[:space:]]*\[/ { flush(); insec=0 }
+          insec && /^[[:space:]]*read only[[:space:]]*=/  { print "   read only = " ro;  seen_ro=1; next }
+          insec && /^[[:space:]]*browseable[[:space:]]*=/ { print "   browseable = " br; seen_br=1; next }
+          { print }
+          END { flush() }
+        ' "$SHFILE" > "$SHFILE.tmp" && mv "$SHFILE.tmp" "$SHFILE"
+        smbcontrol all reload-config >/dev/null 2>&1 || true
+        echo "partage $name mis a jour" ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;
     esac ;;
   status)

@@ -138,6 +138,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             pf_db()->prepare('INSERT INTO pf_drives (letter,path,label) VALUES (?,?,?)')->execute([$letter, $path, $label]);
             $out = "Lecteur {$letter}: ajouté. Cliquez « Déployer » pour appliquer.";
         }
+    } elseif ($do === 'drive_edit') {
+        pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_drives (id INT AUTO_INCREMENT PRIMARY KEY, letter CHAR(1), path VARCHAR(255), label VARCHAR(96), added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)');
+        $id     = (int) ($_POST['id'] ?? 0);
+        $letter = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) ($_POST['letter'] ?? '')), 0, 1));
+        $path   = trim((string) ($_POST['path'] ?? ''));
+        $label  = trim((string) ($_POST['label'] ?? ''));
+        if ($id <= 0 || $letter === '' || substr($path, 0, 2) !== '\\\\') {
+            $out = 'ERROR: lettre requise et chemin UNC (\\serveur\partage).';
+        } else {
+            pf_db()->prepare('UPDATE pf_drives SET letter=?, path=?, label=? WHERE id=?')->execute([$letter, $path, $label, $id]);
+            $out = "Lecteur {$letter}: modifié. Cliquez « Déployer » pour appliquer.";
+        }
     } elseif ($do === 'drive_del') {
         pf_db()->prepare('DELETE FROM pf_drives WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
         $out = 'Lecteur retiré.';
@@ -196,6 +208,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else { $out = 'ERROR: modèle inconnu.'; }
             break;
         case 'share_create': $out = ad('share', 'create', (string) ($_POST['name'] ?? '')); break;
+        case 'share_delete': $out = ad('share', 'delete', (string) ($_POST['name'] ?? '')); break;
+        case 'share_set':
+            $ro = !empty($_POST['ro'])     ? '1' : '0';   // lecture seule
+            $br = !empty($_POST['browse']) ? '1' : '0';   // visible dans le voisinage réseau
+            $out = ad('share', 'set', (string) ($_POST['name'] ?? ''), $ro, $br);
+            break;
         case 'drives_deploy':
             $rows = pf_db()->query('SELECT letter,path,label FROM pf_drives ORDER BY letter')->fetchAll();
             if (!$rows) { $out = 'ERROR: aucun lecteur à déployer.'; break; }
@@ -226,14 +244,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $out = ad('gpo', 'wallpaper', $tmp, $style);
                         $ok = strpos($out, "fond d'ecran deploye") !== false;
                         if ($ok) {
-                            // Aperçu web + réglages persistés (best-effort).
-                            $media = __DIR__ . '/media';
-                            if (!is_dir($media)) { @mkdir($media, 0755, true); }
-                            foreach (glob($media . '/wallpaper.*') ?: [] as $old) { @unlink($old); }
-                            @copy($tmp, $media . '/wallpaper.' . $ext);
-                            @chmod($media . '/wallpaper.' . $ext, 0644);
+                            // Aperçu web STOCKÉ EN BASE (et non en fichier). Le dossier admin/ appartient à
+                            // root et est resynchronisé (rsync --delete) à chaque mise à jour : un fichier
+                            // d'aperçu y serait soit impossible à écrire pour www-data, soit effacé à la
+                            // mise à jour suivante — c'est la cause du « fond d'écran qui n'apparaît pas ».
+                            // GD ré-encode l'image (neutralise tout contenu piégé) et la réduit avant stockage.
+                            $raw = @file_get_contents($tmp);
+                            $im  = $raw ? @imagecreatefromstring($raw) : false;
+                            if ($im) {
+                                $w = imagesx($im); $h = imagesy($im);
+                                if ($w > 640) {
+                                    $nh = max(1, (int) round($h * 640 / $w));
+                                    $rs = imagecreatetruecolor(640, $nh);
+                                    imagecopyresampled($rs, $im, 0, 0, 0, 0, 640, $nh, $w, $h);
+                                    imagedestroy($im); $im = $rs;
+                                }
+                                ob_start(); imagejpeg($im, null, 82); $jpg = (string) ob_get_clean(); imagedestroy($im);
+                                pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_media (k VARCHAR(64) PRIMARY KEY, mime VARCHAR(64) NOT NULL, bytes LONGBLOB NOT NULL, updated_at INT NOT NULL)');
+                                $ins = pf_db()->prepare('INSERT INTO pf_media (k,mime,bytes,updated_at) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE mime=VALUES(mime),bytes=VALUES(bytes),updated_at=VALUES(updated_at)');
+                                $ins->bindValue(1, 'wallpaper');
+                                $ins->bindValue(2, 'image/jpeg');
+                                $ins->bindValue(3, $jpg, PDO::PARAM_LOB);
+                                $ins->bindValue(4, time(), PDO::PARAM_INT);
+                                $ins->execute();
+                            }
                             $up = pf_db()->prepare('INSERT INTO pf_settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)');
-                            $up->execute(['wallpaper_ext', $ext]);
                             $up->execute(['wallpaper_style', $style]);
                             $up->execute(['wallpaper_ts', (string) time()]);
                             $out = "Fond d'écran déployé sur le domaine. Il s'appliquera à la prochaine ouverture de session (ou après « gpupdate /force »).";
@@ -267,9 +302,29 @@ if ($dcUp) {
         if (preg_match('/display name\s*:\s*(.+)/i', $l, $m)) { $blk['name'] = trim($m[1]); }
     }
     if (!empty($blk['name'])) { $gpos[] = $blk; }
+    // Partages : on analyse le contenu brut de shares.conf (déjà en cache) pour en extraire, par
+    // section, le chemin et les drapeaux — de quoi les LISTER, MODIFIER et SUPPRIMER dans l'UI.
+    $curSh = null;
     foreach (explode("\n", ad_cache('shares', 30, 'share', 'list')) as $l) {
-        if (preg_match('/^\[([^\]]+)\]/', trim($l), $m)) { $shares[] = $m[1]; }
+        $t = trim($l);
+        if (preg_match('/^\[([^\]]+)\]/', $t, $m)) {
+            if ($curSh) { $shares[] = $curSh; }
+            $curSh = ['name' => $m[1], 'path' => '', 'ro' => false, 'browse' => true, 'guest' => false, 'comment' => ''];
+        } elseif ($curSh && preg_match('/^([A-Za-z][A-Za-z ]*?)\s*=\s*(.*)$/', $t, $m)) {
+            $k = strtolower(trim($m[1])); $v = trim($m[2]);
+            $yes = in_array(strtolower($v), ['yes', 'true', '1'], true);
+            if     ($k === 'path')       { $curSh['path'] = $v; }
+            elseif ($k === 'read only')  { $curSh['ro'] = $yes; }
+            elseif ($k === 'browseable' || $k === 'browsable') { $curSh['browse'] = $yes; }
+            elseif ($k === 'guest ok')   { $curSh['guest'] = $yes; }
+            elseif ($k === 'comment')    { $curSh['comment'] = $v; }
+        }
     }
+    if ($curSh) { $shares[] = $curSh; }
+    // Les partages servant le déploiement PXE (/srv/pxe) sont protégés : gérés par l'installation
+    // PXE, on ne les modifie/supprime pas depuis cette console (sinon PXE casse).
+    foreach ($shares as &$_s) { $_s['pxe'] = strpos($_s['path'], '/srv/pxe') === 0; }
+    unset($_s);
 }
 $sys = ['Administrator', 'Guest', 'krbtgt'];
 $humanUsers = array_values(array_filter($users, fn($u) => !in_array($u, $sys, true) && stripos($u, 'dns-') !== 0));
@@ -545,15 +600,55 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0">Dossiers réseau accessibles depuis les postes via
   <code>\\192.168.182.2\NomDuPartage</code>. Les fichiers déposés sont analysés par l'antivirus.</p>
   <div style="padding:0 1.2rem 1.2rem">
-    <form method="post" class="ad-inline" style="margin-bottom:.9rem">
+    <table class="grid-table" style="margin-bottom:.9rem">
+      <thead><tr><th>Partage</th><th>Dossier</th><th style="width:180px">Accès</th><th style="width:120px">Visible</th><th></th></tr></thead>
+      <tbody>
+        <?php if (!$shares): ?><tr><td colspan="5" class="muted center">Aucun partage. Créez-en un ci-dessous.</td></tr>
+        <?php else: foreach ($shares as $sh): $csrf = e(csrf_token()); ?>
+          <tr>
+            <td><strong>📁 <?= e($sh['name']) ?></strong>
+              <?php if ($sh['guest']): ?> <span class="badge" title="Accessible sans authentification (déploiement PXE)">invité</span><?php endif; ?>
+              <?php if ($sh['comment']): ?><br><span class="muted small"><?= e($sh['comment']) ?></span><?php endif; ?></td>
+            <td class="mono small"><?= e($sh['path']) ?: '<span class="muted">—</span>' ?></td>
+            <td>
+              <?php if ($sh['ro']): ?><span class="badge">Lecture seule</span><?php else: ?><span class="badge on">Lecture/écriture</span><?php endif; ?>
+              <?php if (!$sh['pxe']): ?>
+                <form method="post" style="display:inline;margin-left:.3rem">
+                  <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="do" value="share_set">
+                  <input type="hidden" name="name" value="<?= e($sh['name']) ?>">
+                  <input type="hidden" name="ro" value="<?= $sh['ro'] ? '0' : '1' ?>"><input type="hidden" name="browse" value="<?= $sh['browse'] ? '1' : '0' ?>">
+                  <button class="btn-sm" title="Basculer le mode d'accès"><?= $sh['ro'] ? '→ écriture' : '→ lecture seule' ?></button>
+                </form>
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php if ($sh['browse']): ?><span class="badge on">Oui</span><?php else: ?><span class="badge">Non</span><?php endif; ?>
+              <?php if (!$sh['pxe']): ?>
+                <form method="post" style="display:inline;margin-left:.3rem">
+                  <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="do" value="share_set">
+                  <input type="hidden" name="name" value="<?= e($sh['name']) ?>">
+                  <input type="hidden" name="ro" value="<?= $sh['ro'] ? '1' : '0' ?>"><input type="hidden" name="browse" value="<?= $sh['browse'] ? '0' : '1' ?>">
+                  <button class="btn-sm" title="Afficher/masquer dans le voisinage réseau"><?= $sh['browse'] ? 'masquer' : 'afficher' ?></button>
+                </form>
+              <?php endif; ?>
+            </td>
+            <td class="row-actions">
+              <?php if ($sh['pxe']): ?><span class="badge" title="Partage système géré par le déploiement PXE — non modifiable ici">🔒 PXE</span>
+              <?php else: ?>
+                <form method="post" style="display:inline" onsubmit="return confirm('Retirer le partage « <?= e($sh['name']) ?> » ?\n\nLe dossier et les fichiers sont CONSERVÉS — seul le partage réseau est retiré (réversible en le recréant).')">
+                  <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="do" value="share_delete">
+                  <input type="hidden" name="name" value="<?= e($sh['name']) ?>"><button class="btn-sm btn-danger">Suppr.</button></form>
+              <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; endif; ?>
+      </tbody>
+    </table>
+    <form method="post" class="ad-inline">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="share_create">
-      <input type="text" name="name" required placeholder="Nom du nouveau partage (ex. Brigade)">
-      <button class="btn">Créer le partage</button>
+      <input type="text" name="name" required placeholder="Nom du nouveau partage (ex. Brigade)" pattern="[A-Za-z0-9_\-]+" title="Lettres, chiffres, tiret et souligné uniquement">
+      <button class="btn-sm">+ Créer le partage</button>
     </form>
-    <div class="chips">
-      <?php if (!$shares): ?><span class="muted">Aucun partage.</span>
-      <?php else: foreach ($shares as $sh): ?><span class="chip">📁 <?= e($sh) ?></span><?php endforeach; endif; ?>
-    </div>
   </div>
 </section>
 
@@ -586,7 +681,7 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
   </div>
   <div style="padding:0 1.2rem 1.2rem">
     <table class="grid-table" style="margin-bottom:.9rem">
-      <thead><tr><th style="width:70px">Lettre</th><th>Chemin réseau</th><th>Étiquette</th><th></th></tr></thead>
+      <thead><tr><th style="width:70px">Lettre</th><th>Chemin réseau</th><th>Étiquette</th><th style="width:160px"></th></tr></thead>
       <tbody>
         <?php if (!$drives): ?><tr><td colspan="4" class="muted center">Aucun lecteur. Ajoutez-en un ci-dessous.</td></tr>
         <?php else: foreach ($drives as $dr): ?>
@@ -595,6 +690,9 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
             <td class="mono"><?= e($dr['path']) ?></td>
             <td><?= e($dr['label']) ?: '<span class="muted">—</span>' ?></td>
             <td class="row-actions">
+              <button type="button" class="btn-sm js-edit-drive"
+                data-id="<?= (int) $dr['id'] ?>" data-letter="<?= e($dr['letter']) ?>"
+                data-path="<?= e($dr['path']) ?>" data-label="<?= e($dr['label']) ?>">Modifier</button>
               <form method="post" style="display:inline" onsubmit="return confirm('Retirer ce lecteur ?')">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="drive_del">
                 <input type="hidden" name="id" value="<?= (int) $dr['id'] ?>"><button class="btn-sm btn-danger">Suppr.</button></form>
@@ -603,33 +701,59 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
         <?php endforeach; endif; ?>
       </tbody>
     </table>
-    <form method="post" class="ad-inline">
-      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="drive_add">
-      <select name="letter" style="max-width:90px;padding:.55rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
+    <form method="post" class="ad-inline" id="driveForm">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <input type="hidden" name="do" value="drive_add" id="driveDo">
+      <input type="hidden" name="id" value="" id="driveId">
+      <strong id="driveFormTitle" style="align-self:center;margin-right:.2rem">Nouveau&nbsp;:</strong>
+      <select name="letter" id="driveLetter" style="max-width:90px;padding:.55rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
         <?php foreach (str_split('ZYXWVUTSPNMLKJHGF') as $L): ?><option><?= $L ?></option><?php endforeach; ?>
       </select>
-      <input type="text" name="path" required placeholder="\\<?= e($curRealm) ?>\Commun" list="sharelist" style="min-width:220px">
-      <datalist id="sharelist"><?php foreach ($shares as $sh): ?><option value="\\<?= e($curRealm) ?>\<?= e($sh) ?>"><?php endforeach; ?></datalist>
-      <input type="text" name="label" placeholder="Étiquette (ex. Commun)" style="max-width:200px">
-      <button class="btn-sm">+ Ajouter</button>
+      <input type="text" name="path" id="drivePath" required placeholder="\\<?= e($curRealm) ?>\Commun" list="sharelist" style="min-width:220px">
+      <datalist id="sharelist"><?php foreach ($shares as $sh): ?><option value="\\<?= e($curRealm) ?>\<?= e($sh['name']) ?>"><?php endforeach; ?></datalist>
+      <input type="text" name="label" id="driveLabel" placeholder="Étiquette (ex. Commun)" style="max-width:200px">
+      <button class="btn-sm" id="driveSubmit">+ Ajouter</button>
+      <button type="button" class="btn-sm" id="driveCancel" style="display:none" onclick="pfDriveReset()">Annuler</button>
     </form>
     <?php if ($drivesGpo): ?><p class="ad-help" style="margin-top:.6rem"><span class="badge on">✓ GPO déployée</span>
       Les lecteurs se montent à l'<strong>ouverture de session</strong> des agents (après <code>gpupdate</code> + reconnexion).</p><?php endif; ?>
   </div>
 </section>
+<script>
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  window.pfDriveReset = function () {
+    g('driveDo').value = 'drive_add'; g('driveId').value = '';
+    g('driveFormTitle').innerHTML = 'Nouveau&nbsp;:';
+    g('driveSubmit').textContent = '+ Ajouter'; g('driveCancel').style.display = 'none';
+    g('drivePath').value = ''; g('driveLabel').value = '';
+  };
+  document.querySelectorAll('.js-edit-drive').forEach(function (b) {
+    b.addEventListener('click', function () {
+      g('driveDo').value = 'drive_edit'; g('driveId').value = b.dataset.id;
+      g('driveLetter').value = b.dataset.letter; g('drivePath').value = b.dataset.path; g('driveLabel').value = b.dataset.label;
+      g('driveFormTitle').textContent = 'Modifier ' + b.dataset.letter + ': ';
+      g('driveSubmit').textContent = '✓ Enregistrer'; g('driveCancel').style.display = '';
+      g('driveForm').scrollIntoView({ behavior: 'smooth', block: 'center' }); g('drivePath').focus();
+    });
+  });
+})();
+</script>
 
 <!-- 3ter. FOND D'ÉCRAN (GPO Desktop Wallpaper) -->
 <?php
 $wpGpo   = in_array("Bastion — Fond d'écran", array_map(fn($g) => $g['name'] ?? '', $gpos), true);
-$wpExt = $wpStyle = ''; $wpTs = 0;
+$wpStyle = ''; $wpTs = 0; $wpHas = false;
 try {
-    foreach (pf_db()->query("SELECT k,v FROM pf_settings WHERE k IN ('wallpaper_ext','wallpaper_style','wallpaper_ts')") as $r) {
-        if ($r['k'] === 'wallpaper_ext') { $wpExt = $r['v']; }
+    foreach (pf_db()->query("SELECT k,v FROM pf_settings WHERE k IN ('wallpaper_style','wallpaper_ts')") as $r) {
         if ($r['k'] === 'wallpaper_style') { $wpStyle = $r['v']; }
         if ($r['k'] === 'wallpaper_ts') { $wpTs = (int) $r['v']; }
     }
+    // L'aperçu vit en base (table pf_media) et est servi par wallpaper-img.php — robuste face
+    // aux permissions du dossier admin/ et aux mises à jour (rsync --delete).
+    $wpHas = (bool) pf_db()->query("SELECT 1 FROM pf_media WHERE k='wallpaper'")->fetchColumn();
 } catch (Throwable $e) {}
-$wpPreview = ($wpExt && is_file(__DIR__ . '/media/wallpaper.' . $wpExt)) ? ('media/wallpaper.' . $wpExt . '?t=' . $wpTs) : '';
+$wpPreview = $wpHas ? ('wallpaper-img.php?t=' . $wpTs) : '';
 $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 'Centrer', '22' => 'Étendre', 'tile' => 'Mosaïque'];
 ?>
 <section class="ad-sec panel">
