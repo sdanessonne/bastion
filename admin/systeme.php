@@ -469,24 +469,26 @@ $aDeployer = ($sysN + $gitN) > 0;
     (celui de la console physique et de l'accès SSH). Sans rapport avec le mot de passe de
     <em>cette</em> console web, qui se change dans « Administrateurs ».</p>
 
-    <form method="post" autocomplete="off" style="max-width:32rem"
+    <?php $syspwField = 'display:grid;gap:.3rem;font-size:.85rem;color:var(--muted)';
+          $syspwInput = 'padding:.6rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;width:100%'; ?>
+    <form method="post" autocomplete="off" style="max-width:34rem;display:grid;gap:.9rem"
           onsubmit="if(this.nouveau.value!==this.confirm.value){alert('Les deux nouveaux mots de passe ne correspondent pas.');return false;}return confirm('Changer le mot de passe système ?');">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
       <input type="hidden" name="do" value="syspw">
-      <label>Compte
-        <select name="compte">
+      <label style="<?= $syspwField ?>">Compte à modifier
+        <select name="compte" style="<?= $syspwInput ?>">
           <option value="proxyfibre">proxyfibre — compte d'administration (recommandé)</option>
           <option value="root">root — superutilisateur</option>
         </select>
       </label>
-      <label>Nouveau mot de passe
-        <input type="password" name="nouveau" required minlength="8" autocomplete="new-password"></label>
-      <label>Confirmer le nouveau mot de passe
-        <input type="password" name="confirm" required minlength="8" autocomplete="new-password"></label>
-      <hr style="border:none;border-top:1px solid rgba(120,150,190,.18);margin:1rem 0">
-      <label>Votre mot de passe administrateur <span class="muted small">(pour confirmer que c'est bien vous)</span>
-        <input type="password" name="actuel" required autocomplete="current-password"></label>
-      <button class="btn" style="margin-top:.9rem">Changer le mot de passe système</button>
+      <label style="<?= $syspwField ?>">Nouveau mot de passe
+        <input type="password" name="nouveau" required minlength="8" autocomplete="new-password" style="<?= $syspwInput ?>"></label>
+      <label style="<?= $syspwField ?>">Confirmer le nouveau mot de passe
+        <input type="password" name="confirm" required minlength="8" autocomplete="new-password" style="<?= $syspwInput ?>"></label>
+      <hr style="border:none;border-top:1px solid rgba(120,150,190,.18);margin:.2rem 0">
+      <label style="<?= $syspwField ?>">Votre mot de passe administrateur <span class="muted small">(pour confirmer que c'est bien vous)</span>
+        <input type="password" name="actuel" required autocomplete="current-password" style="<?= $syspwInput ?>"></label>
+      <div><button class="btn">Changer le mot de passe système</button></div>
     </form>
 
     <p class="hint muted small" style="margin-top:1rem">
