@@ -103,6 +103,11 @@ catch (Throwable $e) {}
 $stationTokens = [];   // jetons par station (révocables)
 try { $stationTokens = $db->query('SELECT * FROM pf_station_tokens ORDER BY revoked, label')->fetchAll(); }
 catch (Throwable $e) {}
+// Clés de récupération BitLocker des clés USB préparées par les stations (escrow central,
+// la station étant hors domaine — voir api.php action=station.bitlocker).
+$usbKeys = [];
+try { $usbKeys = $db->query('SELECT * FROM pf_usb_keys ORDER BY id DESC LIMIT 100')->fetchAll(); }
+catch (Throwable $e) {}
 // Bilan des analyses de clés USB déposées par les stations (30 derniers jours).
 $stStats = ['n30' => 0, 'menaces30' => 0, 'dernier' => null];
 try {
@@ -301,6 +306,33 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <button name="action" value="station_token_new" class="btn-sm">↻ Renouveler le jeton partagé</button>
           </form>
+        </div>
+      </details>
+
+      <details class="av-fold">
+        <summary>🔐 Clés USB chiffrées — clés de récupération <span class="muted small">(<?= count($usbKeys) ?>)</span></summary>
+        <div class="fold-body">
+          <p class="muted small" style="margin:.3rem 0 .5rem">Clés de récupération BitLocker des clés USB <strong>préparées à la station</strong>
+          (la station étant hors domaine, elles sont conservées ici plutôt que dans l'AD). Indispensable si le mot de passe d'une clé est oublié.</p>
+          <?php if (!$usbKeys): ?>
+            <p class="muted small">Aucune clé USB préparée pour l'instant.</p>
+          <?php else: ?>
+          <div class="table-wrap"><table class="grid-table">
+            <thead><tr><th>Date</th><th>Volume</th><th>Station · agent</th><th>Clé de récupération</th></tr></thead>
+            <tbody>
+            <?php foreach ($usbKeys as $u): ?>
+              <tr>
+                <td class="muted svc-meta"><?= e(date('d/m/Y H:i', strtotime((string) $u['ts']))) ?></td>
+                <td><?= e($u['volume'] ?: '—') ?></td>
+                <td class="muted svc-meta"><?= e($u['poste'] ?: '?') ?><?= $u['operateur'] ? ' · ' . e($u['operateur']) : '' ?></td>
+                <td><input type="password" readonly value="<?= e($u['recovery']) ?>"
+                      onclick="this.type=this.type==='password'?'text':'password';this.select()" title="Cliquer pour afficher / copier"
+                      style="width:100%;max-width:280px;font-family:monospace;font-size:.72rem;background:#0d1728;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:.25rem .4rem"></td>
+              </tr>
+            <?php endforeach; ?>
+            </tbody>
+          </table></div>
+          <?php endif; ?>
         </div>
       </details>
     </div>

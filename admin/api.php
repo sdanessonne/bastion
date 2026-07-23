@@ -67,9 +67,9 @@ if ($stationTokId) {
 
 $action = (string) ($_GET['action'] ?? $_POST['action'] ?? '');
 
-// Une station ne peut appeler QUE ces deux actions. Sans ce garde-fou, le jeton « limité »
+// Une station ne peut appeler QUE ces actions. Sans ce garde-fou, le jeton « limité »
 // ouvrirait toute l'API : la limitation ne serait qu'une intention.
-$actionsStation = ['station.report', 'station.clamdb', 'station.auth'];
+$actionsStation = ['station.report', 'station.clamdb', 'station.auth', 'station.bitlocker'];
 if ($estStation && !$estAdmin && !in_array($action, $actionsStation, true)) { jout(['error' => 'forbidden'], 403); }
 $active = fn(string $u) => trim((string) shell_exec('systemctl is-active ' . escapeshellarg($u) . ' 2>/dev/null'));
 
@@ -323,6 +323,26 @@ switch ($action) {
             'station:' . ($op ?: 'inconnu'),
         ]);
         jout(['ok' => true, 'id' => (int) $db->lastInsertId()]);
+    }
+
+    case 'station.bitlocker': {
+        // Escrow de la clé de récupération BitLocker d'une clé USB préparée par la station.
+        // La station est hors domaine : elle ne peut PAS sauvegarder dans l'AD comme les postes,
+        // on centralise donc la clé de récupération ici, visible dans la console (Antivirus).
+        $poste  = substr(trim((string) ($_POST['poste'] ?? '')), 0, 64);
+        $op     = substr(trim((string) ($_POST['operateur'] ?? '')), 0, 64);
+        $volume = substr(trim((string) ($_POST['volume'] ?? '')), 0, 96);
+        $rec    = substr(trim((string) ($_POST['recovery'] ?? '')), 0, 80);
+        if ($rec === '') { jout(['error' => 'cle de recuperation manquante'], 400); }
+        try {
+            $db->exec('CREATE TABLE IF NOT EXISTS pf_usb_keys (
+                id INT AUTO_INCREMENT PRIMARY KEY, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                poste VARCHAR(64), operateur VARCHAR(64), volume VARCHAR(96),
+                recovery VARCHAR(80), ip VARCHAR(45))');
+            $db->prepare('INSERT INTO pf_usb_keys (poste,operateur,volume,recovery,ip) VALUES (?,?,?,?,?)')
+               ->execute([$poste, $op, $volume, $rec, (string) ($_SERVER['REMOTE_ADDR'] ?? '')]);
+        } catch (Throwable $e) { jout(['error' => 'stockage impossible'], 500); }
+        jout(['ok' => true]);
     }
 
     case 'status':
