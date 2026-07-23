@@ -45,6 +45,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $inm   = isset($_POST['in_menu']) ? 1 : 0;
             $pub   = isset($_POST['published']) ? 1 : 0;
             $grp   = trim((string) ($_POST['group_required'] ?? '')) ?: null;
+            // Unicité du slug (colonne UNIQUE) : suffixe -2, -3… s'il est déjà pris par une AUTRE page,
+            // plutôt qu'une erreur SQL brute à l'enregistrement.
+            if ($title !== '') {
+                $q = $db->prepare('SELECT 1 FROM pf_cms_pages WHERE slug=? AND id<>?');
+                $s0 = $slug; $k = 1;
+                while (true) { $q->execute([$slug, $id]); if (!$q->fetchColumn()) { break; } $slug = $s0 . '-' . (++$k); }
+            }
             if ($title === '') { $flash = ['Titre requis.', 'err']; }
             elseif ($id > 0) {
                 $db->prepare('UPDATE pf_cms_pages SET slug=?,title=?,body=?,menu_order=?,in_menu=?,published=?,group_required=?,updated_by=? WHERE id=?')
@@ -76,18 +83,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         elseif ($do === 'upload_media') {
             if (!is_dir($MEDIA)) { @mkdir($MEDIA, 0775, true); }
             $f = $_FILES['media'] ?? null;
-            if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) { $flash = ['Aucun fichier reçu.', 'err']; }
-            elseif ($f['size'] > 4 * 1024 * 1024) { $flash = ['Image trop lourde (max 4 Mo).', 'err']; }
-            else {
-                $info = @getimagesize($f['tmp_name']);
-                $ext = ['image/png'=>'png','image/jpeg'=>'jpg','image/gif'=>'gif','image/webp'=>'webp'][$info['mime'] ?? ''] ?? '';
-                if (!$ext) { $flash = ['Format non supporté (PNG, JPEG, GIF, WEBP).', 'err']; }
-                else {
-                    $base = trim(preg_replace('/[^a-z0-9_-]+/', '-', strtolower(pathinfo((string) $f['name'], PATHINFO_FILENAME))), '-') ?: 'image';
-                    $name = "$base.$ext"; $i = 1;
-                    while (file_exists("$MEDIA/$name")) { $name = "$base-$i.$ext"; $i++; }
-                    if (@move_uploaded_file($f['tmp_name'], "$MEDIA/$name")) { @chmod("$MEDIA/$name", 0644); $flash = ["Image téléversée : $name", 'ok']; }
-                    else { $flash = ["Écriture impossible dans $MEDIA.", 'err']; }
+            if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file((string) ($f['tmp_name'] ?? ''))) {
+                $flash = ['Aucun fichier reçu.', 'err'];
+            } elseif (($f['size'] ?? 0) > 4 * 1024 * 1024) {
+                $flash = ['Image trop lourde (max 4 Mo).', 'err'];
+            } elseif (!function_exists('imagecreatefromstring') || !function_exists('getimagesizefromstring')) {
+                $flash = ["Traitement d'image indisponible (php-gd manquant).", 'err'];
+            } else {
+                // L'image atterrit dans l'arborescence web : on ne stocke JAMAIS les octets bruts
+                // reçus. On RÉ-ENCODE (décodage des pixels + ré-émission) — un éventuel polyglotte
+                // (image + code) ne survit pas. Cohérent avec avatars / fond d'écran / photos.
+                $data = (string) @file_get_contents($f['tmp_name']);
+                $info = @getimagesizefromstring($data);
+                $ext  = ['image/png'=>'png','image/jpeg'=>'jpg','image/gif'=>'gif','image/webp'=>'webp'][$info['mime'] ?? ''] ?? '';
+                $w = (int) ($info[0] ?? 0); $h = (int) ($info[1] ?? 0);
+                if (!$ext) {
+                    $flash = ['Format non supporté (PNG, JPEG, GIF, WEBP).', 'err'];
+                } elseif ($w < 1 || $h < 1 || $w * $h > 40 * 1000 * 1000) {   // garde anti-bombe de décompression
+                    $flash = ["Dimensions d'image invalides ou trop grandes.", 'err'];
+                } elseif ($ext === 'webp' && !function_exists('imagewebp')) {
+                    $ext = 'png';   // serveur sans encodeur WebP → on ré-émet en PNG
+                }
+                if ($ext && !$flash) {
+                    $src = @imagecreatefromstring($data);
+                    if (!$src) {
+                        $flash = ['Image illisible ou corrompue.', 'err'];
+                    } else {
+                        $base = trim(preg_replace('/[^a-z0-9_-]+/', '-', strtolower(pathinfo((string) $f['name'], PATHINFO_FILENAME))), '-') ?: 'image';
+                        $name = "$base.$ext"; $i = 1;
+                        while (file_exists("$MEDIA/$name")) { $name = "$base-$i.$ext"; $i++; }
+                        $path = "$MEDIA/$name"; $ok = false;
+                        if ($ext === 'png' || $ext === 'gif') { imagealphablending($src, false); imagesavealpha($src, true); }
+                        if     ($ext === 'png')  { $ok = imagepng($src, $path, 6); }
+                        elseif ($ext === 'jpg')  { $ok = imagejpeg($src, $path, 88); }
+                        elseif ($ext === 'gif')  { $ok = imagegif($src, $path); }
+                        elseif ($ext === 'webp') { $ok = imagewebp($src, $path, 88); }
+                        imagedestroy($src);
+                        if ($ok) { @chmod($path, 0644); $flash = ["Image téléversée : $name", 'ok']; }
+                        else { $flash = ["Écriture impossible dans $MEDIA.", 'err']; }
+                    }
                 }
             }
         }
@@ -127,8 +161,18 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   .media .m{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.4rem;text-align:center}
   .media .m img{width:100%;height:70px;object-fit:cover;border-radius:6px}
   .media .m input{width:100%;font-size:.62rem;margin-top:.3rem;background:#0d1728;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:.2rem}
+  .cms-tabs{display:flex;gap:.3rem;flex-wrap:wrap;margin:0 0 1.2rem;border-bottom:1px solid var(--line)}
+  .cms-tab{background:transparent;border:1px solid transparent;border-bottom:none;color:var(--muted);cursor:pointer;padding:.6rem 1.05rem;font-size:.9rem;border-radius:10px 10px 0 0;font-weight:500}
+  .cms-tab:hover{color:var(--text);background:var(--bg)}
+  .cms-tab.active{color:#fff;background:var(--panel);border-color:var(--line);margin-bottom:-1px}
 </style>
 <div class="cms">
+<nav class="cms-tabs" role="tablist" aria-label="Sections du contenu intranet">
+  <button type="button" class="cms-tab" data-tab="pages">📄 Pages</button>
+  <button type="button" class="cms-tab" data-tab="actus">📰 Actualités</button>
+  <button type="button" class="cms-tab" data-tab="media">🖼️ Médiathèque</button>
+</nav>
+<div class="cmspane" data-cmstab="pages">
 <div class="split">
   <section class="panel form-panel">
     <div class="panel-head"><h2><?= $editP['id'] ? 'Modifier la page' : 'Nouvelle page' ?></h2>
@@ -178,7 +222,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       </tbody></table></div>
   </section>
 </div>
+</div><!-- /pane pages -->
 
+<div class="cmspane" data-cmstab="actus" hidden>
 <div class="split">
   <section class="panel form-panel">
     <div class="panel-head"><h2><?= $editN['id'] ? 'Modifier l\'actualité' : 'Nouvelle actualité' ?></h2>
@@ -220,7 +266,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       </tbody></table></div>
   </section>
 </div>
+</div><!-- /pane actus -->
 
+<div class="cmspane" data-cmstab="media" hidden>
 <section class="panel">
   <div class="panel-head"><h2>🖼️ Médiathèque (<?= count($media) ?>)</h2></div>
   <div style="padding:1.2rem">
@@ -248,9 +296,26 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     <?php else: ?><p class="muted">Aucune image. Téléversez-en une ci-dessus.</p><?php endif; ?>
   </div>
 </section>
+</div><!-- /pane media -->
 </div>
 
 <script>
+// Onglets Contenu (Pages / Actualités / Médiathèque) — page longue, on la scinde.
+(function(){
+  var tabs=document.querySelectorAll('.cms-tab'), panes=document.querySelectorAll('.cmspane');
+  function show(k){
+    panes.forEach(function(p){ p.hidden = p.getAttribute('data-cmstab')!==k; });
+    tabs.forEach(function(b){ b.classList.toggle('active', b.dataset.tab===k); });
+    try{ localStorage.setItem('cms_tab',k); }catch(e){}
+  }
+  tabs.forEach(function(b){ b.addEventListener('click',function(){ show(b.dataset.tab); }); });
+  // Onglet initial : édition d'une page → Pages ; d'une actu → Actualités ; sinon mémorisé.
+  var qp=new URLSearchParams(location.search);
+  var init = qp.has('p') ? 'pages' : (qp.has('n') ? 'actus' : null);
+  if(!init){ try{ init=localStorage.getItem('cms_tab'); }catch(e){} }
+  var valid=Array.prototype.some.call(tabs,function(b){return b.dataset.tab===init;});
+  show(valid?init:'pages');
+})();
 // Éditeur : barre d'outils Markdown + aperçu live.
 function mdInsert(ta, before, after, ph){
   var s=ta.selectionStart, e=ta.selectionEnd, v=ta.value, sel=v.slice(s,e)||ph;
@@ -265,11 +330,13 @@ document.querySelectorAll('.mdbar').forEach(function(bar){
     btn.onclick=function(){mdInsert(ta,b[1],b[2],b[3]);};bar.appendChild(btn);});
 });
 function mdRender(t){
-  t=t.replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});
+  t=t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});
   t=t.replace(/^### (.+)$/gm,'<h3>$1</h3>').replace(/^## (.+)$/gm,'<h2>$1</h2>').replace(/^# (.+)$/gm,'<h1>$1</h1>');
-  t=t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g,'<img src="$2" alt="$1">');
+  // Images / liens : mêmes garde-fous d'URL que le rendu serveur (cms_render). L'aperçu
+  // reflète ainsi EXACTEMENT ce que verront les agents (une URL non http(s)/interne est écartée).
+  t=t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g,function(m,alt,url){ return /^(https?:|\/)/.test(url)?'<img src="'+url+'" alt="'+alt+'">':''; });
   t=t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/(?<!\*)\*(?!\*)(.+?)\*/g,'<em>$1</em>');
-  t=t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,'<a href="$2">$1</a>');
+  t=t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,function(m,txt,url){ return '<a href="'+(/^(https?:|\/|mailto:)/.test(url)?url:'#')+'">'+txt+'</a>'; });
   t=t.replace(/(?:^- .*(?:\n|$))+/gm,function(m){return '<ul>'+m.trim().split(/\n/).map(function(l){return '<li>'+l.replace(/^- /,'')+'</li>';}).join('')+'</ul>';});
   return t.split(/\n{2,}/).map(function(b){b=b.trim();if(!b)return'';return /^<(h[1-3]|ul|img)/.test(b)?b:'<p>'+b.replace(/\n/g,'<br>')+'</p>';}).join('');
 }
