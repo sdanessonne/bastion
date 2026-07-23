@@ -74,7 +74,33 @@ dans les **protecteurs de clé** : `TPM` **et** `Mot de passe numérique` (= cl�
 
 ---
 
-## Étape 5 — Test de récupération (recommandé)
+## Étape 5 — Vérifier le démarrage HORS RÉSEAU (le point à valider)
+
+C'est le contrôle qui prouve qu'un poste **coupé du réseau démarre quand même** : le
+déverrouillage se fait par le **TPM local**, sans domaine ni passerelle.
+
+1. Attendre que `manage-bde -status C:` affiche **`Chiffré intégralement`** (100 %) et
+   **`Protection : Activée`**.
+2. **Couper le réseau du poste** : débrancher le câble — ou, sur la VM VirtualBox,
+   *Configuration → Réseau → décocher « Câble branché »* (ou, hôte éteint côté lien :
+   `VBoxManage controlvm "proxyFibre-client" setlinkstate1 off`).
+3. **Redémarrer** le poste.
+
+**Attendu :** Windows démarre **directement** sur l'écran d'ouverture de session, **sans
+demander ni clé ni code** — exactement comme avec le réseau. Le déverrouillage BitLocker
+ne dépend pas du réseau.
+
+> Un agent qui s'est **déjà connecté** sur ce poste peut aussi ouvrir sa session hors
+> ligne (identifiants en cache). Rebrancher le réseau ensuite.
+>
+> ⚠️ Si BitLocker **réclame la clé de récupération** à cet instant, ce n'est **pas** dû au
+> réseau : c'est un changement d'intégrité de l'amorçage (BIOS/UEFI, Secure Boot, ordre de
+> démarrage) ou, sur VM, un état de TPM qui a changé. Saisir la clé (console → **Active
+> Directory → Postes**) et noter le déclencheur.
+
+---
+
+## Étape 6 — Test de récupération (recommandé)
 
 1. Noter la clé affichée dans la console.
 2. Sur le poste : `manage-bde -forcerecovery C:` puis redémarrer → BitLocker demande la clé.
