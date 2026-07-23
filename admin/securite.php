@@ -8,6 +8,7 @@
  */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/audit.php';
 
 $db = pf_db();
 
@@ -23,6 +24,33 @@ $checks = [];
 function sec_add(array &$c, string $label, string $status, string $detail, string $action = '', string $url = ''): void {
     $c[] = compact('label', 'status', 'detail', 'action', 'url');
 }
+
+// ── Anomalies détectées : acquittement / analyse manuelle (POST) ─────────────
+$anoFlash = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
+    $ado = $_POST['do'] ?? '';
+    if ($ado === 'anomaly_ack') {
+        try { $db->prepare('UPDATE pf_anomaly SET acknowledged=1, ack_by=?, ack_at=NOW() WHERE id=?')
+                 ->execute([(string) ($_SESSION['admin'] ?? ''), (int) ($_POST['id'] ?? 0)]); } catch (Throwable $e) {}
+        audit('securite.anomaly_ack', 'anomalie #' . (int) ($_POST['id'] ?? 0));
+        $anoFlash = ['Anomalie acquittée.', 'ok'];
+    } elseif ($ado === 'anomaly_ack_all') {
+        try { $db->exec('UPDATE pf_anomaly SET acknowledged=1, ack_by=' . $db->quote((string) ($_SESSION['admin'] ?? '')) . ', ack_at=NOW() WHERE acknowledged=0'); } catch (Throwable $e) {}
+        audit('securite.anomaly_ack_all');
+        $anoFlash = ['Toutes les anomalies ont été acquittées.', 'ok'];
+    } elseif ($ado === 'anomaly_scan') {
+        shell_exec('sudo /usr/local/sbin/proxyfibre-anomaly scan 2>/dev/null');
+        $anoFlash = ['Analyse d\'anomalies terminée.', 'ok'];
+    }
+}
+// Charger les anomalies (non acquittées en tête).
+$anomalies = [];
+try { $anomalies = $db->query('SELECT * FROM pf_anomaly ORDER BY acknowledged, ts DESC LIMIT 60')->fetchAll(); } catch (Throwable $e) {}
+$anoOpen = 0; foreach ($anomalies as $a) { if (!$a['acknowledged']) { $anoOpen++; } }
+sec_add($checks, 'Anomalies de sécurité', $anoOpen ? 'warn' : 'ok',
+    $anoOpen ? "$anoOpen anomalie(s) non acquittée(s) — voir « Anomalies détectées » ci-dessous." : 'Aucune anomalie en attente.',
+    $anoOpen ? 'Voir' : '', $anoOpen ? '#anomalies' : '');
 
 // ── 1) Double authentification (2FA) des comptes administrateurs ─────────────
 try {
@@ -197,6 +225,53 @@ pf_header('Santé & conformité sécurité', 'securite.php');
         </div>
       <?php endforeach; ?>
     </div>
+  </div>
+</section>
+
+<!-- Anomalies détectées -->
+<section class="panel" id="anomalies">
+  <div class="panel-head"><h2>🚨 Anomalies détectées</h2>
+    <form method="post" style="margin:0">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="anomaly_scan">
+      <button class="btn-sm">🔄 Analyser maintenant</button>
+    </form>
+  </div>
+  <div style="padding:1rem 1.2rem">
+    <?php if ($anoFlash) { pf_flash($anoFlash[0], $anoFlash[1]); } ?>
+    <p class="muted small" style="margin-top:0">Surveillance automatique (toutes les 20 min) : <strong>nouvel appareil</strong> sur le réseau,
+    <strong>changement des administrateurs AD</strong>, <strong>GPO modifiée hors console</strong>. Une anomalie non acquittée
+    remonte aussi dans les alertes du tableau de bord et par courriel.</p>
+    <?php if (!$anomalies): ?>
+      <p class="muted">Aucune anomalie enregistrée pour le moment.</p>
+    <?php else: ?>
+      <?php if ($anoOpen): ?>
+        <form method="post" style="margin:0 0 .8rem" onsubmit="return confirm('Acquitter toutes les anomalies en attente ?')">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="anomaly_ack_all">
+          <button class="btn-sm">✓ Tout acquitter (<?= $anoOpen ?>)</button>
+        </form>
+      <?php endif; ?>
+      <div class="table-wrap"><table class="grid-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Détail</th><th>État</th><th></th></tr></thead>
+        <tbody>
+        <?php
+          $anoType = ['lan' => ['🖥️', 'Réseau'], 'admin' => ['👑', 'Admin AD'], 'gpo' => ['📋', 'GPO']];
+          foreach ($anomalies as $a):
+            [$ic, $tl] = $anoType[$a['type']] ?? ['❓', (string) $a['type']];
+            $ack = (int) $a['acknowledged'];
+        ?>
+          <tr<?= $ack ? ' style="opacity:.5"' : '' ?>>
+            <td class="muted svc-meta"><?= e(date('d/m/Y H:i', strtotime((string) $a['ts']))) ?></td>
+            <td><span class="badge"><?= $ic ?> <?= e($tl) ?></span></td>
+            <td><?= e($a['detail']) ?></td>
+            <td><?php if ($ack): ?><span class="badge on">acquittée</span><?php else: ?><span class="badge <?= $a['severity'] === 'danger' ? 'danger' : 'warn' ?>"><?= $a['severity'] === 'danger' ? 'à vérifier' : 'à surveiller' ?></span><?php endif; ?></td>
+            <td class="row-actions"><?php if (!$ack): ?>
+              <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="anomaly_ack"><input type="hidden" name="id" value="<?= (int) $a['id'] ?>"><button class="btn-sm">Acquitter</button></form>
+            <?php endif; ?></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table></div>
+    <?php endif; ?>
   </div>
 </section>
 <?php pf_footer(); ?>

@@ -260,6 +260,17 @@ function sys_alerts(): array {
                       'act' => 'Système', 'url' => 'systeme.php'];
         }
     }
+    // Anomalies de sécurité détectées et NON acquittées (nouvel appareil LAN, membres admin
+    // AD, GPO hors console). Elles rejoignent le canal d'alerte existant : courriel du
+    // watchdog + bandeau du tableau de bord. La détection/écriture est faite par le scanner
+    // « proxyfibre-anomaly » (minuterie) ; ici on ne fait que LIRE (aucun effet de bord).
+    try {
+        foreach (pf_db()->query("SELECT severity, detail FROM pf_anomaly WHERE acknowledged=0 ORDER BY ts DESC LIMIT 25") as $a) {
+            $out[] = ['lvl' => ($a['severity'] === 'danger' ? 'danger' : 'warn'),
+                      'txt' => 'Anomalie détectée — ' . $a['detail'],
+                      'act' => 'Sécurité', 'url' => 'securite.php'];
+        }
+    } catch (Throwable $e) {}
     usort($out, fn($a, $b) => ($a['lvl'] === 'danger' ? 0 : 1) <=> ($b['lvl'] === 'danger' ? 0 : 1));
     return $out;
 }

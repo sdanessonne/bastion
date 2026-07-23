@@ -42,10 +42,10 @@ missing=0
 for s in netguard qos issue brand make-web-cert apply-filter update-adblock service \
          apt update-conf syspasswd power speedtest clamav ad gpo-apply gpo-apps gpo-kms \
          gpo-drives gpo-bitlocker metrics-sample backup habilitation sign purge-logs \
-         walledgarden-refresh weblog-ingest account-expiry dhcp quarantine selftest; do
+         walledgarden-refresh weblog-ingest account-expiry dhcp quarantine selftest anomaly; do
   [ -x "$SBIN/proxyfibre-$s" ] || { ko "proxyfibre-$s absent ou non exécutable"; missing=$((missing+1)); }
 done
-[ "$missing" -eq 0 ] && ok "les 31 scripts privilégiés sont présents"
+[ "$missing" -eq 0 ] && ok "les 32 scripts privilégiés sont présents"
 
 # ── 3) Services critiques actifs ─────────────────────────────────────────────
 h "Services"

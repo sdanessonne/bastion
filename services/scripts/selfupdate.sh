@@ -280,6 +280,7 @@ case "${1:-}" in
 755 dhcp                 services/scripts/dhcp-ctl.sh
 755 quarantine           services/scripts/quarantine-ctl.sh
 755 selftest             services/scripts/selftest.sh
+755 anomaly              services/scripts/anomaly-ctl.sh
 SCRIPTS
         # custombinauth : appelé par OpenNDS à chaque (dé)connexion (quotas + journalisation),
         # hors /usr/local/sbin. Fait partie du code, doit suivre les mises à jour.

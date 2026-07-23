@@ -1,0 +1,10 @@
+[Unit]
+Description=Bastion - detection d'anomalies (periodique)
+
+[Timer]
+OnBootSec=8min
+OnUnitActiveSec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=Bastion - detection d'anomalies reseau/AD
+After=mariadb.service samba-ad-dc.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proxyfibre-anomaly scan
