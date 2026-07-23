@@ -6,6 +6,7 @@
 #   list                → nom<TAB>taille<TAB>date par sauvegarde
 #   restore <fichier>   → restaure (base + config + médias) [DESTRUCTIF]
 #   verify  [fichier]   → EXERCICE de restauration non destructif (base + AD vers du jetable)
+#   usb     <list|export <device>> → copie de la dernière sauvegarde vers une clé USB amovible
 #   delete  <fichier>   → supprime une sauvegarde
 #   path    <fichier>   → chemin absolu (pour le téléchargement)
 #   start   <create|restore> [f] → lance l'opération en arrière-plan (progression via 'status')
@@ -27,6 +28,13 @@ arg="${2:-}"
 have_key() { [ -s "$KEYFILE" ]; }
 # Sécurité : n'accepter que des noms de sauvegarde Bastion (clair ou chiffré .gpg).
 safe() { case "$(basename "$1")" in bastion-*.tar.gz|bastion-*.tar.gz.gpg) return 0 ;; *) echo "fichier refuse" >&2; exit 2 ;; esac; }
+# Vrai si $1 est une partition sur un disque AMOVIBLE (clé/disque USB) — barrière stricte
+# pour l'export USB : on n'écrit JAMAIS vers un disque système (removable=0).
+is_removable_part() {
+  _t=$(lsblk -rno TYPE "$1" 2>/dev/null | head -1)
+  _pk=$(lsblk -rno PKNAME "$1" 2>/dev/null | head -1)
+  [ "$_t" = "part" ] && [ -n "$_pk" ] && [ "$(cat "/sys/block/$_pk/removable" 2>/dev/null)" = "1" ]
+}
 
 # Écrit l'état de progression (lu par la console via 'status').
 setstatus() { # state op pct step [result]
@@ -210,6 +218,39 @@ case "$action" in
       [ "$n" -le "$keep" ] || rm -f "$f"
     done
     echo "conserve $keep" ;;
+
+  usb)
+    # Export de la dernière sauvegarde vers une clé/disque USB AMOVIBLE (copie hors-machine
+    # souveraine, sans réseau). On refuse toute cible non amovible (disque système).
+    case "$arg" in
+      list)
+        lsblk -rno PATH,TYPE,FSTYPE,PKNAME 2>/dev/null | while read -r p t fst pk; do
+          [ "$t" = "part" ] && [ -n "$fst" ] && [ -n "$pk" ] || continue
+          [ "$(cat "/sys/block/$pk/removable" 2>/dev/null)" = "1" ] || continue
+          lbl=$(lsblk -no LABEL "$p" 2>/dev/null | sed 's/[^[:print:]]//g')
+          sz=$(lsblk -no SIZE "$p" 2>/dev/null | tr -d ' ')
+          mp=$(findmnt -no TARGET "$p" 2>/dev/null | head -1)
+          printf '%s\t%s\t%s\t%s\t%s\n' "$p" "${lbl:-sans nom}" "$fst" "$sz" "$mp"
+        done ;;
+      export)
+        dev="${3:-}"
+        [ -n "$dev" ] || { echo "usage: usb export <device>" >&2; exit 2; }
+        is_removable_part "$dev" || { echo "REFUS: $dev n'est pas une partition USB amovible" >&2; exit 2; }
+        bk=$(ls -1t "$DIR"/bastion-*.tar.gz.gpg "$DIR"/bastion-*.tar.gz 2>/dev/null | head -1)
+        [ -f "$bk" ] || { echo "aucune sauvegarde a exporter" >&2; exit 2; }
+        mp=$(findmnt -no TARGET "$dev" 2>/dev/null | head -1); here=0
+        if [ -z "$mp" ]; then
+          mp=$(mktemp -d)
+          mount -o rw,nosuid,nodev,noexec "$dev" "$mp" 2>/dev/null || { rmdir "$mp" 2>/dev/null; echo "montage impossible ($dev)" >&2; exit 1; }
+          here=1
+        fi
+        dst="$mp/Bastion-sauvegardes"; mkdir -p "$dst" 2>/dev/null
+        if cp -f "$bk" "$dst/" 2>/dev/null; then sync; msg="exporte: $(basename "$bk") vers $dev"; rc=0
+        else msg="ECHEC de la copie vers $dev"; rc=1; fi
+        [ "$here" = 1 ] && { umount "$mp" 2>/dev/null; rmdir "$mp" 2>/dev/null; }
+        echo "$msg"; exit "$rc" ;;
+      *) echo "usage: usb list | export <device>" >&2; exit 2 ;;
+    esac ;;
 
   key)
     # Phrase secrète de chiffrement des sauvegardes (AES-256 via gpg).

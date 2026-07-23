@@ -89,11 +89,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($do === 'keyshow') {
         $revealed = trim(bk('key', 'show'));
         if (function_exists('audit')) { audit('backup.key.show'); }
+    } elseif ($do === 'usb_export') {
+        $dev = (string) ($_POST['dev'] ?? '');
+        if (!preg_match('#^/dev/[a-zA-Z0-9]+$#', $dev)) {   // le script re-valide « amovible »
+            $flash = ['Cible USB invalide.', 'err'];
+        } else {
+            $r  = trim(bk('usb', 'export', $dev));
+            $ok = strpos($r, 'exporte:') === 0;
+            if (function_exists('audit')) { audit('backup.usb_export', $ok ? $dev : 'echec'); }
+            $flash = [$ok ? 'Sauvegarde copiée sur la clé USB (' . $dev . ').' : 'Échec de l\'export : ' . $r, $ok ? 'ok' : 'err'];
+        }
     }
 }
 // État du chiffrement.
 $keySt = bk_parse(bk('key', 'status'));
 $encOn = ($keySt['key'] ?? '') === 'yes';
+// Cibles USB amovibles détectées (export hors-machine).
+$usbTargets = [];
+foreach (explode("\n", bk('usb', 'list')) as $l) {
+    $p = explode("\t", $l);
+    if (count($p) >= 4 && $p[0] !== '') {
+        $usbTargets[] = ['dev' => $p[0], 'label' => $p[1], 'fs' => $p[2], 'size' => $p[3], 'mp' => $p[4] ?? ''];
+    }
+}
 
 $rows = [];
 foreach (explode("\n", bk('list')) as $l) {
@@ -199,6 +217,33 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   <p class="muted small" style="padding:0 1.2rem 1rem">💡 Téléchargez régulièrement une sauvegarde hors de la
   passerelle. La restauration recharge la base, la configuration et les médias ; le domaine AD se restaure à part
   (<code>samba-tool domain backup restore</code>).</p>
+</section>
+
+<!-- ── Copie vers une clé USB (hors-machine, souverain) ── -->
+<section class="panel">
+  <div class="panel-head"><h2>📤 Copie vers une clé USB</h2></div>
+  <div style="padding:1.1rem 1.2rem">
+    <p class="muted small" style="margin-top:0">Copie la <strong>dernière sauvegarde</strong> (chiffrée) sur une clé/disque
+    USB branché sur la passerelle : une copie <strong>hors-machine</strong>, sans réseau et sous votre contrôle. On n'écrit
+    jamais sur un disque système — seules les partitions <strong>amovibles</strong> sont proposées.</p>
+    <?php if (!$usbTargets): ?>
+      <div class="flash" style="margin:.4rem 0">Aucune clé USB détectée. Branchez une clé (VirtualBox : menu
+        <em>Périphériques → USB</em> pour la rattacher à la VM), puis rechargez cette page.</div>
+    <?php else: ?>
+      <form method="post" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap"
+            onsubmit="return confirm('Copier la dernière sauvegarde chiffrée sur cette clé USB ?')">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="usb_export">
+        <select name="dev" style="padding:.5rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;max-width:100%">
+          <?php foreach ($usbTargets as $u): ?>
+            <option value="<?= e($u['dev']) ?>"><?= e($u['label']) ?> — <?= e($u['fs']) ?> <?= e($u['size']) ?> (<?= e($u['dev']) ?>)</option>
+          <?php endforeach; ?>
+        </select>
+        <button class="btn">📤 Exporter</button>
+      </form>
+      <p class="muted small" style="margin:.6rem 0 0">La copie est placée dans un dossier <code>Bastion-sauvegardes</code>
+      de la clé. Rangez la clé en lieu sûr : l'archive contient l'annuaire et les clés BitLocker (chiffrés).</p>
+    <?php endif; ?>
+  </div>
 </section>
 
 <!-- ── Fenêtre de progression (jauge) ── -->
