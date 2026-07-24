@@ -421,32 +421,62 @@ PY
     # Les ACL POSIX sont PURGÉES : une entrée de groupe (ex. « group:users:--- » posée par
     # samba-tool ntacl set) l'emporte sur « other » et bloque l'accès même en 1777.
     # 1777 = sticky bit : chacun écrit, mais nul ne supprime les fichiers d'autrui.
+    # RÉCURSIF : le contenu déjà déposé garde sinon ses anciens droits (fichiers créés en 0644
+    # avant l'ajout des masques → un collègue ne peut pas les modifier).
     share_perms() {
       [ -d "$1" ] || return 0
-      setfacl -b "$1" 2>/dev/null || true
-      setfacl -k "$1" 2>/dev/null || true
+      setfacl -Rb "$1" 2>/dev/null || true
+      setfacl -Rk "$1" 2>/dev/null || true
       chmod 1777 "$1" 2>/dev/null || true
+      find "$1" -mindepth 1 -type d -exec chmod 1777 {} + 2>/dev/null || true
+      find "$1" -mindepth 1 -type f -exec chmod 0666 {} + 2>/dev/null || true
     }
+    # Masques de création : sans eux Samba applique 0744/0755 et un fichier déposé par un agent
+    # n'est PAS modifiable par ses collègues (et un sous-dossier leur est fermé en écriture).
+    # « map archive = No » et « store dos attributes = Yes » sur cette install → 0666/0777 est correct.
+    SH_MASKS='   create mask = 0666
+   force create mode = 0666
+   directory mask = 0777
+   force directory mode = 0777'
+    # Jetons d'un groupe pour valid users / write list. On émet les DEUX formes : sans préfixe
+    # (résolution par le SAM interne du DC) et « @ » (résolution NSS/winbind). Un jeton qui ne
+    # résout pas est simplement ignoré par Samba.
+    share_tok() { printf '"%s\\%s", @"%s\\%s"' "$SH_WG" "$1" "$SH_WG" "$1"; }
+    SH_WG=$(testparm -s --parameter-name=workgroup 2>/dev/null | tr -d '\r')
+    [ -n "$SH_WG" ] || SH_WG=BASTION
     case "$sub" in
       list) cat "$SHFILE" 2>/dev/null || true ;;
       repair)
         # Réapplique des droits corrects à TOUS les partages de données (jamais /srv/pxe, protégé) :
-        # répare les partages créés avant le correctif, qui étaient inaccessibles aux agents.
+        # répare les partages créés avant le correctif (inaccessibles aux agents) ET pose les
+        # masques de création manquants (sans quoi un fichier déposé n'est pas modifiable par les
+        # collègues). Ne touche JAMAIS aux listes de droits par groupe.
         n=0
         for p in /srv/partage/*; do
           [ -d "$p" ] || continue
           share_perms "$p"; n=$((n+1))
         done
+        cp -f "$SHFILE" "$SHFILE.bak-repair" 2>/dev/null || true
+        awk -v masks="$SH_MASKS" '
+          function flush(){ if (insec && !seen && !pxe) print masks }
+          /^[[:space:]]*\[/ { flush(); insec=0; seen=0; pxe=0 }
+          /^[[:space:]]*\[/ && $0 !~ /^\[(sysvol|netlogon|global|homes|printers)\]/ { insec=1 }
+          /^[[:space:]]*path[[:space:]]*=[[:space:]]*\/srv\/pxe/ { pxe=1 }
+          /^[[:space:]]*create mask[[:space:]]*=/ { seen=1 }
+          { print }
+          END { flush() }
+        ' "$SHFILE" > "$SHFILE.tmp" 2>/dev/null && mv "$SHFILE.tmp" "$SHFILE"
+        testparm -s >/dev/null 2>&1 || cp -f "$SHFILE.bak-repair" "$SHFILE" 2>/dev/null || true
         smbcontrol all reload-config >/dev/null 2>&1 || true
-        echo "$n partage(s) reparé(s)" ;;
+        echo "$n partage(s) repare(s) (droits du contenu + masques de creation)" ;;
       create)
         name=$(printf '%s' "$a" | tr -cd 'A-Za-z0-9_-')
         [ -n "$name" ] || { echo "nom invalide" >&2; exit 2; }
         mkdir -p "/srv/partage/$name"
         share_perms "/srv/partage/$name"
         if ! grep -q "^\[$name\]" "$SHFILE" 2>/dev/null; then
-          printf '\n[%s]\n   path = /srv/partage/%s\n   read only = no\n   browseable = yes\n   dfree command = /usr/local/sbin/proxyfibre-share-dfree\n' \
-            "$name" "$name" >> "$SHFILE"
+          printf '\n[%s]\n   path = /srv/partage/%s\n   read only = no\n   browseable = yes\n%s\n   dfree command = /usr/local/sbin/proxyfibre-share-dfree\n' \
+            "$name" "$name" "$SH_MASKS" >> "$SHFILE"
           smbcontrol all reload-config >/dev/null 2>&1 || true
         fi
         echo "partage $name cree" ;;
@@ -487,6 +517,66 @@ PY
         ' "$SHFILE" > "$SHFILE.tmp" && mv "$SHFILE.tmp" "$SHFILE"
         smbcontrol all reload-config >/dev/null 2>&1 || true
         echo "partage $name mis a jour" ;;
+      acl)
+        # Droits par GROUPE AD : $a=nom  $b=groupes en LECTURE SEULE  $c=groupes en LECTURE-ÉCRITURE
+        # (listes séparées par des virgules). Cas particuliers :
+        #   b="" c=""   → tous les agents, lecture-écriture (état par défaut)
+        #   b="*" c=""  → tous les agents, lecture seule
+        # « Aucun accès » = ABSENCE des listes (jamais d'« invalid users », jamais d'ACE de refus).
+        # La politique vit dans shares.conf : c'est la seule source de vérité relue par smbd, et
+        # elle est SAUVEGARDÉE (contrairement aux NT ACL, absents des sauvegardes).
+        name=$(printf '%s' "$a" | tr -cd 'A-Za-z0-9_-')
+        [ -n "$name" ] || { echo "nom invalide" >&2; exit 2; }
+        grep -q "^\[$name\]" "$SHFILE" 2>/dev/null || { echo "ERROR: partage inconnu" >&2; exit 1; }
+        share_protege "$name" && { echo "ERROR: partage systeme (PXE) protege" >&2; exit 3; }
+
+        adm=$(share_tok "Domain Admins")      # injecté ICI, jamais depuis la console : garantit
+        vu=""; wl=""; roval=no                 # qu'un partage ne devienne jamais inadministrable.
+        if [ "$b" = "*" ] && [ -z "$c" ]; then
+          roval=yes; wl="$adm"                                   # tous : lecture seule
+        elif [ -n "$b" ] || [ -n "$c" ]; then
+          roval=yes; vu="$adm"; wl="$adm"                        # groupes désignés
+          for g in $(printf '%s' "$b" | tr ',' ' '); do
+            g=$(printf '%s' "$g" | tr -cd 'A-Za-z0-9 ._-'); [ -n "$g" ] || continue
+            vu="$vu, $(share_tok "$g")"
+          done
+          for g in $(printf '%s' "$c" | tr ',' ' '); do
+            g=$(printf '%s' "$g" | tr -cd 'A-Za-z0-9 ._-'); [ -n "$g" ] || continue
+            # Tout groupe en écriture doit AUSSI être dans valid users (valid users prime).
+            vu="$vu, $(share_tok "$g")"; wl="$wl, $(share_tok "$g")"
+          done
+        fi
+
+        cp -f "$SHFILE" "$SHFILE.bak-acl" 2>/dev/null || true
+        # Réécrit la section visée : purge les directives de droits puis réinjecte le bloc canonique.
+        # Toutes les autres lignes (path, comment, dfree command…) sont recopiées telles quelles.
+        awk -v s="[$name]" -v ro="$roval" -v vu="$vu" -v wl="$wl" -v masks="$SH_MASKS" '
+          function emit(){
+            print "   read only = " ro
+            if (vu != "") print "   valid users = " vu
+            if (wl != "") print "   write list = " wl
+            if (vu != "") print "   access based share enum = yes"
+            print masks
+          }
+          $0==s { print; insec=1; next }
+          insec && /^[[:space:]]*\[/ { emit(); insec=0 }
+          insec && /^[[:space:]]*(read only|writeable|writable|valid users|invalid users|read list|write list|admin users|create mask|force create mode|directory mask|force directory mode|access based share enum)[[:space:]]*=/ { next }
+          { print }
+          END { if (insec) emit() }
+        ' "$SHFILE" > "$SHFILE.tmp" && mv "$SHFILE.tmp" "$SHFILE"
+
+        # Garde-fou : une seule ligne fautive invaliderait l'include et ferait disparaître
+        # TOUS les partages. On valide avant de recharger, et on restaure sinon.
+        if ! testparm -s >/dev/null 2>&1 || [ -z "$(testparm -s --section-name="$name" --parameter-name=path 2>/dev/null)" ]; then
+          cp -f "$SHFILE.bak-acl" "$SHFILE" 2>/dev/null || true
+          echo "ERROR: configuration invalide, modification annulee" >&2; exit 1
+        fi
+        smbcontrol all reload-config >/dev/null 2>&1 || true
+        # Force la réévaluation : les droits ne sont testés qu'à la connexion au partage.
+        smbcontrol all close-share "$name" >/dev/null 2>&1 || true
+        if [ -n "$vu" ];        then echo "droits du partage $name : groupes designes"
+        elif [ "$roval" = yes ]; then echo "droits du partage $name : tous les agents, lecture seule"
+        else                          echo "droits du partage $name : tous les agents, lecture-ecriture"; fi ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;
     esac ;;
   status)
