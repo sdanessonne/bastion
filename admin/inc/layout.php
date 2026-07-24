@@ -36,6 +36,7 @@ function pf_header(string $title, string $active = ''): void {
             'journal.php' => ['Journalisation', '📄'],
         ],
         'Aide' => [
+            'assistant.php' => ['Assistant de configuration', '🧭'],
             'aide.php'    => ['Aide', '❓'],
             'apropos.php' => ['En savoir +', 'ℹ️'],
         ],
