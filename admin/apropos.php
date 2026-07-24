@@ -14,7 +14,8 @@ pf_header('En savoir +', 'apropos.php');
   .edito ul{color:var(--muted);line-height:1.8}
   .sign{margin-top:2rem;padding:1.2rem 1.4rem;background:linear-gradient(120deg,#1e3a5f,#152238);
     border:1px solid var(--line);border-radius:14px;display:flex;align-items:center;gap:1.1rem}
-  .sign img{width:56px;height:56px;flex:none}
+  .sign img{width:72px;height:72px;flex:none;border-radius:50%;object-fit:cover;
+    border:2px solid rgba(255,255,255,.25);box-shadow:0 4px 14px rgba(0,0,0,.35)}
   .sign .who{font-weight:600;color:#fff;font-size:1.05rem}
   .sign .who small{display:block;font-weight:400;color:var(--muted);font-size:.85rem;margin-top:.2rem}
 </style>
@@ -55,7 +56,7 @@ pf_header('En savoir +', 'apropos.php');
     passerelles d'un département depuis un point unique.</p>
 
     <div class="sign">
-      <img src="/assets/bastion-icon.svg" alt="Bastion">
+      <img src="/assets/dev-photo.jpg" alt="Mickaël MONESTIER">
       <div class="who">Développé par Mickaël MONESTIER
         <small>Mle : 110.480 — Conception &amp; développement de la solution Bastion</small>
       </div>
