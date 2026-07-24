@@ -7,6 +7,7 @@ function pf_header(string $title, string $active = ''): void {
     $navGroups = [
         'Supervision' => [
             'index.php'    => ['Tableau de bord', '▚'],
+            'reseau.php'   => ['Trafic réseau', '📡'],
             'securite.php' => ['Santé & sécurité', '🩺'],
             'rapport.php'  => ['Rapport de conformité', '📊'],
             'services.php' => ['Services', '🧰'],
