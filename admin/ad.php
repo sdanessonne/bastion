@@ -1141,6 +1141,11 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
     <script>
     (function(){
       var ov=document.getElementById('gpo-inst'); if(!ov) return;
+      // L'overlay doit couvrir tout l'écran : on le sort vers <body>. Sinon il reste enfant
+      // de la section GPO, qui — via « .page > * {animation:fadeUp both} » — garde un
+      // transform identité (≠ none) et devient le bloc conteneur du position:fixed ;
+      // combiné à .panel{overflow:hidden}, l'overlay serait rogné et quasi invisible.
+      if (ov.parentNode !== document.body) { document.body.appendChild(ov); }
       var fill=document.getElementById('gpo-inst-fill'),  pctEl=document.getElementById('gpo-inst-pct'),
           lblEl=document.getElementById('gpo-inst-label'), nameEl=document.getElementById('gpo-inst-name'),
           acts=document.getElementById('gpo-inst-actions'), note=document.getElementById('gpo-inst-note'),
