@@ -414,13 +414,36 @@ PY
     # /srv/pxe et sont gérés par l'installation PXE : les modifier ou les retirer depuis cette
     # console casserait le déploiement réseau. On les protège.
     share_protege() { case "$(share_path "$1")" in /srv/pxe*) return 0 ;; *) return 1 ;; esac; }
+    # Droits d'un dossier de partage : le POSIX doit seulement PERMETTRE LA TRAVERSÉE, la politique
+    # d'accès est portée par le NT ACL (xattr, vu par Windows). Historiquement on posait « chmod 2770 »
+    # sur un dossier créé par root → drwxrws--- root root → AUCUN agent ne pouvait entrer
+    # (smbd : « vfs_ChDir(...) failed: Permission non accordée, uid=3000016, gid=100 »).
+    # Les ACL POSIX sont PURGÉES : une entrée de groupe (ex. « group:users:--- » posée par
+    # samba-tool ntacl set) l'emporte sur « other » et bloque l'accès même en 1777.
+    # 1777 = sticky bit : chacun écrit, mais nul ne supprime les fichiers d'autrui.
+    share_perms() {
+      [ -d "$1" ] || return 0
+      setfacl -b "$1" 2>/dev/null || true
+      setfacl -k "$1" 2>/dev/null || true
+      chmod 1777 "$1" 2>/dev/null || true
+    }
     case "$sub" in
       list) cat "$SHFILE" 2>/dev/null || true ;;
+      repair)
+        # Réapplique des droits corrects à TOUS les partages de données (jamais /srv/pxe, protégé) :
+        # répare les partages créés avant le correctif, qui étaient inaccessibles aux agents.
+        n=0
+        for p in /srv/partage/*; do
+          [ -d "$p" ] || continue
+          share_perms "$p"; n=$((n+1))
+        done
+        smbcontrol all reload-config >/dev/null 2>&1 || true
+        echo "$n partage(s) reparé(s)" ;;
       create)
         name=$(printf '%s' "$a" | tr -cd 'A-Za-z0-9_-')
         [ -n "$name" ] || { echo "nom invalide" >&2; exit 2; }
         mkdir -p "/srv/partage/$name"
-        chmod 2770 "/srv/partage/$name" 2>/dev/null || true
+        share_perms "/srv/partage/$name"
         if ! grep -q "^\[$name\]" "$SHFILE" 2>/dev/null; then
           printf '\n[%s]\n   path = /srv/partage/%s\n   read only = no\n   browseable = yes\n   dfree command = /usr/local/sbin/proxyfibre-share-dfree\n' \
             "$name" "$name" >> "$SHFILE"
