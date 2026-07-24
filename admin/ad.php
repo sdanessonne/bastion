@@ -71,6 +71,19 @@ if (isset($_GET['gpo_progress'])) {
     exit;
 }
 
+// ── Diagnostic GPO : endpoint JSON à la demande (lecture seule) ───────────────
+// Lancé par le bouton « Diagnostic » de l'onglet Stratégies. Contrôle chaque GPO Bastion
+// (lien, version, ACL SYSVOL, fichiers) — trop lourd pour être joué à chaque page.
+if (isset($_GET['gpo_health'])) {
+    header('Content-Type: application/json');
+    $raw  = ad('gpo', 'health');
+    $data = json_decode($raw, true);
+    echo json_encode(is_array($data)
+        ? ['ok' => true, 'gpos' => $data]
+        : ['ok' => false, 'error' => 'Diagnostic indisponible (contrôleur de domaine injoignable ?).']);
+    exit;
+}
+
 // ── Groupes intégrés d'Active Directory (créés automatiquement, non supprimables) et
 //    descriptions en clair pour les plus utiles. Tout groupe absent de cette liste est
 //    considéré comme un groupe MÉTIER créé par l'administration. ──
@@ -979,6 +992,85 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
   fait. Les GPO appliquent automatiquement des règles aux postes (sécurité, mot de passe, restrictions…) ;
   elles s'éditent en détail depuis la console « Gestion des stratégies de groupe » d'un poste Windows.</p>
   <div style="padding:0 1.2rem 1.2rem">
+    <!-- Diagnostic de santé des stratégies -->
+    <style>
+      .gpo-diag{border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:1rem 1.2rem;margin-bottom:1rem}
+      .gpo-diag-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+      .gpo-diag-sum{display:flex;gap:.5rem;flex-wrap:wrap;margin:.9rem 0 .2rem}
+      .gpo-diag-pill{font-size:.8rem;font-weight:600;padding:.2rem .7rem;border-radius:20px;border:1px solid var(--line)}
+      .gpo-diag-pill.ok{color:#4ade80;border-color:rgba(74,222,128,.4);background:rgba(74,222,128,.08)}
+      .gpo-diag-pill.warn{color:#eab308;border-color:rgba(234,179,8,.4);background:rgba(234,179,8,.08)}
+      .gpo-diag-pill.fail{color:#f87171;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.08)}
+      .gpo-diag-item{border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:.55rem;background:var(--panel)}
+      .gpo-diag-item.fail{border-color:rgba(248,113,113,.45)} .gpo-diag-item.warn{border-color:rgba(234,179,8,.35)}
+      .gpo-diag-item b{font-size:.92rem} .gpo-diag-c{font-size:.82rem;color:var(--muted);margin-top:.25rem;line-height:1.5}
+      .gpo-diag-ok{color:#4ade80;font-size:.86rem;margin-top:.6rem}
+    </style>
+    <div class="gpo-diag" id="gpo-diag">
+      <div class="gpo-diag-head">
+        <div><span style="font-size:1.3rem">🩺</span> <strong>Diagnostic des stratégies</strong>
+          <div class="ad-help" style="margin:.15rem 0 0">Vérifie que chaque GPO Bastion est <strong>liée</strong>, <strong>lisible par les postes</strong> (permissions SYSVOL) et <strong>complète</strong> — repère les stratégies qui ne s'appliquent pas.</div>
+        </div>
+        <button type="button" class="btn-sm" id="gpo-diag-run">🩺 Lancer le diagnostic</button>
+      </div>
+      <div id="gpo-diag-out" hidden></div>
+    </div>
+    <form id="pf-sysvolreset" method="post" style="display:none">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="sysvol_reset">
+    </form>
+    <script>
+    (function(){
+      var btn=document.getElementById('gpo-diag-run'), out=document.getElementById('gpo-diag-out');
+      if(!btn) return;
+      var ICO={ok:'✅',warn:'⚠️',fail:'⛔'}, LBL={ok:'conformes',warn:'à surveiller',fail:'à corriger'};
+      function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+      btn.addEventListener('click', function(){
+        btn.disabled=true; btn.textContent='Analyse en cours…'; out.hidden=false;
+        out.innerHTML='<p class="muted small" style="margin:.8rem 0 0">Contrôle de chaque stratégie…</p>';
+        fetch('ad.php?gpo_health=1', {headers:{'X-Requested-With':'fetch'}})
+          .then(function(r){ return r.json(); })
+          .then(function(j){
+            btn.disabled=false; btn.textContent='🔄 Relancer le diagnostic';
+            if(!j.ok){ out.innerHTML='<p class="flash err" style="margin:.8rem 0 0">'+esc(j.error||'Diagnostic indisponible.')+'</p>'; return; }
+            var g=j.gpos||[], nf=0,nw=0,no=0;
+            g.forEach(function(x){ if(x.worst==='fail')nf++; else if(x.worst==='warn')nw++; else no++; });
+            var h='<div class="gpo-diag-sum">'+
+              '<span class="gpo-diag-pill ok">'+no+' conformes</span>'+
+              (nw?'<span class="gpo-diag-pill warn">'+nw+' à surveiller</span>':'')+
+              (nf?'<span class="gpo-diag-pill fail">'+nf+' à corriger</span>':'')+'</div>';
+            var issues=g.filter(function(x){ return x.worst!=='ok'; });
+            var aclProblem=false;
+            if(!issues.length){
+              h+='<div class="gpo-diag-ok">✅ Les '+g.length+' stratégies Bastion sont saines : liées, lisibles par les postes et complètes.</div>';
+            } else {
+              issues.forEach(function(x){
+                h+='<div class="gpo-diag-item '+x.worst+'"><b>'+ICO[x.worst]+' '+esc(x.name)+'</b>';
+                x.checks.forEach(function(c){
+                  if(c.status!=='ok'){
+                    h+='<div class="gpo-diag-c">'+ICO[c.status]+' <strong>'+esc(c.label)+'</strong> — '+esc(c.detail)+'</div>';
+                    if(/SYSVOL/i.test(c.label)) aclProblem=true;
+                  }
+                });
+                h+='</div>';
+              });
+              if(aclProblem){
+                h+='<p style="margin:.9rem 0 0"><button type="button" class="btn-sm" id="gpo-diag-fix">🔧 Réparer les permissions SYSVOL</button>'+
+                   ' <span class="muted small">(réaligne les droits de lecture — ~40 s)</span></p>';
+              }
+            }
+            out.innerHTML=h;
+            var fix=document.getElementById('gpo-diag-fix');
+            if(fix){ fix.addEventListener('click', function(){
+              if(confirm('Réparer les permissions SYSVOL de toutes les stratégies ?\n\nOpération sûre (~40 s), à faire si des postes ne lisent pas les GPO.'))
+                document.getElementById('pf-sysvolreset').submit();
+            }); }
+          })
+          .catch(function(){ btn.disabled=false; btn.textContent='🔄 Relancer le diagnostic';
+            out.innerHTML='<p class="flash err" style="margin:.8rem 0 0">Diagnostic impossible (réseau/serveur).</p>'; });
+      });
+    })();
+    </script>
+
     <!-- Certificat racine Bastion : confiance HTTPS automatique -->
     <?php $certGpo = in_array('Bastion — Certificat racine (confiance HTTPS)', array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
     <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#14324f,#152238);padding:1rem 1.2rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
