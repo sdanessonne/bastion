@@ -47,6 +47,20 @@ try { foreach (pf_db()->query("SELECT k,v FROM pf_settings WHERE k IN ('ad_realm
     if ($r['k'] === 'ad_domain' && $r['v'] !== '') { $wantDom   = $r['v']; }
 } } catch (Throwable $e) {}
 
+/** Schéma de la table des lecteurs réseau (idempotent, appelé avant toute lecture/écriture).
+ *  group_name = groupe AD auquel le lecteur est réservé ; vide = tous les agents. */
+function pf_drives_schema(): void {
+    static $done = false; if ($done) { return; } $done = true;
+    try {
+        pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_drives (id INT AUTO_INCREMENT PRIMARY KEY,
+            letter CHAR(1), path VARCHAR(255), label VARCHAR(96),
+            group_name VARCHAR(96) NOT NULL DEFAULT \'\', added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)');
+        // Migration des installations existantes (la colonne peut déjà exister → on ignore).
+        try { pf_db()->exec("ALTER TABLE pf_drives ADD COLUMN group_name VARCHAR(96) NOT NULL DEFAULT ''"); }
+        catch (Throwable $e) { /* colonne déjà présente */ }
+    } catch (Throwable $e) {}
+}
+
 // ── Catalogue de GPO prêtes à déployer (stratégies registre) — voir inc/gpo-catalog.php ──
 $GPO_CATALOG = require __DIR__ . '/inc/gpo-catalog.php';
 
@@ -179,18 +193,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = 'Description du poste enregistrée.';
         }
     } elseif ($do === 'drive_add') {
-        pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_drives (id INT AUTO_INCREMENT PRIMARY KEY, letter CHAR(1), path VARCHAR(255), label VARCHAR(96), added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)');
+        pf_drives_schema();
         $letter = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) ($_POST['letter'] ?? '')), 0, 1));
         $path   = trim((string) ($_POST['path'] ?? ''));
         $label  = trim((string) ($_POST['label'] ?? ''));
         if ($letter === '' || substr($path, 0, 2) !== '\\\\') {   // doit commencer par \\ (UNC)
             $out = 'ERROR: lettre requise et chemin UNC (\\serveur\partage).';
         } else {
-            pf_db()->prepare('INSERT INTO pf_drives (letter,path,label) VALUES (?,?,?)')->execute([$letter, $path, $label]);
+            $grp = trim((string) ($_POST['group'] ?? ''));
+            if (!preg_match('/^[A-Za-z0-9 ._-]{0,64}$/', $grp)) { $grp = ''; }
+            pf_db()->prepare('INSERT INTO pf_drives (letter,path,label,group_name) VALUES (?,?,?,?)')
+                   ->execute([$letter, $path, $label, $grp]);
             $out = "Lecteur {$letter}: ajouté. Cliquez « Déployer » pour appliquer.";
         }
     } elseif ($do === 'drive_edit') {
-        pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_drives (id INT AUTO_INCREMENT PRIMARY KEY, letter CHAR(1), path VARCHAR(255), label VARCHAR(96), added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)');
+        pf_drives_schema();
         $id     = (int) ($_POST['id'] ?? 0);
         $letter = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) ($_POST['letter'] ?? '')), 0, 1));
         $path   = trim((string) ($_POST['path'] ?? ''));
@@ -198,7 +215,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id <= 0 || $letter === '' || substr($path, 0, 2) !== '\\\\') {
             $out = 'ERROR: lettre requise et chemin UNC (\\serveur\partage).';
         } else {
-            pf_db()->prepare('UPDATE pf_drives SET letter=?, path=?, label=? WHERE id=?')->execute([$letter, $path, $label, $id]);
+            $grp = trim((string) ($_POST['group'] ?? ''));
+            if (!preg_match('/^[A-Za-z0-9 ._-]{0,64}$/', $grp)) { $grp = ''; }
+            pf_db()->prepare('UPDATE pf_drives SET letter=?, path=?, label=?, group_name=? WHERE id=?')
+                   ->execute([$letter, $path, $label, $grp, $id]);
             $out = "Lecteur {$letter}: modifié. Cliquez « Déployer » pour appliquer.";
         }
     } elseif ($do === 'drive_del') {
@@ -344,9 +364,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = ad('share', 'set', (string) ($_POST['name'] ?? ''), $ro, $br);
             break;
         case 'drives_deploy':
-            $rows = pf_db()->query('SELECT letter,path,label FROM pf_drives ORDER BY letter')->fetchAll();
+            pf_drives_schema();
+            $rows = pf_db()->query('SELECT letter,path,label,group_name FROM pf_drives ORDER BY letter')->fetchAll();
             if (!$rows) { $out = 'ERROR: aucun lecteur à déployer.'; break; }
-            $json = array_map(fn($r) => ['letter' => $r['letter'], 'path' => $r['path'], 'label' => $r['label']], $rows);
+            $json = array_map(fn($r) => ['letter' => $r['letter'], 'path' => $r['path'],
+                                         'label' => $r['label'], 'group' => (string) ($r['group_name'] ?? '')], $rows);
             $tmp = tempnam(sys_get_temp_dir(), 'drv');
             file_put_contents($tmp, json_encode($json, JSON_UNESCAPED_UNICODE));
             $out = ad('gpo', 'drives', $tmp);
@@ -1025,7 +1047,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
 <?php
 $drives = [];
 try {
-    pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_drives (id INT AUTO_INCREMENT PRIMARY KEY, letter CHAR(1), path VARCHAR(255), label VARCHAR(96), added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)');
+    pf_drives_schema();
     $drives = pf_db()->query('SELECT * FROM pf_drives ORDER BY letter')->fetchAll();
 } catch (Throwable $e) {}
 $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['name'] ?? '', $gpos), true);
@@ -1051,18 +1073,22 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
   </div>
   <div style="padding:0 1.2rem 1.2rem">
     <table class="grid-table" style="margin-bottom:.9rem">
-      <thead><tr><th style="width:70px">Lettre</th><th>Chemin réseau</th><th>Étiquette</th><th style="width:160px"></th></tr></thead>
+      <thead><tr><th style="width:70px">Lettre</th><th>Chemin réseau</th><th>Étiquette</th><th style="width:180px">Pour qui ?</th><th style="width:160px"></th></tr></thead>
       <tbody>
-        <?php if (!$drives): ?><tr><td colspan="4" class="muted center">Aucun lecteur. Ajoutez-en un ci-dessous.</td></tr>
+        <?php if (!$drives): ?><tr><td colspan="5" class="muted center">Aucun lecteur. Ajoutez-en un ci-dessous.</td></tr>
         <?php else: foreach ($drives as $dr): ?>
           <tr>
             <td><strong><?= e($dr['letter']) ?>:</strong></td>
             <td class="mono"><?= e($dr['path']) ?></td>
             <td><?= e($dr['label']) ?: '<span class="muted">—</span>' ?></td>
+            <td><?php $dg = (string) ($dr['group_name'] ?? '');
+                if ($dg === ''): ?><span class="muted">Tous les agents</span>
+                <?php else: ?><span class="badge">🏷️ <?= e($dg) ?></span><?php endif; ?></td>
             <td class="row-actions">
               <button type="button" class="btn-sm js-edit-drive"
                 data-id="<?= (int) $dr['id'] ?>" data-letter="<?= e($dr['letter']) ?>"
-                data-path="<?= e($dr['path']) ?>" data-label="<?= e($dr['label']) ?>">Modifier</button>
+                data-path="<?= e($dr['path']) ?>" data-label="<?= e($dr['label']) ?>"
+                data-group="<?= e((string) ($dr['group_name'] ?? '')) ?>">Modifier</button>
               <form method="post" style="display:inline" onsubmit="return confirm('Retirer ce lecteur ?')">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="drive_del">
                 <input type="hidden" name="id" value="<?= (int) $dr['id'] ?>"><button class="btn-sm btn-danger">Suppr.</button></form>
@@ -1082,6 +1108,16 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
       <input type="text" name="path" id="drivePath" required placeholder="\\<?= e($curDc) ?>\Commun" list="sharelist" style="min-width:220px">
       <datalist id="sharelist"><?php foreach ($shares as $sh): ?><option value="\\<?= e($curDc) ?>\<?= e($sh['name']) ?>"><?php endforeach; ?></datalist>
       <input type="text" name="label" id="driveLabel" placeholder="Étiquette (ex. Commun)" style="max-width:200px">
+      <select name="group" id="driveGroup" title="Réserver ce lecteur à un groupe (sinon : tous les agents)"
+        style="max-width:200px;padding:.55rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
+        <option value="">Tous les agents</option>
+        <?php if ($customGroups): ?><optgroup label="Groupes métier">
+          <?php foreach ($customGroups as $g): ?><option value="<?= e($g) ?>"><?= e($g) ?></option><?php endforeach; ?>
+        </optgroup><?php endif; ?>
+        <?php if ($sysGroups): ?><optgroup label="Groupes système Windows">
+          <?php foreach ($sysGroups as $g): ?><option value="<?= e($g) ?>"><?= e($g) ?></option><?php endforeach; ?>
+        </optgroup><?php endif; ?>
+      </select>
       <button class="btn-sm" id="driveSubmit">+ Ajouter</button>
       <button type="button" class="btn-sm" id="driveCancel" style="display:none" onclick="pfDriveReset()">Annuler</button>
     </form>
@@ -1096,12 +1132,13 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
     g('driveDo').value = 'drive_add'; g('driveId').value = '';
     g('driveFormTitle').innerHTML = 'Nouveau&nbsp;:';
     g('driveSubmit').textContent = '+ Ajouter'; g('driveCancel').style.display = 'none';
-    g('drivePath').value = ''; g('driveLabel').value = '';
+    g('drivePath').value = ''; g('driveLabel').value = ''; g('driveGroup').value = '';
   };
   document.querySelectorAll('.js-edit-drive').forEach(function (b) {
     b.addEventListener('click', function () {
       g('driveDo').value = 'drive_edit'; g('driveId').value = b.dataset.id;
       g('driveLetter').value = b.dataset.letter; g('drivePath').value = b.dataset.path; g('driveLabel').value = b.dataset.label;
+      g('driveGroup').value = b.dataset.group || '';
       g('driveFormTitle').textContent = 'Modifier ' + b.dataset.letter + ': ';
       g('driveSubmit').textContent = '✓ Enregistrer'; g('driveCancel').style.display = '';
       g('driveForm').scrollIntoView({ behavior: 'smooth', block: 'center' }); g('drivePath').focus();

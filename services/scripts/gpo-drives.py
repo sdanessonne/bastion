@@ -102,19 +102,52 @@ def drives_xml(drives, when):
     body.append('</Drives>')
     return '\r\n'.join(body) + '\r\n'
 
+def group_sid(samdb, base_dn, name):
+    """SID d'un groupe AD. On teste l'appartenance par SID et non par NOM : le SID est stable,
+    non localisé et sans accent — alors que « whoami /groups » affiche des noms traduits."""
+    import ldb
+    from samba.dcerpc import security
+    from samba.ndr import ndr_unpack
+    try:
+        esc = name.replace('\\', '\\5c').replace('(', '\\28').replace(')', '\\29').replace('*', '\\2a')
+        res = samdb.search(base=base_dn, scope=ldb.SCOPE_SUBTREE,
+                           expression='(&(objectClass=group)(sAMAccountName=%s))' % esc,
+                           attrs=['objectSid'])
+        if res and 'objectSid' in res[0]:
+            return str(ndr_unpack(security.dom_sid, bytes(res[0]['objectSid'][0])))
+    except Exception:
+        pass
+    return ''
+
 def logon_cmd(drives):
     """Script d'ouverture de session (net use) : monte les lecteurs DANS la session interactive
     de l'agent, exactement comme une commande tapée à la main (qui, elle, fonctionne à tous les
     coups). On n'utilise donc PLUS le CSE GPP Drive Maps (qui échouait « Fonction incorrecte »
-    en tâche de fond sur ces postes VirtualBox). Le /delete préalable purge un montage résiduel."""
+    en tâche de fond sur ces postes VirtualBox). Le /delete préalable purge un montage résiduel.
+    Un lecteur peut être RÉSERVÉ à un groupe : on teste alors l'appartenance par SID."""
     L = ['@echo off',
-         'rem Bastion - connexion des lecteurs reseau (net use, session interactive).']
+         'rem Bastion - connexion des lecteurs reseau (net use, session interactive).',
+         'rem Genere automatiquement par la console : ne pas modifier a la main.']
     for d in drives:
         letter = (d.get('letter', 'Z') or 'Z')[0].upper()
         path = d.get('path', '')
-        L.append('net use %s: /delete /y >nul 2>&1' % letter)
-        L.append('net use %s: "%s" /persistent:no >nul 2>&1' % (letter, path))
+        sid = d.get('sid', '')
+        mount = ['net use %s: /delete /y >nul 2>&1' % letter,
+                 'net use %s: "%s" /persistent:no >nul 2>&1' % (letter, path)]
+        if sid:
+            L.append('rem --- %s: reserve au groupe %s ---' % (letter, ascii_only(d.get('group', ''))))
+            L.append('whoami /groups /fo csv | findstr /I /C:"%s" >nul' % sid)
+            L.append('if not errorlevel 1 (')
+            L += ['  ' + m for m in mount]
+            L.append(')')
+        else:
+            L += mount
     return '\r\n'.join(L) + '\r\n'
+
+def ascii_only(s):
+    """cmd.exe lit le .cmd en page de codes OEM : on garde les commentaires en ASCII pur."""
+    import unicodedata
+    return unicodedata.normalize('NFKD', s or '').encode('ascii', 'ignore').decode('ascii')
 
 def main():
     guid = sys.argv[1]
@@ -147,6 +180,22 @@ def main():
     os.chmod(xml, 0o644)
     if os.path.exists(ref): copy_ntacl(ref, xml)
 
+    # Connexion à l'annuaire AVANT d'écrire le script : nécessaire pour résoudre le SID des
+    # groupes auxquels un lecteur est réservé (test d'appartenance par SID dans le .cmd).
+    import ldb
+    from samba.samdb import SamDB
+    from samba.auth import system_session
+    from samba.param import LoadParm
+    lp = LoadParm(); lp.load_default()
+    samdb = SamDB(url=sam, session_info=system_session(), lp=lp)
+    for _d in drives:
+        g = (_d.get('group') or '').strip()
+        _d['sid'] = group_sid(samdb, base_dn, g) if g else ''
+        if g and not _d['sid']:
+            print("ATTENTION: groupe « %s » introuvable — lecteur %s: non deploye"
+                  % (g, _d.get('letter', '?')), file=sys.stderr)
+    drives = [_d for _d in drives if not (_d.get('group') and not _d.get('sid'))]
+
     # Volet UTILISATEUR n°2 : script d'ouverture de session (net use) — la méthode fiable.
     logon = os.path.join(sysvol, 'User', 'Scripts', 'Logon')
     os.makedirs(logon, exist_ok=True)
@@ -175,12 +224,6 @@ def main():
 
     # Version : incrémenter le mot HAUT (utilisateur = Drive Maps) ET le mot BAS
     # (ordinateur = Registre : nettoyage du tatouage), sinon le poste ne relit pas la moitié machine.
-    import ldb
-    from samba.samdb import SamDB
-    from samba.auth import system_session
-    from samba.param import LoadParm
-    lp = LoadParm(); lp.load_default()
-    samdb = SamDB(url=sam, session_info=system_session(), lp=lp)
     res = samdb.search(base=gpo_dn, scope=ldb.SCOPE_BASE, attrs=['versionNumber'])
     cur = int(str(res[0]['versionNumber'][0])) if (res and 'versionNumber' in res[0]) else 0
     newver = ((((cur >> 16) & 0xFFFF) + 1) << 16) | (((cur & 0xFFFF) + 1) & 0xFFFF)
