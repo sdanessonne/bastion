@@ -9,13 +9,16 @@ et pose le CSE « Drive Maps ».
 Usage : gpo-drives.py <{GUID}> <drives.json>
 drives.json : [{"letter":"Z","path":"\\\\bastion.pn.int\\Partage","label":"Partage"}, ...]
 """
-import sys, os, json, uuid, datetime, subprocess
+import sys, os, json, uuid, datetime, subprocess, struct
 from xml.sax.saxutils import quoteattr
 
 # CSE « Drive Maps » (GPP) + outil GPP.
 DRIVES_CSE = '{5794DAFD-BE60-433F-88A2-1A31939AC01F}'
 GPP_TOOL   = '{CEFFA6E2-E3BD-421B-852C-6F6A79A59BC1}'
 NULL_GUID  = '{00000000-0000-0000-0000-000000000000}'
+# CSE « Registre » (paramètres MACHINE) — pour fiabiliser le traitement des préférences GPP.
+REG_CSE    = '{35378EAC-683F-11D2-A89A-00C04FBBCFA2}'
+REG_TOOL   = '{D02B1F72-3407-48AE-BA88-E8213C6761F1}'
 
 def copy_ntacl(src, dst):
     try:
@@ -29,6 +32,26 @@ def copy_ntacl(src, dst):
             subprocess.run(['setfattr', '-n', 'security.NTACL', '-v', val, dst], capture_output=True)
     except Exception:
         pass
+
+def _u16(s):
+    return s.encode('utf-16-le')
+
+def _reg_entry(key, val, typ, data):
+    # Une entrée PReg : [key\0;value\0;type;taille;données]
+    return (_u16('[') + _u16(key) + b'\x00\x00' + _u16(';') + _u16(val) + b'\x00\x00' +
+            _u16(';') + struct.pack('<I', typ) + _u16(';') + struct.pack('<I', len(data)) +
+            _u16(';') + data + _u16(']'))
+
+def reliability_pol():
+    """Registry.pol MACHINE qui force le CSE « Drive Maps » à RE-JOUER les préférences GPP
+    à chaque ouverture de session / rafraîchissement, MÊME si la GPO n'a pas changé
+    (NoGPOListChanges=0), et en tâche de fond (NoBackgroundPolicy=0). Sans cela, un échec
+    ponctuel du 1er montage (réseau/partage pas encore prêt) n'est JAMAIS réessayé — cause
+    classique de « lecteurs qui ne remontent pas » alors que la GPO est correcte."""
+    key = 'Software\\Policies\\Microsoft\\Windows\\Group Policy\\' + DRIVES_CSE
+    body = (_reg_entry(key, 'NoGPOListChanges', 4, struct.pack('<I', 0)) +
+            _reg_entry(key, 'NoBackgroundPolicy', 4, struct.pack('<I', 0)))
+    return b'PReg' + struct.pack('<I', 1) + body
 
 def drives_xml(drives, when):
     body = ['<?xml version="1.0" encoding="utf-8"?>',
@@ -71,7 +94,18 @@ def main():
     os.chmod(xml, 0o644)
     if os.path.exists(ref): copy_ntacl(ref, xml)
 
-    # Version : incrémenter le mot HAUT (utilisateur). CSE utilisateur = Drive Maps.
+    # Côté MACHINE : Registry.pol de fiabilisation du traitement GPP (reprocessing).
+    md = os.path.join(sysvol, 'Machine')
+    os.makedirs(md, exist_ok=True)
+    if os.path.exists(ref): copy_ntacl(ref, md)
+    mpol = os.path.join(md, 'Registry.pol')
+    with open(mpol, 'wb') as w:
+        w.write(reliability_pol())
+    os.chmod(mpol, 0o644)
+    if os.path.exists(ref): copy_ntacl(ref, mpol)
+
+    # Version : incrémenter le mot HAUT (utilisateur = Drive Maps) ET le mot BAS
+    # (ordinateur = Registre de fiabilisation), sinon le poste ne relit pas la moitié machine.
     import ldb
     from samba.samdb import SamDB
     from samba.auth import system_session
@@ -80,15 +114,17 @@ def main():
     samdb = SamDB(url=sam, session_info=system_session(), lp=lp)
     res = samdb.search(base=gpo_dn, scope=ldb.SCOPE_BASE, attrs=['versionNumber'])
     cur = int(str(res[0]['versionNumber'][0])) if (res and 'versionNumber' in res[0]) else 0
-    newver = ((((cur >> 16) & 0xFFFF) + 1) << 16) | (cur & 0xFFFF)
+    newver = ((((cur >> 16) & 0xFFFF) + 1) << 16) | (((cur & 0xFFFF) + 1) & 0xFFFF)
     with open(ref, 'wb') as w:
         w.write(('[General]\r\nVersion=%d\r\n' % newver).encode('ascii'))
     m = ldb.Message(); m.dn = ldb.Dn(samdb, gpo_dn)
     m['versionNumber'] = ldb.MessageElement(str(newver), ldb.FLAG_MOD_REPLACE, 'versionNumber')
-    ext = '[%s%s][%s%s]' % (NULL_GUID, DRIVES_CSE, DRIVES_CSE, GPP_TOOL)
-    m['gPCUserExtensionNames'] = ldb.MessageElement(ext, ldb.FLAG_MOD_REPLACE, 'gPCUserExtensionNames')
+    uext = '[%s%s][%s%s]' % (NULL_GUID, DRIVES_CSE, DRIVES_CSE, GPP_TOOL)
+    m['gPCUserExtensionNames'] = ldb.MessageElement(uext, ldb.FLAG_MOD_REPLACE, 'gPCUserExtensionNames')
+    mext = '[%s%s]' % (REG_CSE, REG_TOOL)
+    m['gPCMachineExtensionNames'] = ldb.MessageElement(mext, ldb.FLAG_MOD_REPLACE, 'gPCMachineExtensionNames')
     samdb.modify(m)
-    print('OK version=%d drives=%d' % (newver, len(drives)))
+    print('OK version=%d drives=%d (machine reprocessing on)' % (newver, len(drives)))
 
 if __name__ == '__main__':
     main()
