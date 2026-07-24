@@ -3,6 +3,7 @@
 # Quotas des partages réseau (SMB). L'application se fait via la « dfree command » de Samba
 # (proxyfibre-share-dfree) : le poste voit l'espace limité au quota et l'écriture est refusée
 # une fois plein — SANS jamais toucher aux fichiers ni aux ACL.
+# Quota et occupation sont indexés par le CHEMIN du partage (ce que Samba passe à dfree).
 #   share-quota list                 nom TAB chemin TAB occupé(o) TAB quota(Mo)  (par partage)
 #   share-quota set <partage> <Mo>   définit (0 = illimité) le quota d'un partage
 #   share-quota scan                 recalcule l'occupation (cache tmpfs, lu par dfree)
@@ -24,16 +25,15 @@ disk_shares() {
         END{ flush() }' |
     grep -viE "^(global|sysvol|netlogon|print\\\$|IPC\\\$)$TAB"
 }
+lookup() { awk -F"$TAB" -v p="$2" '$1==p{print $2; exit}' "$1" 2>/dev/null; }
 
 case "$action" in
   list)
     disk_shares | while IFS="$TAB" read -r s p; do
         [ -n "$p" ] || continue
-        u=$(sed -n "s|^$s=||p" "$CACHE" 2>/dev/null | head -1)         # occupé en Ko (cache)
-        case "$u" in ''|*[!0-9]*) u=$(du -s -k "$p" 2>/dev/null | awk '{print $1}') ;; esac
+        u=$(lookup "$CACHE" "$p"); case "$u" in ''|*[!0-9]*) u=$(du -s -k "$p" 2>/dev/null | awk '{print $1}') ;; esac
         case "$u" in ''|*[!0-9]*) u=0 ;; esac
-        q=$(sed -n "s|^$s=||p" "$CONF" 2>/dev/null | head -1)
-        case "$q" in ''|*[!0-9]*) q=0 ;; esac
+        q=$(lookup "$CONF" "$p"); case "$q" in ''|*[!0-9]*) q=0 ;; esac
         printf '%s\t%s\t%s\t%s\n' "$s" "$p" "$((u*1024))" "$q"
     done ;;
 
@@ -41,25 +41,26 @@ case "$action" in
     [ -n "$name" ] || { echo "usage: set <partage> <Mo>" >&2; exit 2; }
     case "$name" in *[!A-Za-z0-9._-]*) echo "ERROR: nom de partage invalide" >&2; exit 2 ;; esac
     case "$val" in ''|*[!0-9]*) val=0 ;; esac
+    p=$(testparm -s --section-name "$name" --parameter-name path 2>/dev/null | tr -d '\r' | head -1)
+    [ -n "$p" ] || { echo "ERROR: partage introuvable ($name)" >&2; exit 1; }
     mkdir -p /etc/proxyfibre
     touch "$CONF"; chmod 600 "$CONF"; chown root:root "$CONF" 2>/dev/null || true
-    grep -v "^$name=" "$CONF" 2>/dev/null > "$CONF.tmp" || true
-    [ "$val" -gt 0 ] && echo "$name=$val" >> "$CONF.tmp"
+    awk -F"$TAB" -v p="$p" '$1!=p' "$CONF" > "$CONF.tmp" 2>/dev/null || true
+    [ "$val" -gt 0 ] && printf '%s\t%s\n' "$p" "$val" >> "$CONF.tmp"
     mv "$CONF.tmp" "$CONF"
-    echo "ok $name=$val" ;;
+    echo "ok $name=$val ($p)" ;;
 
   scan)
     : > "$CACHE.tmp" 2>/dev/null || { echo "ERROR: cache" >&2; exit 1; }
     disk_shares | while IFS="$TAB" read -r s p; do
         [ -n "$p" ] || continue
         u=$(du -s -k "$p" 2>/dev/null | awk '{print $1}'); case "$u" in ''|*[!0-9]*) u=0 ;; esac
-        echo "$s=$u" >> "$CACHE.tmp"
+        printf '%s\t%s\n' "$p" "$u" >> "$CACHE.tmp"
     done
     mv "$CACHE.tmp" "$CACHE" 2>/dev/null; chmod 644 "$CACHE" 2>/dev/null || true
     echo "scan ok" ;;
 
   enable)
-    # Ajoute « dfree command » à chaque section de partage de données qui ne l'a pas encore.
     [ -f "$SHFILE" ] || { echo "ERROR: shares.conf absent" >&2; exit 1; }
     cp "$SHFILE" "$SHFILE.bak-quota" 2>/dev/null || true
     awk -v df="$DFREE" '
