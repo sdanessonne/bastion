@@ -181,6 +181,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   .wz-pick img{width:100%;height:54px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--line)}
   .wz-pick img:hover{border-color:var(--accent)}
   .wz-pick .none{grid-column:1/-1;color:var(--muted);font-size:.8rem;padding:.4rem}
+  /* CMS : l'éditeur (à gauche) prend la part MAJORITAIRE (le textarea étroit d'avant ne suffit plus au WYSIWYG). */
+  .cms-split{grid-template-columns:minmax(0,1.9fr) minmax(0,1fr)}
+  @media(max-width:1000px){.cms-split{grid-template-columns:1fr}}
   .media{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem}
   .media .m{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.4rem;text-align:center}
   .media .m img{width:100%;height:70px;object-fit:cover;border-radius:6px}
@@ -202,7 +205,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   <iframe class="cms-frame" title="Accueil du portail intranet (contenu et liens)" src="intranet.php?embed=1"></iframe>
 </div>
 <div class="cmspane" data-cmstab="pages" hidden>
-<div class="split">
+<div class="split cms-split">
   <section class="panel form-panel">
     <div class="panel-head"><h2><?= $editP['id'] ? 'Modifier la page' : 'Nouvelle page' ?></h2>
       <?php if ($editP['id']): ?><a class="btn-sm" href="/cms.php">+ Nouvelle</a><?php endif; ?></div>
@@ -254,7 +257,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
 </div><!-- /pane pages -->
 
 <div class="cmspane" data-cmstab="actus" hidden>
-<div class="split">
+<div class="split cms-split">
   <section class="panel form-panel">
     <div class="panel-head"><h2><?= $editN['id'] ? 'Modifier l\'actualité' : 'Nouvelle actualité' ?></h2>
       <?php if ($editN['id']): ?><a class="btn-sm" href="/cms.php">+ Nouvelle</a><?php endif; ?></div>
