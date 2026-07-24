@@ -227,6 +227,11 @@ case "${1:-}" in
         # et ne sont PAS dans le dépôt : --delete les effacerait.
         rsync -a --delete --exclude='inc/config.local.php' "$REPO_DIR/admin/"  /var/www/admin/  2>&1 | tail -2
         rsync -a --delete --exclude='intranet/uploads' "$REPO_DIR/portal/" /var/www/html/portal/ 2>&1 | tail -2
+        # Le menu PXE est SERVI depuis /boot/menu.php (chaîné par boot.ipxe), pas depuis /portal/ :
+        # sans cette copie, une mise à jour du menu ne prendrait jamais effet côté amorçage réseau.
+        if [ -d /var/www/html/boot ] && [ -f "$REPO_DIR/portal/menu.php" ]; then
+            install -m644 "$REPO_DIR/portal/menu.php" /var/www/html/boot/menu.php 2>/dev/null && echo "  menu PXE (/boot) synchronisé"
+        fi
         find /var/www/admin /var/www/html/portal -type f -exec chmod 644 {} + 2>/dev/null
         find /var/www/admin /var/www/html/portal -type d -exec chmod 755 {} + 2>/dev/null
         chmod 640 /var/www/admin/watchdog.php /var/www/admin/logseal.php 2>/dev/null
