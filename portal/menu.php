@@ -29,6 +29,9 @@ $S = [
     'pxe_shell_enabled'   => '1', 'pxe_shell_label'   => 'Console iPXE (avance)',
     'pxe_debian_args'     => 'vga=788 --- quiet',
     'pxe_ubuntu_args'     => 'boot=casper ip=dhcp url=http://{IP}:2080/iso/ubuntu.iso ---',
+    'pxe_menu_subtitle'   => '',    // ligne de sous-titre optionnelle sous le titre
+    'pxe_custom_enabled'  => '0', 'pxe_custom_label'  => '[  Autre      ]  Systeme personnalise',
+    'pxe_custom_kernel'   => '', 'pxe_custom_initrd' => '', 'pxe_custom_args' => '',
 ];
 
 $env = [];
@@ -135,10 +138,16 @@ if (!in_array($default, $allKeys, true) || !$enabled($default)) {
     $default = $enabled('local') ? 'local' : 'menu';
 }
 
+$subtitle   = $clean($S['pxe_menu_subtitle'] ?? '');
+$customOn   = ($S['pxe_custom_enabled'] ?? '0') === '1' && $clean($S['pxe_custom_kernel'] ?? '') !== '';
+$customLbl  = $clean($S['pxe_custom_label'] ?? '') ?: 'Systeme personnalise';
+
 echo "#!ipxe\n:menu\n";
 echo "menu {$title}\n";
+if ($subtitle !== '') { echo "item --gap        {$subtitle}\n"; }
 echo "item --gap        Choisissez le systeme a installer :\n";
 foreach ($osEntries as $k) { if ($enabled($k)) { echo "item {$k}       " . $label($k) . "\n"; } }
+if ($customOn) { echo "item custom       {$customLbl}\n"; }
 echo "item --gap\n";
 foreach ($sysEntries as $k) { if ($enabled($k)) { echo "item {$k}       " . $label($k) . "\n"; } }
 echo "choose --default {$default} --timeout {$timeout} target && goto \${target} || goto {$default}\n\n";
@@ -155,6 +164,15 @@ if ($enabled('windows')) {
     echo ":windows\nkernel {$base}/wimboot\n";
     echo "initrd {$base}/win11/bootmgr   bootmgr\ninitrd {$base}/win11/BCD       BCD\n";
     echo "initrd {$base}/win11/boot.sdi  boot.sdi\ninitrd {$base}/win11/boot.wim  boot.wim\nboot || goto menu\n\n";
+}
+if ($customOn) {
+    // Entrée personnalisée : noyau/initrd/args entièrement fournis par l'admin ({IP} = passerelle).
+    $ck = str_replace('{IP}', $gw, $clean($S['pxe_custom_kernel'] ?? ''));
+    $ci = str_replace('{IP}', $gw, $clean($S['pxe_custom_initrd'] ?? ''));
+    $ca = str_replace('{IP}', $gw, $clean($S['pxe_custom_args'] ?? ''));
+    echo ":custom\nkernel {$ck}" . ($ca !== '' ? " {$ca}" : '') . "\n";
+    if ($ci !== '') { echo "initrd {$ci}\n"; }
+    echo "boot || goto menu\n\n";
 }
 // Les cibles locales sont toujours définies (servent aussi de repli).
 echo ":local\nsanboot --no-describe --drive 0x80 || exit\n\n";

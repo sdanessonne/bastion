@@ -19,6 +19,9 @@ $DEF = [
     'pxe_shell_enabled'   => '1', 'pxe_shell_label'   => 'Console iPXE (avance)',
     'pxe_debian_args'     => 'vga=788 --- quiet',
     'pxe_ubuntu_args'     => 'boot=casper ip=dhcp url=http://{IP}:2080/iso/ubuntu.iso ---',
+    'pxe_menu_subtitle'   => '',
+    'pxe_custom_enabled'  => '0', 'pxe_custom_label'  => '[  Autre      ]  Systeme personnalise',
+    'pxe_custom_kernel'   => '', 'pxe_custom_initrd' => '', 'pxe_custom_args' => '',
 ];
 $ENTRIES = [
     'debian'  => ['Debian', 'Installation réseau (netboot)', true],
@@ -59,10 +62,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $up = $db->prepare('INSERT INTO pf_settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)');
         // Textes (titre, libellés, paramètres noyau) — sans saut de ligne.
-        foreach (['pxe_menu_title', 'pxe_debian_label', 'pxe_ubuntu_label', 'pxe_windows_label',
-                  'pxe_local_label', 'pxe_shell_label', 'pxe_debian_args', 'pxe_ubuntu_args'] as $k) {
+        foreach (['pxe_menu_title', 'pxe_menu_subtitle', 'pxe_debian_label', 'pxe_ubuntu_label', 'pxe_windows_label',
+                  'pxe_local_label', 'pxe_shell_label', 'pxe_debian_args', 'pxe_ubuntu_args',
+                  'pxe_custom_label', 'pxe_custom_kernel', 'pxe_custom_initrd', 'pxe_custom_args'] as $k) {
             $up->execute([$k, $strip($_POST[$k] ?? $DEF[$k])]);
         }
+        $up->execute(['pxe_custom_enabled', isset($_POST['pxe_custom_enabled']) ? '1' : '0']);
         // Délai (0–3600 s), entrée par défaut, protection.
         $up->execute(['pxe_timeout', (string) max(0, min(3600, (int) ($_POST['pxe_timeout'] ?? 60)))]);
         $up->execute(['pxe_login_timeout', (string) max(0, min(3600, (int) ($_POST['pxe_login_timeout'] ?? 30)))]);
@@ -198,6 +203,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
         </select>
       </label>
     </div>
+    <label class="field" style="margin-top:.2rem">Sous-titre du menu <span class="muted small">(optionnel — affiché sous le titre)</span>
+      <input type="text" name="pxe_menu_subtitle" value="<?= $val('pxe_menu_subtitle') ?>">
+    </label>
     <label class="sw" style="display:inline-flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:.3rem">
       <input type="checkbox" name="pxe_protected" id="pxe_protected" <?= $on('pxe_protected') ? 'checked' : '' ?>>
       <span>Protéger le menu par les identifiants administrateur</span>
@@ -242,6 +250,23 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
         <?php endif; ?>
       </div>
     <?php endforeach; ?>
+
+    <div class="pxe-entry" style="border-top:2px solid var(--line)">
+      <div class="who">
+        <label class="sw"><input type="checkbox" name="pxe_custom_enabled" <?= $on('pxe_custom_enabled') ? 'checked' : '' ?>>
+          <span>Entrée personnalisée</span></label>
+      </div>
+      <div>
+        <div class="hint" style="margin-bottom:.4rem">Amorcez n'importe quel système : URL du noyau et de l'initrd (<code>{IP}</code> = passerelle, remplacé automatiquement).</div>
+        <input type="text" name="pxe_custom_label" value="<?= $val('pxe_custom_label') ?>" placeholder="Libellé affiché dans le menu" style="margin-bottom:.4rem">
+        <input type="text" name="pxe_custom_kernel" value="<?= $val('pxe_custom_kernel') ?>" placeholder="URL du noyau (ex. http://{IP}:2080/iso/autre/vmlinuz)" style="font-family:ui-monospace,monospace;font-size:.8rem;margin-bottom:.4rem">
+        <input type="text" name="pxe_custom_initrd" value="<?= $val('pxe_custom_initrd') ?>" placeholder="URL de l'initrd (optionnel)" style="font-family:ui-monospace,monospace;font-size:.8rem">
+      </div>
+      <div class="args">
+        <input type="text" name="pxe_custom_args" value="<?= $val('pxe_custom_args') ?>" placeholder="Paramètres du noyau (optionnel)">
+      </div>
+    </div>
+
     <p class="hint" style="margin-top:.8rem">⚠️ La console iPXE (BIOS) affiche mal les accents : préférez des libellés en
     caractères simples. Windows 11 utilise <code>wimboot</code> (BCD/boot.wim) et n'a pas de paramètres noyau.</p>
   </div>
