@@ -34,5 +34,46 @@ case "${1:-}" in
     systemctl restart dnsmasq >/dev/null 2>&1 || true
     echo "reservations DHCP appliquees"
     ;;
-  *) echo "usage: dhcp apply" >&2; exit 2 ;;
+
+  config)
+    # Applique le SCOPE DHCP (plage + durée du bail) depuis pf_settings, en modifiant la ligne
+    # « dhcp-range » de proxyfibre.conf EN PLACE (une seule ligne, pas de conflit). La passerelle
+    # et le DNS servi aux clients restent inchangés (le DNS = la passerelle, pour le filtrage).
+    # Garde-fou : on valide, on teste la config (dnsmasq --test), et on ANNULE si elle est invalide.
+    BASE=/etc/dnsmasq.d/proxyfibre.conf
+    [ -f "$BASE" ] || { echo "ERROR: $BASE introuvable" >&2; exit 1; }
+    rs=$(mysql -N radius -e "SELECT v FROM pf_settings WHERE k='dhcp_range_start'" 2>/dev/null)
+    re=$(mysql -N radius -e "SELECT v FROM pf_settings WHERE k='dhcp_range_end'"   2>/dev/null)
+    lease=$(mysql -N radius -e "SELECT v FROM pf_settings WHERE k='dhcp_lease'"    2>/dev/null)
+    [ -n "$rs" ]    || rs=192.168.182.10
+    [ -n "$re" ]    || re=192.168.182.254
+    [ -n "$lease" ] || lease=1h
+    # Validation stricte (2ᵉ rempart après le PHP).
+    echo "$rs"    | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$'  || { echo "ERROR: debut de plage invalide" >&2; exit 2; }
+    echo "$re"    | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$'  || { echo "ERROR: fin de plage invalide" >&2; exit 2; }
+    echo "$lease" | grep -qE '^([0-9]+[smhd]|infinite)$'      || { echo "ERROR: bail invalide" >&2; exit 2; }
+    # Masque + sous-réseau repris de la config existante (jamais changés depuis le web).
+    cur=$(grep -m1 -E '^#?dhcp-range=' "$BASE" | sed 's/^#\{0,1\}dhcp-range=//')
+    mask=$(printf '%s' "$cur" | cut -d, -f3)
+    echo "$mask" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || mask=255.255.255.0
+    router=$(grep -m1 -oE '^listen-address=[0-9.]+' "$BASE" | cut -d= -f2)
+    [ -n "$router" ] || router=192.168.182.1
+    pre=$(printf '%s' "$router" | sed -E 's/\.[0-9]+$/./')     # ex. « 192.168.182. »
+    case "$rs" in "$pre"*) : ;; *) echo "ERROR: debut hors du sous-reseau $pre" >&2; exit 2 ;; esac
+    case "$re" in "$pre"*) : ;; *) echo "ERROR: fin hors du sous-reseau $pre" >&2; exit 2 ;; esac
+    # Modification EN PLACE + validation + retour arrière si dnsmasq refuse.
+    cp "$BASE" "$BASE.bak"
+    sed -i -E "s|^#?dhcp-range=.*|dhcp-range=$rs,$re,$mask,$lease|" "$BASE"
+    if dnsmasq --test >/dev/null 2>&1; then
+        rm -f "$BASE.bak"
+        systemctl restart dnsmasq >/dev/null 2>&1 || true
+        echo "config DHCP appliquee ($rs-$re, bail $lease)"
+    else
+        mv "$BASE.bak" "$BASE"
+        echo "ERROR: configuration dnsmasq invalide — changement annule" >&2
+        exit 1
+    fi
+    ;;
+
+  *) echo "usage: dhcp apply|config" >&2; exit 2 ;;
 esac

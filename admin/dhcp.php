@@ -41,11 +41,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         dhcp_apply();
         audit('dhcp.remove', 'id=' . (int) ($_POST['id'] ?? 0));
         $flash = ['Réservation retirée.', 'ok'];
+    } elseif ($do === 'dhcpcfg') {
+        // Scope DHCP : plage + durée du bail. La passerelle et le DNS servi aux clients
+        // ne sont pas exposés (les changer casserait le routage / le filtrage).
+        $rs    = trim((string) ($_POST['range_start'] ?? ''));
+        $re    = trim((string) ($_POST['range_end'] ?? ''));
+        $lease = strtolower(trim((string) ($_POST['lease'] ?? '1h')));
+        if (filter_var($rs, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
+            || filter_var($re, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            $flash = ['Plage invalide (adresses IPv4).', 'err'];
+        } elseif (!preg_match('/^([0-9]+[smhd]|infinite)$/', $lease)) {
+            $flash = ['Durée de bail invalide (ex. 30m, 1h, 12h, 7d, ou infinite).', 'err'];
+        } else {
+            $up = $db->prepare('INSERT INTO pf_settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)');
+            $up->execute(['dhcp_range_start', $rs]);
+            $up->execute(['dhcp_range_end', $re]);
+            $up->execute(['dhcp_lease', $lease]);
+            $out = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-dhcp config 2>&1'));
+            $ok  = strpos($out, 'appliquee') !== false;
+            audit('dhcp.config', "$rs-$re bail=$lease" . ($ok ? '' : ' (echec)'));
+            $flash = [$ok
+                ? "Paramètres DHCP appliqués : plage $rs → $re, bail $lease."
+                : 'Échec : ' . ($out ?: 'configuration refusée, changement annulé.'), $ok ? 'ok' : 'err'];
+        }
     }
 }
 
 $rows = [];
 try { $rows = $db->query('SELECT * FROM pf_dhcp ORDER BY INET_ATON(ip)')->fetchAll(); } catch (Throwable $e) {}
+// Paramètres du scope DHCP (défauts alignés sur proxyfibre.conf).
+$cfg = ['dhcp_range_start' => '192.168.182.10', 'dhcp_range_end' => '192.168.182.254', 'dhcp_lease' => '1h'];
+try { foreach ($db->query("SELECT k,v FROM pf_settings WHERE k LIKE 'dhcp\\_%'") as $r) { $cfg[$r['k']] = $r['v']; } }
+catch (Throwable $e) {}
 $lanNet = trim((string) shell_exec("ip -4 addr show scope global 2>/dev/null | awk '/inet /{print \$2}' | cut -d/ -f1 | head -1"));
 $lanPre = $lanNet ? preg_replace('/\.\d+$/', '.', $lanNet) : '192.168.182.';
 
@@ -56,9 +83,36 @@ foreach (nds_clients() as $mac => $c) {
     if (preg_match('/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/', $m)) { $live[$m] = (string) ($c['ip'] ?? ''); }
 }
 
-pf_header('Réservations DHCP', 'dhcp.php');
+pf_header('DHCP', 'dhcp.php');
 if ($flash) { pf_flash($flash[0], $flash[1]); }
 ?>
+<style>
+  .dhcp-f{display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end}
+  .dhcp-f label{display:grid;gap:.3rem;font-size:.82rem;color:var(--muted)}
+  .dhcp-f input{padding:.55rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px}
+</style>
+<section class="panel">
+  <div class="panel-head"><h2>⚙️ Paramètres du serveur DHCP</h2></div>
+  <div style="padding:1.2rem">
+    <p class="muted small" style="margin-top:0">Plage d'adresses distribuées automatiquement aux appareils, et durée du bail.
+    La passerelle (<code><?= e($lanNet ?: '192.168.182.1') ?></code>) et le DNS servi aux postes restent la passerelle
+    elle-même — indispensable au filtrage — et ne se règlent pas ici.</p>
+    <form method="post" class="dhcp-f" onsubmit="return confirm('Appliquer les paramètres DHCP ?\n\ndnsmasq redémarre brièvement ; les baux en cours restent valides.')">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="dhcpcfg">
+      <label>Début de plage
+        <input type="text" name="range_start" value="<?= e($cfg['dhcp_range_start']) ?>" style="font-family:ui-monospace,monospace;min-width:150px"></label>
+      <label>Fin de plage
+        <input type="text" name="range_end" value="<?= e($cfg['dhcp_range_end']) ?>" style="font-family:ui-monospace,monospace;min-width:150px"></label>
+      <label>Durée du bail
+        <input type="text" name="lease" value="<?= e($cfg['dhcp_lease']) ?>" placeholder="1h" style="max-width:110px"></label>
+      <button class="btn">💾 Appliquer</button>
+    </form>
+    <p class="hint muted small" style="margin:.7rem 0 0">Bail : <code>30m</code>, <code>1h</code>, <code>12h</code>, <code>7d</code>
+    ou <code>infinite</code>. Les réservations ci-dessous restent prioritaires. Une configuration invalide est
+    <strong>automatiquement annulée</strong> — dnsmasq est testé avant d'être appliqué.</p>
+  </div>
+</section>
+
 <section class="panel">
   <div class="panel-head"><h2>🔌 Réservations DHCP (<?= count($rows) ?>)</h2></div>
   <div style="padding:1.2rem">
