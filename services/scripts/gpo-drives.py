@@ -42,16 +42,16 @@ def _reg_entry(key, val, typ, data):
             _u16(';') + struct.pack('<I', typ) + _u16(';') + struct.pack('<I', len(data)) +
             _u16(';') + data + _u16(']'))
 
-def reliability_pol():
-    """Registry.pol MACHINE qui force le CSE « Drive Maps » à RE-JOUER les préférences GPP
-    à chaque ouverture de session / rafraîchissement, MÊME si la GPO n'a pas changé
-    (NoGPOListChanges=0), et en tâche de fond (NoBackgroundPolicy=0). Sans cela, un échec
-    ponctuel du 1er montage (réseau/partage pas encore prêt) n'est JAMAIS réessayé — cause
-    classique de « lecteurs qui ne remontent pas » alors que la GPO est correcte."""
-    key = 'Software\\Policies\\Microsoft\\Windows\\Group Policy\\' + DRIVES_CSE
-    body = (_reg_entry(key, 'NoGPOListChanges', 4, struct.pack('<I', 0)) +
-            _reg_entry(key, 'NoBackgroundPolicy', 4, struct.pack('<I', 0)))
-    return b'PReg' + struct.pack('<I', 1) + body
+def machine_cleanup_pol():
+    """Registry.pol MACHINE volontairement VIDE (en-tête PReg seul).
+    Les versions précédentes posaient NoGPOListChanges=0 / NoBackgroundPolicy=0 pour forcer
+    le CSE « Drive Maps » à re-jouer les préférences à chaque rafraîchissement. Or ce
+    retraitement de fond (~90 min) reconnecte un lecteur DÉJÀ monté → erreur 85
+    « Nom de périphérique local déjà utilisé », l'échec récurrent observé. On conserve le
+    volet MACHINE (CSE Registre) uniquement pour que le client RETIRE ces valeurs tatouées.
+    La fiabilité du 1er montage est assurée par la GPO « Attendre le réseau à l'ouverture de
+    session » (SyncForegroundPolicy=1), pas par un retraitement en boucle."""
+    return b'PReg' + struct.pack('<I', 1)
 
 def dc_fqdn(realm):
     """Nom de SERVEUR du contrôleur de domaine (netbios.realm). Un partage ordinaire n'est PAS
@@ -86,8 +86,12 @@ def drives_xml(drives, when):
         # action="R" (Replace = SUPPRIME puis RECRÉE le lecteur) et NON "U" (Update) : le montage
         # manuel « net use » fonctionne, mais l'action Update du CSE Drive Maps échoue « Fonction
         # incorrecte » (0x1) — Replace fait exactement ce qu'un net use propre fait, et corrige le cas.
+        # persistent="0" : NE PAS mémoriser la connexion. Une connexion persistante est
+        # restaurée par Winlogon AVANT le passage du CSE ; celui-ci retrouve alors la lettre
+        # déjà prise → erreur 85 « Nom de périphérique local déjà utilisé ». En non-persistant,
+        # GPP remonte le lecteur à chaque session sur une lettre libre.
         props = ('<Properties action="R" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" '
-                 'path=%s label=%s persistent="1" useLetter="1" letter=%s/>' %
+                 'path=%s label=%s persistent="0" useLetter="1" letter=%s/>' %
                  (quoteattr(path), quoteattr(label), quoteattr(letter)))
         body.append('<Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name=%s status=%s image="2" '
                     'changed=%s uid=%s bypassErrors="1" removePolicy="0">%s</Drive>' %
@@ -123,18 +127,19 @@ def main():
     os.chmod(xml, 0o644)
     if os.path.exists(ref): copy_ntacl(ref, xml)
 
-    # Côté MACHINE : Registry.pol de fiabilisation du traitement GPP (reprocessing).
+    # Côté MACHINE : Registry.pol VIDE, seulement pour retirer l'ancien tatouage
+    # NoGPOListChanges/NoBackgroundPolicy (voir machine_cleanup_pol).
     md = os.path.join(sysvol, 'Machine')
     os.makedirs(md, exist_ok=True)
     if os.path.exists(ref): copy_ntacl(ref, md)
     mpol = os.path.join(md, 'Registry.pol')
     with open(mpol, 'wb') as w:
-        w.write(reliability_pol())
+        w.write(machine_cleanup_pol())
     os.chmod(mpol, 0o644)
     if os.path.exists(ref): copy_ntacl(ref, mpol)
 
     # Version : incrémenter le mot HAUT (utilisateur = Drive Maps) ET le mot BAS
-    # (ordinateur = Registre de fiabilisation), sinon le poste ne relit pas la moitié machine.
+    # (ordinateur = Registre : nettoyage du tatouage), sinon le poste ne relit pas la moitié machine.
     import ldb
     from samba.samdb import SamDB
     from samba.auth import system_session
@@ -153,7 +158,7 @@ def main():
     mext = '[%s%s]' % (REG_CSE, REG_TOOL)
     m['gPCMachineExtensionNames'] = ldb.MessageElement(mext, ldb.FLAG_MOD_REPLACE, 'gPCMachineExtensionNames')
     samdb.modify(m)
-    print('OK version=%d drives=%d (machine reprocessing on)' % (newver, len(drives)))
+    print('OK version=%d drives=%d (persistent=0, replace, sans retraitement force)' % (newver, len(drives)))
 
 if __name__ == '__main__':
     main()
