@@ -99,8 +99,91 @@ function cms_menu(): array {
     return array_values(array_filter($rows, fn($p) => empty($p['group_required']) || in_array($p['group_required'], $groups, true)));
 }
 
+/**
+ * Rendu d'un contenu CMS selon son format.
+ *   - 'html'     : contenu de l'éditeur WYSIWYG → assaini par ALLOWLIST (cms_sanitize_html).
+ *   - 'markdown' : ancien format → converti par cms_render_md (compat descendante).
+ * Les deux passent par un filtrage strict : l'auteur est un admin de confiance, mais le contenu
+ * est LU par les agents — on ne laisse donc jamais passer script/handlers/URL dangereuses.
+ */
+function cms_render(string $body, string $format = 'markdown'): string {
+    return $format === 'html' ? cms_sanitize_html($body) : cms_render_md($body);
+}
+
+/** Ne garde que des propriétés CSS sûres (couleur, alignement, graisse…) — jamais url()/expression. */
+function cms_clean_style(string $s): string {
+    static $ok = ['color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration'];
+    $out = [];
+    foreach (explode(';', $s) as $decl) {
+        if (strpos($decl, ':') === false) { continue; }
+        [$p, $v] = explode(':', $decl, 2);
+        $p = strtolower(trim($p)); $v = trim($v);
+        if (!in_array($p, $ok, true)) { continue; }
+        if ($v === '' || preg_match('/url\s*\(|expression|javascript:|@import|<|>/i', $v)) { continue; }
+        $out[] = $p . ':' . $v;
+        if (count($out) >= 6) { break; }
+    }
+    return implode(';', $out);
+}
+
+/**
+ * Assainit du HTML par ALLOWLIST (balises + attributs + styles) via DOMDocument.
+ * Balises dangereuses (script/iframe/…) supprimées ; balises inconnues « déballées » (on garde
+ * le texte) ; attributs on*, href/src non http(s)/relatifs, styles non sûrs : retirés.
+ */
+function cms_sanitize_html(string $html): string {
+    $html = trim($html);
+    if ($html === '') { return ''; }
+    static $tags = ['p','br','h2','h3','h4','strong','b','em','i','u','s','ul','ol','li','a','img',
+        'blockquote','hr','span','div','table','thead','tbody','tr','td','th','caption','figure','figcaption','pre','code','mark','sub','sup'];
+    static $dangerous = ['script','style','iframe','object','embed','form','input','textarea','button','link','meta','svg','math'];
+    static $attrByTag = ['a'=>['href','target','rel','title'], 'img'=>['src','alt','loading','width','height'],
+        'td'=>['colspan','rowspan'], 'th'=>['colspan','rowspan'], 'table'=>[]];
+
+    $doc = new DOMDocument();
+    libxml_use_internal_errors(true);
+    $doc->loadHTML('<?xml encoding="UTF-8"><div id="__cmsroot">' . $html . '</div>',
+        LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+    libxml_clear_errors();
+    $root = $doc->getElementById('__cmsroot');
+    if (!$root) { return ''; }
+
+    $walk = function (DOMNode $node) use (&$walk, $tags, $dangerous, $attrByTag) {
+        foreach (iterator_to_array($node->childNodes) as $child) {
+            if ($child instanceof DOMComment) { $child->parentNode->removeChild($child); continue; }
+            if (!($child instanceof DOMElement)) { continue; }   // texte : conservé tel quel
+            $tag = strtolower($child->tagName);
+            if (!in_array($tag, $tags, true)) {
+                if (in_array($tag, $dangerous, true)) { $child->parentNode->removeChild($child); continue; }
+                // Balise inconnue mais inoffensive : nettoyer son contenu puis la « déballer ».
+                $walk($child);
+                while ($child->firstChild) { $child->parentNode->insertBefore($child->firstChild, $child); }
+                $child->parentNode->removeChild($child);
+                continue;
+            }
+            $allowed = array_merge(['style', 'class'], $attrByTag[$tag] ?? []);
+            foreach (iterator_to_array($child->attributes) as $a) {
+                $an = strtolower($a->name); $av = $a->value;
+                if (stripos($an, 'on') === 0 || !in_array($an, $allowed, true)) { $child->removeAttribute($a->name); continue; }
+                if ($an === 'href' && !preg_match('#^(https?:|mailto:|tel:|/|\#)#i', $av)) { $child->removeAttribute($a->name); }
+                if ($an === 'src'  && !preg_match('#^(https?:|/)#i', $av)) { $child->removeAttribute($a->name); }
+                if ($an === 'class' && !preg_match('/^[A-Za-z0-9 _-]{0,60}$/', $av)) { $child->removeAttribute($a->name); }
+                if ($an === 'style') { $cl = cms_clean_style($av); $cl === '' ? $child->removeAttribute('style') : $child->setAttribute('style', $cl); }
+            }
+            if ($tag === 'a' && strtolower($child->getAttribute('target')) === '_blank') { $child->setAttribute('rel', 'noopener'); }
+            if ($tag === 'img') { $child->setAttribute('loading', 'lazy'); }
+            $walk($child);
+        }
+    };
+    $walk($root);
+
+    $out = '';
+    foreach ($root->childNodes as $c) { $out .= $doc->saveHTML($c); }
+    return trim($out);
+}
+
 /** Rendu Markdown-léger et SÛR (échappe avant transformation ; images + liens autorisés). */
-function cms_render(string $md): string {
+function cms_render_md(string $md): string {
     $h = htmlspecialchars($md, ENT_QUOTES, 'UTF-8');
     $h = str_replace("\r\n", "\n", $h);
     $h = preg_replace('/^### (.+)$/m', '<h3>$1</h3>', $h);

@@ -26,7 +26,7 @@ if (!$page) {
 } else {
     echo '<article class="card prose">';
     echo '<h1>' . e_($page['title']) . '</h1>';
-    echo cms_render((string) $page['body']);
+    echo cms_render((string) $page['body'], (string) ($page['format'] ?? 'markdown'));
     echo '</article>';
     echo '<p><a class="back" href="/portal/intranet.php">← Retour à l\'accueil</a></p>';
 }

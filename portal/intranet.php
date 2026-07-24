@@ -39,7 +39,7 @@ intranet_head('Accueil', 'home');
       <article class="news">
         <div class="date"><?= e_(date('d/m/Y', strtotime((string) $n['created_at']))) ?><?= $n['author'] ? ' · ' . e_($n['author']) : '' ?></div>
         <h3><?= e_($n['title']) ?><?php if (!empty($n['category'])): ?><span class="badge-cat"><?= e_($n['category']) ?></span><?php endif; ?></h3>
-        <div class="prose"><?= cms_render((string) $n['body']) ?></div>
+        <div class="prose"><?= cms_render((string) $n['body'], (string) ($n['format'] ?? 'markdown')) ?></div>
       </article>
     <?php endforeach; endif; ?>
   </section>

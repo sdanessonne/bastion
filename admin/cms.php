@@ -16,6 +16,9 @@ try {
         category VARCHAR(60) DEFAULT NULL, published TINYINT(1) DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)');
     $db->exec('ALTER TABLE pf_cms_pages ADD COLUMN IF NOT EXISTS group_required VARCHAR(64) DEFAULT NULL');
     $db->exec('ALTER TABLE pf_cms_news ADD COLUMN IF NOT EXISTS category VARCHAR(60) DEFAULT NULL');
+    // Format du contenu : 'markdown' (ancien) ou 'html' (éditeur WYSIWYG).
+    $db->exec("ALTER TABLE pf_cms_pages ADD COLUMN IF NOT EXISTS format VARCHAR(10) DEFAULT 'markdown'");
+    $db->exec("ALTER TABLE pf_cms_news ADD COLUMN IF NOT EXISTS format VARCHAR(10) DEFAULT 'markdown'");
 } catch (Throwable $e) {}
 
 function slugify(string $s): string {
@@ -54,12 +57,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($title === '') { $flash = ['Titre requis.', 'err']; }
             elseif ($id > 0) {
-                $db->prepare('UPDATE pf_cms_pages SET slug=?,title=?,body=?,menu_order=?,in_menu=?,published=?,group_required=?,updated_by=? WHERE id=?')
-                   ->execute([$slug, $title, $body, $order, $inm, $pub, $grp, $_SESSION['admin'], $id]);
+                $db->prepare('UPDATE pf_cms_pages SET slug=?,title=?,body=?,format=?,menu_order=?,in_menu=?,published=?,group_required=?,updated_by=? WHERE id=?')
+                   ->execute([$slug, $title, $body, 'html', $order, $inm, $pub, $grp, $_SESSION['admin'], $id]);
                 $flash = ['Page mise à jour.', 'ok'];
             } else {
-                $db->prepare('INSERT INTO pf_cms_pages (slug,title,body,menu_order,in_menu,published,group_required,updated_by) VALUES (?,?,?,?,?,?,?,?)')
-                   ->execute([$slug, $title, $body, $order, $inm, $pub, $grp, $_SESSION['admin']]);
+                $db->prepare('INSERT INTO pf_cms_pages (slug,title,body,format,menu_order,in_menu,published,group_required,updated_by) VALUES (?,?,?,?,?,?,?,?,?)')
+                   ->execute([$slug, $title, $body, 'html', $order, $inm, $pub, $grp, $_SESSION['admin']]);
                 $flash = ['Page créée.', 'ok'];
             }
         }
@@ -72,10 +75,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pub   = isset($_POST['published']) ? 1 : 0;
             if ($title === '') { $flash = ['Titre requis.', 'err']; }
             elseif ($id > 0) {
-                $db->prepare('UPDATE pf_cms_news SET title=?,body=?,category=?,published=? WHERE id=?')->execute([$title, $body, $cat, $pub, $id]);
+                $db->prepare('UPDATE pf_cms_news SET title=?,body=?,format=?,category=?,published=? WHERE id=?')->execute([$title, $body, 'html', $cat, $pub, $id]);
                 $flash = ['Actualité mise à jour.', 'ok'];
             } else {
-                $db->prepare('INSERT INTO pf_cms_news (title,body,author,category,published) VALUES (?,?,?,?,?)')->execute([$title, $body, $_SESSION['admin'], $cat, $pub]);
+                $db->prepare('INSERT INTO pf_cms_news (title,body,format,author,category,published) VALUES (?,?,?,?,?,?)')->execute([$title, $body, 'html', $_SESSION['admin'], $cat, $pub]);
                 $flash = ['Actualité publiée.', 'ok'];
             }
         }
@@ -157,6 +160,27 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   .mdprev{margin-top:.6rem;padding:.9rem 1rem;background:var(--bg);border:1px dashed var(--line);border-radius:10px;font-size:.9rem;line-height:1.6}
   .mdprev:empty::before{content:"Aperçu…";color:var(--muted)}
   .mdprev img{max-width:100%;border-radius:8px} .mdprev h1{font-size:1.3rem}.mdprev h2{font-size:1.1rem;color:var(--accent)}
+  /* Éditeur WYSIWYG */
+  .wz{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg)}
+  .wz-bar{display:flex;gap:.2rem;flex-wrap:wrap;align-items:center;background:#0d1728;border-bottom:1px solid var(--line);padding:.35rem}
+  .wz-bar button,.wz-bar .wzc{background:#1c2b45;color:var(--text);border:none;border-radius:6px;padding:.3rem .5rem;font-size:.85rem;cursor:pointer;min-width:1.9rem;height:1.9rem;display:inline-flex;align-items:center;justify-content:center}
+  .wz-bar button:hover,.wz-bar .wzc:hover{background:#294066}
+  .wz-bar .sep{width:1px;height:1.4rem;background:var(--line);margin:0 .15rem}
+  .wz-bar input[type=color]{width:1.2rem;height:1.2rem;border:none;background:none;padding:0;cursor:pointer;margin-left:.25rem}
+  .wz-area{min-height:240px;max-height:60vh;overflow:auto;padding:.9rem 1rem;color:var(--text);line-height:1.7;outline:none}
+  .wz-area:focus{box-shadow:inset 0 0 0 2px rgba(56,189,248,.22)}
+  .wz-area:empty::before{content:"Rédigez ici — la mise en forme se fait avec la barre ci-dessus.";color:var(--muted)}
+  .wz-area h2{font-size:1.15rem;color:var(--accent);margin:.9rem 0 .4rem}
+  .wz-area h3{font-size:1rem;margin:.7rem 0 .3rem}
+  .wz-area img{max-width:100%;border-radius:8px;margin:.4rem 0}
+  .wz-area blockquote{border-left:3px solid var(--accent);margin:.6rem 0;padding:.2rem 0 .2rem .9rem;color:var(--muted)}
+  .wz-area ul,.wz-area ol{padding-left:1.4rem} .wz-area a{color:var(--accent)}
+  .wz-area table{border-collapse:collapse;margin:.5rem 0} .wz-area td,.wz-area th{border:1px solid var(--line);padding:.3rem .55rem}
+  .wz-pick{display:none;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:.4rem;padding:.5rem;background:#0d1728;border-top:1px solid var(--line);max-height:180px;overflow:auto}
+  .wz-pick.on{display:grid}
+  .wz-pick img{width:100%;height:54px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--line)}
+  .wz-pick img:hover{border-color:var(--accent)}
+  .wz-pick .none{grid-column:1/-1;color:var(--muted);font-size:.8rem;padding:.4rem}
   .media{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem}
   .media .m{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.4rem;text-align:center}
   .media .m img{width:100%;height:70px;object-fit:cover;border-radius:6px}
@@ -188,12 +212,12 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <label class="field">Titre<input type="text" name="title" value="<?= e($editP['title']) ?>" required></label>
       <label class="field">Adresse (slug) <span class="muted">— vide = auto</span>
         <input type="text" name="slug" value="<?= e($editP['slug']) ?>" placeholder="ex. reglement-interieur"></label>
-      <label class="field">Contenu
-        <div class="mdbar" data-t="pbody"></div>
-        <textarea class="md" id="pbody" name="body"><?= e($editP['body']) ?></textarea>
-        <div class="mdprev prose" data-src="pbody"></div>
-      </label>
-      <p class="mdhelp"><code># Titre</code> · <code>## Sous-titre</code> · <code>**gras**</code> · <code>*italique*</code> · <code>- liste</code> · <code>[lien](url)</code> · <code>![img](url)</code></p>
+      <div class="field" style="margin-bottom:.5rem">Contenu</div>
+      <div class="wz" data-fmt="<?= e($editP['format'] ?? 'markdown') ?>">
+        <div class="wz-bar"></div>
+        <div class="wz-area" contenteditable="true"></div>
+        <textarea id="pbody" name="body" hidden><?= e($editP['body']) ?></textarea>
+      </div>
       <div class="row">
         <label class="field" style="margin:0">Ordre<input type="number" name="menu_order" value="<?= (int) $editP['menu_order'] ?>" style="width:80px"></label>
         <label class="field" style="margin:0">Réservée au groupe
@@ -240,11 +264,12 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <label class="field">Titre<input type="text" name="title" value="<?= e($editN['title']) ?>" required></label>
       <label class="field">Catégorie <span class="muted">(optionnel)</span>
         <input type="text" name="category" value="<?= e($editN['category'] ?? '') ?>" placeholder="ex. Service, RH, Sécurité"></label>
-      <label class="field">Contenu
-        <div class="mdbar" data-t="nbody"></div>
-        <textarea class="md" id="nbody" name="body"><?= e($editN['body']) ?></textarea>
-        <div class="mdprev prose" data-src="nbody"></div>
-      </label>
+      <div class="field" style="margin-bottom:.5rem">Contenu</div>
+      <div class="wz" data-fmt="<?= e($editN['format'] ?? 'markdown') ?>">
+        <div class="wz-bar"></div>
+        <div class="wz-area" contenteditable="true"></div>
+        <textarea id="nbody" name="body" hidden><?= e($editN['body']) ?></textarea>
+      </div>
       <label class="chk"><input type="checkbox" name="published" <?= $editN['published'] ? 'checked' : '' ?>> Publiée</label>
       <div class="form-actions" style="margin-top:1rem"><button class="btn">Publier</button></div>
     </form>
@@ -288,16 +313,16 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <?php foreach ($media as $m): $url = '/portal/intranet/uploads/' . $m; ?>
         <div class="m">
           <img src="/portal/intranet/uploads/<?= e($m) ?>" alt="<?= e($m) ?>" onerror="this.style.opacity=.3">
-          <input type="text" readonly value="![](<?= e($url) ?>)" onclick="this.select()">
+          <input type="text" readonly value="<?= e($url) ?>" onclick="this.select()" title="Adresse de l'image">
           <form method="post" onsubmit="return confirm('Supprimer <?= e($m) ?> ?')" style="margin-top:.3rem">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="media_delete">
             <input type="hidden" name="name" value="<?= e($m) ?>"><button class="btn-sm btn-danger" style="width:100%">Suppr.</button></form>
         </div>
       <?php endforeach; ?>
     </div>
-    <p class="muted small" style="margin-top:.8rem">Les images sont accessibles au chemin
-    <code>/portal/intranet/uploads/…</code> — sur le site comme dans cet aperçu. Cliquez sur le code sous une image
-    pour le copier, puis collez-le dans une page ou une actualité (bouton 🖼️ de l'éditeur).</p>
+    <p class="muted small" style="margin-top:.8rem">Pour <strong>insérer une image</strong> dans une page ou une actualité, utilisez le bouton
+    <strong>🖼️</strong> de l'éditeur : il propose directement ces images. L'adresse sous chaque image
+    (<code>/portal/intranet/uploads/…</code>) peut aussi servir de cible pour un lien.</p>
     <?php else: ?><p class="muted">Aucune image. Téléversez-en une ci-dessus.</p><?php endif; ?>
   </div>
 </section>
@@ -321,19 +346,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   var valid=Array.prototype.some.call(tabs,function(b){return b.dataset.tab===init;});
   show(valid?init:'accueil');
 })();
-// Éditeur : barre d'outils Markdown + aperçu live.
-function mdInsert(ta, before, after, ph){
-  var s=ta.selectionStart, e=ta.selectionEnd, v=ta.value, sel=v.slice(s,e)||ph;
-  ta.value=v.slice(0,s)+before+sel+after+v.slice(e);
-  ta.focus(); ta.selectionStart=s+before.length; ta.selectionEnd=s+before.length+sel.length;
-  ta.dispatchEvent(new Event('input'));
-}
-var BTN=[['B','**','**','gras'],['I','*','*','italique'],['H2','## ','','Titre'],['•','\n- ','','élément'],['🔗','[','](https://)','texte'],['🖼️','![](','/portal/intranet/uploads/) ','']];
-document.querySelectorAll('.mdbar').forEach(function(bar){
-  var ta=document.getElementById(bar.getAttribute('data-t'));
-  BTN.forEach(function(b){var btn=document.createElement('button');btn.type='button';btn.textContent=b[0];
-    btn.onclick=function(){mdInsert(ta,b[1],b[2],b[3]);};bar.appendChild(btn);});
-});
+// Images de la médiathèque, pour le sélecteur d'image de l'éditeur.
+var CMS_MEDIA = <?= json_encode(array_map(fn($m) => '/portal/intranet/uploads/' . $m, $media)) ?>;
+// mdRender : convertit une ANCIENNE page Markdown en HTML à l'ouverture (migration douce).
 function mdRender(t){
   t=t.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});
   t=t.replace(/^### (.+)$/gm,'<h3>$1</h3>').replace(/^## (.+)$/gm,'<h2>$1</h2>').replace(/^# (.+)$/gm,'<h1>$1</h1>');
@@ -345,10 +360,49 @@ function mdRender(t){
   t=t.replace(/(?:^- .*(?:\n|$))+/gm,function(m){return '<ul>'+m.trim().split(/\n/).map(function(l){return '<li>'+l.replace(/^- /,'')+'</li>';}).join('')+'</ul>';});
   return t.split(/\n{2,}/).map(function(b){b=b.trim();if(!b)return'';return /^<(h[1-3]|ul|img)/.test(b)?b:'<p>'+b.replace(/\n/g,'<br>')+'</p>';}).join('');
 }
-document.querySelectorAll('.mdprev').forEach(function(prev){
-  var ta=document.getElementById(prev.getAttribute('data-src'));
-  function upd(){prev.innerHTML=mdRender(ta.value);}
-  ta.addEventListener('input',upd); upd();
+// Initialisation de chaque éditeur WYSIWYG (.wz) : contenteditable + barre d'outils.
+document.querySelectorAll('.wz').forEach(function(wz){
+  var bar=wz.querySelector('.wz-bar'), area=wz.querySelector('.wz-area'),
+      ta=wz.querySelector('textarea'), fmt=wz.getAttribute('data-fmt');
+  // Pré-remplissage : HTML direct, ou conversion de l'ancien Markdown (migration douce).
+  var raw=ta.value||'';
+  area.innerHTML = (fmt==='html') ? raw : (raw.trim()? mdRender(raw) : '');
+  function sync(){ ta.value = area.innerHTML; }
+  area.addEventListener('input', sync); area.addEventListener('blur', sync);
+  function cmd(c,v){ area.focus(); try{document.execCommand('styleWithCSS',false,true);}catch(e){} document.execCommand(c,false,v||null); sync(); }
+  function add(html,title,fn){ var b=document.createElement('button'); b.type='button'; b.title=title; b.innerHTML=html;
+    b.addEventListener('mousedown',function(e){e.preventDefault();}); b.addEventListener('click',fn); bar.appendChild(b); }
+  function sep(){ var s=document.createElement('span'); s.className='sep'; bar.appendChild(s); }
+  add('P','Paragraphe',function(){cmd('formatBlock','p');});
+  add('H2','Titre',function(){cmd('formatBlock','h2');});
+  add('H3','Sous-titre',function(){cmd('formatBlock','h3');});
+  sep();
+  add('<b>G</b>','Gras',function(){cmd('bold');});
+  add('<i>I</i>','Italique',function(){cmd('italic');});
+  add('<u>S</u>','Souligné',function(){cmd('underline');});
+  var lab=document.createElement('label'); lab.className='wzc'; lab.title='Couleur du texte'; lab.textContent='A';
+  var col=document.createElement('input'); col.type='color'; col.value='#38bdf8';
+  col.addEventListener('input',function(){cmd('foreColor',col.value);}); lab.appendChild(col); bar.appendChild(lab);
+  sep();
+  add('•','Liste à puces',function(){cmd('insertUnorderedList');});
+  add('1.','Liste numérotée',function(){cmd('insertOrderedList');});
+  add('❝','Citation',function(){cmd('formatBlock','blockquote');});
+  sep();
+  add('◧','Aligner à gauche',function(){cmd('justifyLeft');});
+  add('☰','Centrer',function(){cmd('justifyCenter');});
+  sep();
+  add('🔗','Lien',function(){ var u=prompt('Adresse du lien (https://… , /page , mailto:…)'); if(u){cmd('createLink',u);} });
+  add('🖼️','Insérer une image',function(){ pick.classList.toggle('on'); });
+  add('―','Séparateur',function(){cmd('insertHorizontalRule');});
+  sep();
+  add('⌫','Effacer la mise en forme',function(){cmd('removeFormat');});
+  // Sélecteur d'image (médiathèque)
+  var pick=document.createElement('div'); pick.className='wz-pick';
+  if(!CMS_MEDIA.length){ pick.innerHTML='<div class="none">Aucune image. Téléversez-en dans l\'onglet 🖼️ Médiathèque.</div>'; }
+  else CMS_MEDIA.forEach(function(url){ var im=document.createElement('img'); im.src=url; im.title=url; im.loading='lazy';
+    im.addEventListener('click',function(){ area.focus(); document.execCommand('insertHTML',false,'<img src="'+url+'" alt="">'); sync(); pick.classList.remove('on'); }); pick.appendChild(im); });
+  wz.appendChild(pick);
+  var form=wz.closest('form'); if(form){ form.addEventListener('submit',sync); }
 });
 </script>
 <?php pf_footer(); ?>
