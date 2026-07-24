@@ -307,6 +307,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                : "Quota retiré du partage « $sn » (espace illimité).";
             } else { $out = 'ERROR: partage invalide.'; }
             break;
+        case 'share_acl':
+            // Droits d'un partage. « scope=all » : tous les agents (lecture seule ou écriture).
+            // « scope=groups » : seuls les groupes désignés ; les autres n'ont AUCUN accès.
+            $sn    = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($_POST['name'] ?? ''));
+            $scope = (($_POST['scope'] ?? 'all') === 'groups') ? 'groups' : 'all';
+            if ($sn === '') { $out = 'ERROR: partage invalide.'; break; }
+            if ($scope === 'all') {
+                $lvl = (($_POST['all_level'] ?? 'rw') === 'ro') ? 'ro' : 'rw';
+                $out = ad('share', 'acl', $sn, $lvl === 'ro' ? '*' : '', '');
+            } else {
+                // Indexation NUMÉRIQUE : un nom de groupe n'est jamais une clé de formulaire
+                // (espaces et caractères spéciaux seraient transformés par PHP).
+                $names = (array) ($_POST['g_name'] ?? []); $levels = (array) ($_POST['g_level'] ?? []);
+                $ro = $rw = [];
+                foreach ($names as $i => $g) {
+                    $g = trim((string) $g);
+                    if ($g === '' || $g === 'Domain Admins') { continue; }   // admins : toujours inclus
+                    if (!preg_match('/^[A-Za-z0-9 ._-]{1,64}$/', $g)) { continue; }
+                    $v = (string) ($levels[$i] ?? 'none');
+                    if     ($v === 'ro') { $ro[] = $g; }
+                    elseif ($v === 'rw') { $rw[] = $g; }
+                }
+                if (!$ro && !$rw) {
+                    $out = "ERROR: aucun groupe n'a d'accès — le dossier deviendrait inaccessible à tous "
+                         . "les agents. Désignez au moins un groupe, ou choisissez « Tous les agents ».";
+                    break;
+                }
+                $out = ad('share', 'acl', $sn, implode(',', $ro), implode(',', $rw));
+            }
+            break;
+        case 'share_repair': $out = ad('share', 'repair'); break;
         case 'share_set':
             $ro = !empty($_POST['ro'])     ? '1' : '0';   // lecture seule
             $br = !empty($_POST['browse']) ? '1' : '0';   // visible dans le voisinage réseau
@@ -408,7 +439,8 @@ if ($dcUp) {
         $t = trim($l);
         if (preg_match('/^\[([^\]]+)\]/', $t, $m)) {
             if ($curSh) { $shares[] = $curSh; }
-            $curSh = ['name' => $m[1], 'path' => '', 'ro' => false, 'browse' => true, 'guest' => false, 'comment' => ''];
+            $curSh = ['name' => $m[1], 'path' => '', 'ro' => false, 'browse' => true, 'guest' => false,
+                      'comment' => '', 'vu' => '', 'wl' => ''];
         } elseif ($curSh && preg_match('/^([A-Za-z][A-Za-z ]*?)\s*=\s*(.*)$/', $t, $m)) {
             $k = strtolower(trim($m[1])); $v = trim($m[2]);
             $yes = in_array(strtolower($v), ['yes', 'true', '1'], true);
@@ -417,12 +449,35 @@ if ($dcUp) {
             elseif ($k === 'browseable' || $k === 'browsable') { $curSh['browse'] = $yes; }
             elseif ($k === 'guest ok')   { $curSh['guest'] = $yes; }
             elseif ($k === 'comment')    { $curSh['comment'] = $v; }
+            elseif ($k === 'valid users'){ $curSh['vu'] = $v; }
+            elseif ($k === 'write list') { $curSh['wl'] = $v; }
         }
     }
     if ($curSh) { $shares[] = $curSh; }
     // Les partages servant le déploiement PXE (/srv/pxe) sont protégés : gérés par l'installation
     // PXE, on ne les modifie/supprime pas depuis cette console (sinon PXE casse).
-    foreach ($shares as &$_s) { $_s['pxe'] = strpos($_s['path'], '/srv/pxe') === 0; }
+    // Droits : déduits de shares.conf, SEULE source de vérité (c'est ce que smbd relit).
+    // Jetons acceptés : "DOM\Groupe", @"DOM\Groupe", @DOM\Groupe, +DOM\Groupe.
+    $pfShGroups = function (string $list): array {
+        $out = [];
+        foreach (preg_split('/\s*,\s*|\s+(?=[@+"A-Za-z])/', $list, -1, PREG_SPLIT_NO_EMPTY) as $tk) {
+            $tk = trim(str_replace('"', '', $tk));
+            $tk = ltrim($tk, '@+&');
+            $p  = strpos($tk, '\\');
+            if ($p !== false) { $tk = substr($tk, $p + 1); }
+            if ($tk !== '') { $out[$tk] = true; }
+        }
+        return $out;
+    };
+    foreach ($shares as &$_s) {
+        $_s['pxe'] = strpos($_s['path'], '/srv/pxe') === 0;
+        $vu = $pfShGroups($_s['vu']); $wl = $pfShGroups($_s['wl']);
+        unset($vu['Domain Admins'], $wl['Domain Admins']);   // toujours présent, jamais un choix
+        $_s['acl'] = [];
+        foreach ($vu as $g => $_) { $_s['acl'][$g] = isset($wl[$g]) ? 'rw' : 'ro'; }
+        foreach ($wl as $g => $_) { $_s['acl'][$g] = 'rw'; }
+        $_s['mode'] = $_s['acl'] ? 'groups' : ($_s['ro'] ? 'allro' : 'allrw');
+    }
     unset($_s);
 }
 // Quotas des partages : occupation (octets) + limite (Mo) par nom de partage.
@@ -433,6 +488,12 @@ foreach (explode("\n", (string) shell_exec('sudo /usr/local/sbin/proxyfibre-shar
 }
 $sys = ['Administrator', 'Guest', 'krbtgt'];
 $humanUsers = array_values(array_filter($users, fn($u) => !in_array($u, $sys, true) && stripos($u, 'dns-') !== 0));
+
+// Groupes métier / système : calculés ICI (et non dans la section 5) car les droits des partages
+// et le ciblage des lecteurs, plus haut dans la page, doivent proposer la liste des groupes.
+$customGroups = $sysGroups = [];
+foreach ($groups as $g) { if (isset($BUILTIN_GROUPS[$g])) { $sysGroups[] = $g; } else { $customGroups[] = $g; } }
+sort($customGroups); sort($sysGroups);
 
 // Descriptions des GPO : intégrées (GPO par défaut) + personnalisées (table pf_gpo_desc).
 $GPO_BUILTIN = [
@@ -816,7 +877,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
   l'écriture est refusée une fois plein — <strong>aucun fichier n'est supprimé</strong>.</p>
   <div style="padding:0 1.2rem 1.2rem">
     <table class="grid-table" style="margin-bottom:.9rem">
-      <thead><tr><th>Partage</th><th>Dossier</th><th style="width:150px">Accès</th><th style="width:90px">Visible</th><th style="width:210px">Quota</th><th></th></tr></thead>
+      <thead><tr><th>Partage</th><th>Dossier</th><th style="width:240px">Droits d'accès</th><th style="width:90px">Visible</th><th style="width:210px">Quota</th><th></th></tr></thead>
       <tbody>
         <?php if (!$shares): ?><tr><td colspan="6" class="muted center">Aucun partage. Créez-en un ci-dessous.</td></tr>
         <?php else: foreach ($shares as $sh): $csrf = e(csrf_token()); ?>
@@ -826,14 +887,16 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
               <?php if ($sh['comment']): ?><br><span class="muted small"><?= e($sh['comment']) ?></span><?php endif; ?></td>
             <td class="mono small"><?= e($sh['path']) ?: '<span class="muted">—</span>' ?></td>
             <td>
-              <?php if ($sh['ro']): ?><span class="badge">Lecture seule</span><?php else: ?><span class="badge on">Lecture/écriture</span><?php endif; ?>
+              <?php if ($sh['mode'] === 'allrw'): ?><span class="badge on">Tous les agents · lecture-écriture</span>
+              <?php elseif ($sh['mode'] === 'allro'): ?><span class="badge">Tous les agents · lecture seule</span>
+              <?php else: $i = 0; foreach ($sh['acl'] as $g => $lv):
+                      if ($i++ >= 3) { echo '<span class="muted small">… +' . (count($sh['acl']) - 3) . ' autre(s)</span>'; break; } ?>
+                  <span class="badge<?= $lv === 'rw' ? ' on' : '' ?>">🏷️ <?= e($g) ?> · <?= $lv === 'rw' ? 'écriture' : 'lecture' ?></span>
+                <?php endforeach; ?>
+                <div class="muted small">Autres agents : aucun accès</div>
+              <?php endif; ?>
               <?php if (!$sh['pxe']): ?>
-                <form method="post" style="display:inline;margin-left:.3rem">
-                  <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="do" value="share_set">
-                  <input type="hidden" name="name" value="<?= e($sh['name']) ?>">
-                  <input type="hidden" name="ro" value="<?= $sh['ro'] ? '0' : '1' ?>"><input type="hidden" name="browse" value="<?= $sh['browse'] ? '1' : '0' ?>">
-                  <button class="btn-sm" title="Basculer le mode d'accès"><?= $sh['ro'] ? '→ écriture' : '→ lecture seule' ?></button>
-                </form>
+                <button type="button" class="btn-sm js-acl" data-share="<?= e($sh['name']) ?>" style="margin-top:.3rem">Modifier les droits</button>
               <?php endif; ?>
             </td>
             <td>
@@ -875,6 +938,55 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
               <?php endif; ?>
             </td>
           </tr>
+          <?php if (!$sh['pxe']): ?>
+          <tr class="acl-row" id="acl-<?= e($sh['name']) ?>" hidden><td colspan="6" style="background:rgba(56,189,248,.05)">
+            <form method="post" onsubmit="return pfAclCheck(this,'<?= e($sh['name']) ?>','<?= e($sh['mode']) ?>')">
+              <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="do" value="share_acl">
+              <input type="hidden" name="name" value="<?= e($sh['name']) ?>">
+              <h4 style="margin:.2rem 0 .6rem">Qui a accès au dossier « <?= e($sh['name']) ?> » ?</h4>
+              <label style="display:block;margin:.25rem 0">
+                <input type="radio" name="scope" value="all"<?= $sh['mode'] !== 'groups' ? ' checked' : '' ?>>
+                <strong>Tous les agents du domaine</strong></label>
+              <div style="margin:.1rem 0 .6rem 1.5rem">
+                <label style="margin-right:1rem"><input type="radio" name="all_level" value="rw"<?= $sh['mode'] !== 'allro' ? ' checked' : '' ?>>
+                  en lecture-écriture <span class="muted small">(dépôt, modification et suppression de fichiers)</span></label>
+                <label><input type="radio" name="all_level" value="ro"<?= $sh['mode'] === 'allro' ? ' checked' : '' ?>>
+                  en lecture seule <span class="muted small">(consultation uniquement)</span></label>
+              </div>
+              <label style="display:block;margin:.25rem 0">
+                <input type="radio" name="scope" value="groups"<?= $sh['mode'] === 'groups' ? ' checked' : '' ?>>
+                <strong>Seulement les groupes désignés ci-dessous</strong></label>
+              <table class="grid-table" style="margin:.4rem 0 .6rem 1.5rem;width:auto">
+                <thead><tr><th>Groupe</th><th style="width:110px">Aucun accès</th><th style="width:110px">Lecture seule</th><th style="width:130px">Lecture-écriture</th></tr></thead>
+                <tbody>
+                  <tr><td>🔒 <strong>Administrateurs du domaine</strong><br>
+                      <span class="muted small">Accès permanent : un dossier ne doit jamais devenir inadministrable.</span></td>
+                    <td colspan="3" class="center muted small">toujours en lecture-écriture</td></tr>
+                  <?php $gi = 0; foreach (array_merge(['Domain Users'], $customGroups, $sysGroups) as $g):
+                          if ($g === 'Domain Admins') { continue; }
+                          if ($g !== 'Domain Users' && in_array($g, $sysGroups, true) && !isset($sh['acl'][$g])) { continue; }
+                          $lv = $sh['acl'][$g] ?? 'none'; $gi++; ?>
+                    <tr>
+                      <td><?= $g === 'Domain Users' ? '👥 <strong>Tous les agents du domaine</strong>' : '🏷️ ' . e($g) ?>
+                        <input type="hidden" name="g_name[<?= $gi ?>]" value="<?= e($g) ?>"></td>
+                      <td class="center"><input type="radio" name="g_level[<?= $gi ?>]" value="none"<?= $lv === 'none' ? ' checked' : '' ?>></td>
+                      <td class="center"><input type="radio" name="g_level[<?= $gi ?>]" value="ro"<?= $lv === 'ro' ? ' checked' : '' ?>></td>
+                      <td class="center"><input type="radio" name="g_level[<?= $gi ?>]" value="rw"<?= $lv === 'rw' ? ' checked' : '' ?>></td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+              <button class="btn">Enregistrer les droits</button>
+              <button type="button" class="btn-sm js-acl" data-share="<?= e($sh['name']) ?>">Annuler</button>
+              <p class="ad-help" style="margin:.6rem 0 0">
+                ⚠️ Un agent ajouté à un groupe doit <strong>fermer puis rouvrir sa session Windows</strong> pour que
+                le changement prenne effet : ses groupes sont figés à l'ouverture de session.<br>
+                Retirer un droit ne supprime aucun fichier ; les documents déjà déposés restent en place.
+                <?php if ($sh['guest']): ?><br>Ce partage autorise l'accès anonyme : les droits par groupe ne s'y appliquent pas.<?php endif; ?>
+              </p>
+            </form>
+          </td></tr>
+          <?php endif; ?>
         <?php endforeach; endif; ?>
       </tbody>
     </table>
@@ -883,6 +995,29 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
       <input type="text" name="name" required placeholder="Nom du nouveau partage (ex. Brigade)" pattern="[A-Za-z0-9_\-]+" title="Lettres, chiffres, tiret et souligné uniquement">
       <button class="btn-sm">+ Créer le partage</button>
     </form>
+    <form method="post" style="margin-top:.6rem" onsubmit="return confirm('Réappliquer les permissions de base à tous les dossiers partagés ?')">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="share_repair">
+      <button class="btn-sm">🔧 Réparer l'accès aux dossiers partagés</button>
+      <span class="muted small">Réapplique les permissions de base aux dossiers et à leur contenu ; à utiliser si un
+      partage reste inaccessible aux agents, ou si un fichier déposé par un agent n'est pas modifiable par ses collègues.
+      N'affecte pas les droits par groupe.</span>
+    </form>
+    <script>
+    document.querySelectorAll('.js-acl').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var r = document.getElementById('acl-' + b.dataset.share);
+        if (r) { r.hidden = !r.hidden; if (!r.hidden) { r.scrollIntoView({block: 'nearest'}); } }
+      });
+    });
+    function pfAclCheck(f, nom, modeActuel) {
+      var scope = f.querySelector('input[name=scope]:checked');
+      if (scope && scope.value === 'groups' && modeActuel !== 'groups') {
+        return confirm('Le dossier « ' + nom + ' » ne sera plus accessible qu\'aux groupes désignés.\n\n'
+                     + 'Les agents hors de ces groupes perdront l\'accès. Continuer ?');
+      }
+      return true;
+    }
+    </script>
   </div>
 </section>
 
@@ -1455,10 +1590,8 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
 
 <!-- 5. GROUPES & OU -->
 <?php
-  // Séparer les groupes métier (créés par l'administration) des groupes système Windows.
-  $customGroups = $sysGroups = [];
-  foreach ($groups as $g) { if (isset($BUILTIN_GROUPS[$g])) { $sysGroups[] = $g; } else { $customGroups[] = $g; } }
-  sort($customGroups); sort($sysGroups);
+  // (les listes $customGroups / $sysGroups sont calculées plus haut : la section « Partages »
+  //  en a besoin avant celle-ci pour proposer les groupes dans les droits.)
   // OU : « Domain Controllers » est intégrée, le reste est personnalisé.
   $customOus = array_values(array_filter($ous, fn($o) => stripos($o, 'Domain Controllers') === false));
 ?>
