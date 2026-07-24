@@ -104,6 +104,16 @@
         <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
         <ProtectYourPC>3</ProtectYourPC>
       </OOBE>
+      <!-- Bastion : a la 1re ouverture de session, PROPOSER la jonction au domaine (identifiants
+           saisis INTERACTIVEMENT, jamais stockes). Une fois joint, la GPO BitLocker chiffre le disque
+           au demarrage suivant et la cle de recuperation remonte dans la console. Annuler = ne pas joindre. -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=Get-Credential -Message 'Bastion : jonction au domaine BASTION.PN.INT (Annuler pour ne pas joindre)'; if($c){try{Add-Computer -DomainName 'bastion.pn.int' -Credential $c -Force -Restart}catch{$_ | Out-File C:\bastion-jonction-erreur.txt}}"</CommandLine>
+          <Description>Jonction au domaine Bastion (interactive)</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
     </component>
   </settings>
 

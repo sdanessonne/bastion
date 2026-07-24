@@ -94,8 +94,11 @@ mkdir -p /srv/pxe/images && chmod 775 /srv/pxe/images
 # Fichiers de réponses (installation automatisée de Windows 11 Pro, contrôles matériel
 # contournés). Servis par [Images] en lecture anonyme → ils ne contiennent AUCUN mot de
 # passe (la création du compte local reste demandée à la fin).
+# Realm réel du domaine, pour la jonction proposée à la 1re ouverture de session (FirstLogonCommands).
+_REALM=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
 for U in bios uefi; do
   install -m644 "${REPO_DIR}/services/tftp/unattend-${U}.xml" "/srv/pxe/images/unattend-${U}.xml" 2>/dev/null || true
+  [ -n "$_REALM" ] && sed -i "s/bastion\.pn\.int/$_REALM/gI" "/srv/pxe/images/unattend-${U}.xml" 2>/dev/null || true
 done
 touch /etc/samba/shares.conf 2>/dev/null || true
 if ! grep -q "^\[Images\]" /etc/samba/shares.conf 2>/dev/null; then
