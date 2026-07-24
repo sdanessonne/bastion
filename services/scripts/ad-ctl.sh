@@ -91,6 +91,7 @@ PY
     fi
     case "$sub" in
       list)   exec "$ST" gpo listall ;;
+      health) exec python3 /usr/local/sbin/proxyfibre-gpo-health ;;   # diagnostic lecture seule (JSON)
       create) exec "$ST" gpo create "$a" -U "Administrator%${ADPASS}" ;;
       deploy)
         # Déploiement catalogue : (ré)écrit les stratégies registre du JSON $b dans la GPO
