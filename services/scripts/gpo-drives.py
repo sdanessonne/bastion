@@ -16,9 +16,12 @@ from xml.sax.saxutils import quoteattr
 DRIVES_CSE = '{5794DAFD-BE60-433F-88A2-1A31939AC01F}'
 GPP_TOOL   = '{CEFFA6E2-E3BD-421B-852C-6F6A79A59BC1}'
 NULL_GUID  = '{00000000-0000-0000-0000-000000000000}'
-# CSE « Registre » (paramètres MACHINE) — pour fiabiliser le traitement des préférences GPP.
+# CSE « Registre » (paramètres MACHINE) — pour retirer l'ancien tatouage GPP.
 REG_CSE    = '{35378EAC-683F-11D2-A89A-00C04FBBCFA2}'
 REG_TOOL   = '{D02B1F72-3407-48AE-BA88-E8213C6761F1}'
+# CSE « Scripts » (script d'ouverture de session UTILISATEUR = net use, méthode fiable).
+SCRIPTS_CSE  = '{42B5FAAE-6536-11D2-AE5A-0000F87571E3}'
+SCRIPTS_TOOL = '{40B6664F-4972-11D1-A7CA-0000F87571E3}'
 
 def copy_ntacl(src, dst):
     try:
@@ -99,6 +102,20 @@ def drives_xml(drives, when):
     body.append('</Drives>')
     return '\r\n'.join(body) + '\r\n'
 
+def logon_cmd(drives):
+    """Script d'ouverture de session (net use) : monte les lecteurs DANS la session interactive
+    de l'agent, exactement comme une commande tapée à la main (qui, elle, fonctionne à tous les
+    coups). On n'utilise donc PLUS le CSE GPP Drive Maps (qui échouait « Fonction incorrecte »
+    en tâche de fond sur ces postes VirtualBox). Le /delete préalable purge un montage résiduel."""
+    L = ['@echo off',
+         'rem Bastion - connexion des lecteurs reseau (net use, session interactive).']
+    for d in drives:
+        letter = (d.get('letter', 'Z') or 'Z')[0].upper()
+        path = d.get('path', '')
+        L.append('net use %s: /delete /y >nul 2>&1' % letter)
+        L.append('net use %s: "%s" /persistent:no >nul 2>&1' % (letter, path))
+    return '\r\n'.join(L) + '\r\n'
+
 def main():
     guid = sys.argv[1]
     drives = json.load(open(sys.argv[2], 'rb'))
@@ -117,15 +134,33 @@ def main():
         print('ERROR: SYSVOL introuvable', file=sys.stderr); sys.exit(1)
     ref = os.path.join(sysvol, 'GPT.INI')
 
+    # Volet UTILISATEUR n°1 : Drives.xml VIDE (aucun item GPP). Le CSE GPP Drive Maps échouait
+    # « Fonction incorrecte » (0x1) en tâche de fond sur ces VM ; on le neutralise et on monte
+    # les lecteurs par un SCRIPT d'ouverture de session (ci-dessous), fiable.
     d = os.path.join(sysvol, 'User', 'Preferences', 'Drives')
     os.makedirs(d, exist_ok=True)
     for p in (os.path.join(sysvol, 'User'), os.path.join(sysvol, 'User', 'Preferences'), d):
         if os.path.exists(ref): copy_ntacl(ref, p)
     xml = os.path.join(d, 'Drives.xml')
     with open(xml, 'wb') as w:
-        w.write(drives_xml(drives, when).encode('utf-8'))
+        w.write(drives_xml([], when).encode('utf-8'))
     os.chmod(xml, 0o644)
     if os.path.exists(ref): copy_ntacl(ref, xml)
+
+    # Volet UTILISATEUR n°2 : script d'ouverture de session (net use) — la méthode fiable.
+    logon = os.path.join(sysvol, 'User', 'Scripts', 'Logon')
+    os.makedirs(logon, exist_ok=True)
+    for p in (os.path.join(sysvol, 'User', 'Scripts'), logon):
+        if os.path.exists(ref): copy_ntacl(ref, p)
+    lcmd = os.path.join(logon, 'bastion-lecteurs.cmd')
+    with open(lcmd, 'wb') as w:
+        w.write(logon_cmd(drives).encode('utf-8'))
+    sini = os.path.join(sysvol, 'User', 'Scripts', 'scripts.ini')
+    with open(sini, 'wb') as w:
+        w.write(b'\xff\xfe' + "\r\n[Logon]\r\n0CmdLine=bastion-lecteurs.cmd\r\n0Parameters=\r\n".encode('utf-16-le'))
+    for p in (lcmd, sini):
+        os.chmod(p, 0o644)
+        if os.path.exists(ref): copy_ntacl(ref, p)
 
     # Côté MACHINE : Registry.pol VIDE, seulement pour retirer l'ancien tatouage
     # NoGPOListChanges/NoBackgroundPolicy (voir machine_cleanup_pol).
@@ -153,12 +188,13 @@ def main():
         w.write(('[General]\r\nVersion=%d\r\n' % newver).encode('ascii'))
     m = ldb.Message(); m.dn = ldb.Dn(samdb, gpo_dn)
     m['versionNumber'] = ldb.MessageElement(str(newver), ldb.FLAG_MOD_REPLACE, 'versionNumber')
-    uext = '[%s%s][%s%s]' % (NULL_GUID, DRIVES_CSE, DRIVES_CSE, GPP_TOOL)
+    # CSE utilisateur : GPP Drive Maps (traite le Drives.xml vide) + Scripts (script de session).
+    uext = '[%s%s][%s%s][%s%s]' % (NULL_GUID, DRIVES_CSE, SCRIPTS_CSE, SCRIPTS_TOOL, DRIVES_CSE, GPP_TOOL)
     m['gPCUserExtensionNames'] = ldb.MessageElement(uext, ldb.FLAG_MOD_REPLACE, 'gPCUserExtensionNames')
     mext = '[%s%s]' % (REG_CSE, REG_TOOL)
     m['gPCMachineExtensionNames'] = ldb.MessageElement(mext, ldb.FLAG_MOD_REPLACE, 'gPCMachineExtensionNames')
     samdb.modify(m)
-    print('OK version=%d drives=%d (persistent=0, replace, sans retraitement force)' % (newver, len(drives)))
+    print('OK version=%d drives=%d (script de session net use)' % (newver, len(drives)))
 
 if __name__ == '__main__':
     main()
