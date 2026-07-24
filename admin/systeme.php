@@ -161,6 +161,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'syspw') {
     }
 }
 
+// ── Serveur de temps (NTP) : changer la source amont / resynchroniser ────────
+$timeFlash = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'time') {
+    csrf_check();
+    $act = (string) ($_POST['act'] ?? '');
+    if ($act === 'set') {
+        $srv = trim((string) ($_POST['server'] ?? ''));
+        if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9.:-]{1,}$/', $srv)) {
+            $timeFlash = ['Nom de serveur de temps invalide.', 'err'];
+        } else {
+            $r  = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-time set ' . escapeshellarg($srv) . ' 2>&1'));
+            $ok = strpos($r, 'ok server=') === 0;
+            if (function_exists('audit')) { audit('systeme.time_set', $ok ? $srv : 'echec'); }
+            $timeFlash = [$ok ? "Serveur de temps réglé sur « $srv » — chrony redémarré." : ('Échec : ' . $r), $ok ? 'ok' : 'err'];
+        }
+    } elseif ($act === 'resync') {
+        shell_exec('sudo /usr/local/sbin/proxyfibre-time resync 2>&1');
+        $timeFlash = ['Resynchronisation lancée — patientez quelques secondes puis rechargez.', 'ok'];
+    }
+}
+// État courant du serveur de temps.
+$timeSt = ['sources' => []];
+foreach (explode("\n", (string) shell_exec('sudo /usr/local/sbin/proxyfibre-time status 2>/dev/null')) as $l) {
+    if (substr($l, 0, 7) === "source\t") {
+        $p = explode("\t", $l);
+        $timeSt['sources'][] = ['ms' => $p[1] ?? '', 'name' => $p[2] ?? '', 'stratum' => $p[3] ?? '', 'reach' => $p[4] ?? '', 'lastrx' => $p[5] ?? ''];
+    } elseif (preg_match('/^(\w+)=(.*)$/', $l, $m)) {
+        $timeSt[$m[1]] = $m[2];
+    }
+}
+
 $git = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate state 2>/dev/null'), true) ?: [];
 // Clé publique de la passerelle — engendrée au premier affichage de cette page.
 $gitKey = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate pubkey 2>/dev/null'));
@@ -246,6 +277,72 @@ pf_header('Système', 'systeme.php');
     <?php endforeach; ?>
     </tbody>
   </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>🕒 Serveur de temps (NTP)</h2>
+    <span class="badge <?= ($timeSt['synchronized'] ?? '') === 'yes' ? 'on' : 'off' ?>"><?= ($timeSt['synchronized'] ?? '') === 'yes' ? 'Synchronisé' : 'Non synchronisé' ?></span></div>
+  <div style="padding:1.1rem 1.2rem">
+    <?php if ($timeFlash) { pf_flash($timeFlash[0], $timeFlash[1]); } ?>
+    <p class="muted small" style="margin-top:0">La passerelle est la <strong>référence de temps du domaine</strong> : elle se cale sur une source amont
+    et sert l'heure aux postes. <strong>Indispensable à Kerberos</strong> — un écart supérieur à ~5 min bloque l'ouverture de session
+    et l'application des stratégies de groupe sur les postes.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.7rem;margin:.7rem 0 1rem">
+      <div style="border:1px solid var(--line);border-radius:10px;padding:.6rem .8rem;background:var(--bg)">
+        <div class="muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Heure passerelle</div>
+        <div style="font-weight:700;margin-top:.15rem"><?= e($timeSt['localtime'] ?? '—') ?></div></div>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:.6rem .8rem;background:var(--bg)">
+        <div class="muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Source amont réglée</div>
+        <div style="font-weight:700;margin-top:.15rem"><?= e($timeSt['server'] ?? '—') ?></div></div>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:.6rem .8rem;background:var(--bg)">
+        <div class="muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Référence active</div>
+        <div style="font-weight:700;margin-top:.15rem"><?= e($timeSt['refid'] ?? '—') ?></div></div>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:.6rem .8rem;background:var(--bg)">
+        <div class="muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Sert l'heure au LAN</div>
+        <div style="font-weight:700;margin-top:.15rem"><?= ($timeSt['serving'] ?? '') === 'yes' ? '✅ Oui' : '❌ Non' ?></div></div>
+    </div>
+
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end">
+      <form method="post" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;margin:0;flex:1 1 320px">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="time"><input type="hidden" name="act" value="set">
+        <label style="flex:1 1 220px">Serveur de temps amont (NTP)
+          <input type="text" name="server" value="<?= e($timeSt['server'] ?? '') ?>" placeholder="time.windows.com" required
+                 pattern="[A-Za-z0-9][A-Za-z0-9.:-]+" title="Nom d'hôte ou IP (ex. time.windows.com, fr.pool.ntp.org, 192.168.0.4)"></label>
+        <button class="btn" type="submit">💾 Enregistrer</button>
+      </form>
+      <form method="post" style="margin:0">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="time"><input type="hidden" name="act" value="resync">
+        <button class="btn-ghost" type="submit">🔄 Resynchroniser maintenant</button>
+      </form>
+    </div>
+    <p class="muted small" style="margin:.5rem 0 0">Exemples : <code>time.windows.com</code> (Microsoft), <code>fr.pool.ntp.org</code>, ou l'IP d'un serveur de temps interne.
+    Le pool Debian reste en secours automatique.</p>
+
+    <?php if ($timeSt['sources']): ?>
+    <div class="table-wrap" style="margin-top:1rem"><table class="grid-table">
+      <thead><tr><th>État</th><th>Source</th><th>Strate</th><th>Atteignabilité</th><th>Dernier contact</th></tr></thead>
+      <tbody>
+      <?php foreach ($timeSt['sources'] as $s):
+        $ms = $s['ms'];
+        if (strpos($ms, '*') !== false)      { $st = '<span class="badge on">sélectionnée</span>'; }
+        elseif (strpos($ms, '+') !== false)  { $st = '<span class="badge">candidate</span>'; }
+        elseif (strpos($ms, '?') !== false)  { $st = '<span class="muted">en attente</span>'; }
+        elseif (strpos($ms, 'x') !== false)  { $st = '<span class="badge off">rejetée</span>'; }
+        else                                 { $st = '<span class="muted">secours</span>'; }
+      ?>
+        <tr>
+          <td><?= $st ?></td>
+          <td class="mono"><?= e($s['name']) ?></td>
+          <td><?= e($s['stratum']) ?></td>
+          <td><?= (int) $s['reach'] === 377 ? '✅ 377/377' : e($s['reach']) . '/377' ?></td>
+          <td class="muted"><?= e($s['lastrx']) ?> s</td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table></div>
+    <?php endif; ?>
   </div>
 </section>
 
