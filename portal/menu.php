@@ -147,6 +147,7 @@ echo "menu {$title}\n";
 if ($subtitle !== '') { echo "item --gap        {$subtitle}\n"; }
 echo "item --gap        Choisissez le systeme a installer :\n";
 foreach ($osEntries as $k) { if ($enabled($k)) { echo "item {$k}       " . $label($k) . "\n"; } }
+if ($enabled('debian')) { echo "item debiancrypto [  Debian     ]  Installation CHIFFREE (LUKS)\n"; }
 if ($customOn) { echo "item custom       {$customLbl}\n"; }
 echo "item --gap\n";
 foreach ($sysEntries as $k) { if ($enabled($k)) { echo "item {$k}       " . $label($k) . "\n"; } }
@@ -155,6 +156,10 @@ echo "choose --default {$default} --timeout {$timeout} target && goto \${target}
 if ($enabled('debian')) {
     $args = str_replace('{IP}', $gw, $clean($S['pxe_debian_args'] ?? ''));
     echo ":debian\nkernel {$base}/debian/linux\ninitrd {$base}/debian/initrd.gz\nimgargs linux {$args}\nboot || goto menu\n\n";
+    // Variante CHIFFRÉE (LUKS) : même noyau, avec un preseed qui automatise le partitionnement chiffré.
+    // La phrase secrète est demandée à l'installation (le preseed ne contient AUCUN secret).
+    echo ":debiancrypto\nkernel {$base}/debian/linux\ninitrd {$base}/debian/initrd.gz\n";
+    echo "imgargs linux auto=true priority=critical preseed/url=http://{$gw}:2080/boot/preseed-crypto.cfg {$args}\nboot || goto menu\n\n";
 }
 if ($enabled('ubuntu')) {
     $args = str_replace('{IP}', $gw, $clean($S['pxe_ubuntu_args'] ?? ''));
