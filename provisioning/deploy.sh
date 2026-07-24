@@ -430,6 +430,7 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-quarantine apply, /usr/
 # Mesure de la ligne. « _run » n'est PAS listé : lui seul sature réellement la liaison.
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-speedtest run, /usr/local/sbin/proxyfibre-speedtest state, /usr/local/sbin/proxyfibre-speedtest log
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-time status, /usr/local/sbin/proxyfibre-time resync, /usr/local/sbin/proxyfibre-time set *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-share-quota list, /usr/local/sbin/proxyfibre-share-quota set *, /usr/local/sbin/proxyfibre-share-quota scan, /usr/local/sbin/proxyfibre-share-quota enable
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-services
 

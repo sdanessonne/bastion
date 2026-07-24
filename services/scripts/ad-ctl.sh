@@ -404,7 +404,7 @@ PY
         mkdir -p "/srv/partage/$name"
         chmod 2770 "/srv/partage/$name" 2>/dev/null || true
         if ! grep -q "^\[$name\]" "$SHFILE" 2>/dev/null; then
-          printf '\n[%s]\n   path = /srv/partage/%s\n   read only = no\n   browseable = yes\n' \
+          printf '\n[%s]\n   path = /srv/partage/%s\n   read only = no\n   browseable = yes\n   dfree command = /usr/local/sbin/proxyfibre-share-dfree\n' \
             "$name" "$name" >> "$SHFILE"
           smbcontrol all reload-config >/dev/null 2>&1 || true
         fi

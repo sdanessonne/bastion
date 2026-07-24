@@ -287,6 +287,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'gpo_delete': $out = ad('gpo', 'delete', (string) ($_POST['guid'] ?? '')); break;   // désinstaller (supprimer)
         case 'share_create': $out = ad('share', 'create', (string) ($_POST['name'] ?? '')); break;
         case 'share_delete': $out = ad('share', 'delete', (string) ($_POST['name'] ?? '')); break;
+        case 'share_quota':
+            $sn = preg_replace('/[^A-Za-z0-9._-]/', '', (string) ($_POST['name'] ?? ''));
+            $mb = max(0, min(100000000, (int) ($_POST['mb'] ?? 0)));
+            if ($sn !== '') {
+                shell_exec('sudo /usr/local/sbin/proxyfibre-share-quota set ' . escapeshellarg($sn) . ' ' . $mb . ' 2>&1');
+                if ($mb > 0) { shell_exec('sudo /usr/local/sbin/proxyfibre-share-quota enable 2>&1'); }   // active l'application (idempotent)
+                shell_exec('sudo /usr/local/sbin/proxyfibre-share-quota scan 2>&1');                       // rafraîchit l'occupation
+                $out = $mb > 0 ? "Quota de $mb Mo appliqué au partage « $sn » (les postes voient l'espace limité)."
+                               : "Quota retiré du partage « $sn » (espace illimité).";
+            } else { $out = 'ERROR: partage invalide.'; }
+            break;
         case 'share_set':
             $ro = !empty($_POST['ro'])     ? '1' : '0';   // lecture seule
             $br = !empty($_POST['browse']) ? '1' : '0';   // visible dans le voisinage réseau
@@ -404,6 +415,12 @@ if ($dcUp) {
     // PXE, on ne les modifie/supprime pas depuis cette console (sinon PXE casse).
     foreach ($shares as &$_s) { $_s['pxe'] = strpos($_s['path'], '/srv/pxe') === 0; }
     unset($_s);
+}
+// Quotas des partages : occupation (octets) + limite (Mo) par nom de partage.
+$squota = [];
+foreach (explode("\n", (string) shell_exec('sudo /usr/local/sbin/proxyfibre-share-quota list 2>/dev/null')) as $l) {
+    $p = explode("\t", $l);
+    if (count($p) >= 4 && $p[0] !== '') { $squota[$p[0]] = ['used' => (int) $p[2], 'quota' => (int) $p[3]]; }
 }
 $sys = ['Administrator', 'Guest', 'krbtgt'];
 $humanUsers = array_values(array_filter($users, fn($u) => !in_array($u, $sys, true) && stripos($u, 'dns-') !== 0));
@@ -760,12 +777,14 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
 <section class="ad-sec panel">
   <div class="panel-head"><h2>📁 Dossiers partagés (<?= count($shares) ?>)</h2></div>
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0">Dossiers réseau accessibles depuis les postes via
-  <code>\\192.168.182.2\NomDuPartage</code>. Les fichiers déposés sont analysés par l'antivirus.</p>
+  <code>\\192.168.182.2\NomDuPartage</code>. Les fichiers déposés sont analysés par l'antivirus.
+  Un <strong>quota</strong> (en Mo) limite la taille d'un partage : les postes voient l'espace plafonné et
+  l'écriture est refusée une fois plein — <strong>aucun fichier n'est supprimé</strong>.</p>
   <div style="padding:0 1.2rem 1.2rem">
     <table class="grid-table" style="margin-bottom:.9rem">
-      <thead><tr><th>Partage</th><th>Dossier</th><th style="width:180px">Accès</th><th style="width:120px">Visible</th><th></th></tr></thead>
+      <thead><tr><th>Partage</th><th>Dossier</th><th style="width:150px">Accès</th><th style="width:90px">Visible</th><th style="width:210px">Quota</th><th></th></tr></thead>
       <tbody>
-        <?php if (!$shares): ?><tr><td colspan="5" class="muted center">Aucun partage. Créez-en un ci-dessous.</td></tr>
+        <?php if (!$shares): ?><tr><td colspan="6" class="muted center">Aucun partage. Créez-en un ci-dessous.</td></tr>
         <?php else: foreach ($shares as $sh): $csrf = e(csrf_token()); ?>
           <tr>
             <td><strong>📁 <?= e($sh['name']) ?></strong>
@@ -791,6 +810,25 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
                   <input type="hidden" name="name" value="<?= e($sh['name']) ?>">
                   <input type="hidden" name="ro" value="<?= $sh['ro'] ? '1' : '0' ?>"><input type="hidden" name="browse" value="<?= $sh['browse'] ? '0' : '1' ?>">
                   <button class="btn-sm" title="Afficher/masquer dans le voisinage réseau"><?= $sh['browse'] ? 'masquer' : 'afficher' ?></button>
+                </form>
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php $qz = $squota[$sh['name']] ?? ['used' => 0, 'quota' => 0];
+              if ($sh['pxe']): ?><span class="muted">—</span>
+              <?php else:
+                if ($qz['quota'] > 0):
+                  $qbytes = $qz['quota'] * 1048576; $pctq = min(100, (int) round(100 * $qz['used'] / max(1, $qbytes)));
+                  $qcol = $pctq >= 90 ? '#f87171' : ($pctq >= 75 ? '#eab308' : 'var(--accent2)'); ?>
+                  <div style="height:6px;border-radius:4px;background:var(--panel2);overflow:hidden;width:100%" title="<?= $pctq ?>% utilisé">
+                    <div style="height:100%;width:<?= $pctq ?>%;background:<?= $qcol ?>;border-radius:4px"></div></div>
+                  <span class="muted small"><?= number_format($qz['used'] / 1048576, $qz['used'] < 1048576 * 10 ? 1 : 0, ',', ' ') ?> / <?= (int) $qz['quota'] ?> Mo</span>
+                <?php else: ?><span class="muted small">illimité</span><?php endif; ?>
+                <form method="post" style="display:flex;gap:.25rem;margin-top:.3rem">
+                  <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="do" value="share_quota">
+                  <input type="hidden" name="name" value="<?= e($sh['name']) ?>">
+                  <input type="number" name="mb" min="0" step="100" value="<?= (int) $qz['quota'] ?>" style="width:5.5rem" title="Quota en Mo (0 = illimité)">
+                  <button class="btn-sm" title="Appliquer le quota">Mo ✓</button>
                 </form>
               <?php endif; ?>
             </td>

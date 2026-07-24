@@ -1,0 +1,7 @@
+[Unit]
+Description=Bastion - recalcul de l'occupation des partages (quotas)
+After=smbd.service samba-ad-dc.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proxyfibre-share-quota scan
