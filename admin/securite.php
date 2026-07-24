@@ -121,6 +121,24 @@ if ($certDays === null) {
     sec_add($checks, 'Certificat HTTPS', 'ok', "Valide encore $certDays jours.");
 }
 
+// ── 5 bis) Autorité racine « Bastion » (à approuver sur les postes) ───────────
+// Empreinte SHA-256 + échéance de l'autorité, lues via l'extension OpenSSL de PHP
+// (aucun secret : seul le certificat PUBLIC est lu). Sert la fiche « Approuver le
+// certificat » plus bas, pour lever l'avertissement du navigateur.
+$caFp = ''; $caExp = '';
+$caRaw = @file_get_contents('/etc/proxyfibre/bastion-ca.crt');
+if ($caRaw && function_exists('openssl_x509_read')) {
+    $ca = @openssl_x509_read($caRaw);
+    if ($ca) {
+        $pca = openssl_x509_parse($ca);
+        if (!empty($pca['validTo_time_t'])) { $caExp = date('d/m/Y', $pca['validTo_time_t']); }
+        if (function_exists('openssl_x509_fingerprint')) {
+            $fp = openssl_x509_fingerprint($ca, 'sha256');
+            if ($fp) { $caFp = strtoupper(implode(':', str_split($fp, 2))); }
+        }
+    }
+}
+
 // ── 6) Comptes de test / par défaut résiduels (RADIUS) ───────────────────────
 try {
     $nTest = (int) $db->query("SELECT COUNT(*) FROM radcheck WHERE username IN ('testuser','test','demo')")->fetchColumn();
@@ -225,6 +243,58 @@ pf_header('Santé & conformité sécurité', 'securite.php');
         </div>
       <?php endforeach; ?>
     </div>
+  </div>
+</section>
+
+<!-- Approuver le certificat de la console -->
+<section class="panel" id="ca-trust">
+  <div class="panel-head"><h2>🔐 Approuver le certificat de la console</h2></div>
+  <div style="padding:1rem 1.2rem">
+    <p class="muted small" style="margin-top:0">
+      La console est servie en HTTPS avec un certificat signé par l'autorité privée
+      <strong>« Bastion »</strong>. Ce certificat couvre <strong>déjà</strong> <code>127.0.0.1</code>,
+      <code>localhost</code>, <code>192.168.182.1</code> et <code>bastion.pn.int</code> — l'avertissement
+      du navigateur vient <strong>uniquement</strong> du fait que cette autorité n'est pas encore
+      approuvée sur votre poste. Approuvez-la <strong>une seule fois</strong> et l'avertissement
+      disparaît sur <em>toutes</em> les adresses de la console.
+    </p>
+    <p style="margin:.6rem 0 1rem">
+      <a class="btn" href="/ca.php" download>⬇️ Télécharger le certificat racine (bastion-ca.crt)</a>
+    </p>
+    <?php if ($caFp): ?>
+    <p class="muted small" style="margin:0 0 .9rem">
+      <strong>Empreinte SHA-256</strong> — à vérifier au moment de l'import :<br>
+      <code style="word-break:break-all;font-size:.82rem"><?= e($caFp) ?></code>
+      <?php if ($caExp): ?><br>Autorité valide jusqu'au <?= e($caExp) ?>.<?php endif; ?>
+    </p>
+    <?php endif; ?>
+    <details>
+      <summary style="cursor:pointer;font-weight:600;color:var(--text)">Comment l'approuver sur Windows ?</summary>
+      <ol class="muted small" style="line-height:1.7;margin:.6rem 0 0">
+        <li>Cliquez sur <strong>Télécharger le certificat racine</strong> ci-dessus.</li>
+        <li>Double-cliquez sur le fichier <code>bastion-ca.crt</code> téléchargé, puis
+            <strong>Installer un certificat…</strong></li>
+        <li>Choisissez <strong>Ordinateur local</strong> (tout le poste) ou <strong>Utilisateur actuel</strong>,
+            puis <em>Suivant</em>.</li>
+        <li><strong>Placer tous les certificats dans le magasin suivant</strong> → <em>Parcourir…</em> →
+            <strong>Autorités de certification racines de confiance</strong>.</li>
+        <li>Terminez, <strong>vérifiez que l'empreinte affichée correspond</strong> à celle ci-dessus,
+            confirmez, puis <strong>redémarrez le navigateur</strong>.</li>
+      </ol>
+      <p class="muted small" style="margin:.7rem 0 0">
+        Variante en une commande (PowerShell <strong>administrateur</strong>, dans le dossier du fichier) :<br>
+        <code style="font-size:.82rem">Import-Certificate -FilePath .\bastion-ca.crt -CertStoreLocation Cert:\LocalMachine\Root</code>
+      </p>
+      <p class="muted small" style="margin:.7rem 0 0">
+        ⚠️ <strong>Firefox</strong> a son propre magasin : Paramètres → Vie privée et sécurité → Certificats →
+        <em>Afficher les certificats</em> → onglet <em>Autorités</em> → <em>Importer</em>. Chrome et Edge
+        utilisent le magasin Windows (rien de plus à faire).
+      </p>
+      <p class="muted small" style="margin:.7rem 0 0">
+        💡 Sur un poste <strong>membre du domaine</strong>, cette autorité peut être déployée automatiquement
+        à tout le parc par GPO — plus aucun avertissement nulle part.
+      </p>
+    </details>
   </div>
 </section>
 
