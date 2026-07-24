@@ -275,6 +275,7 @@ case "${1:-}" in
 755 gpo-drives           services/scripts/gpo-drives.py
 755 gpo-bitlocker        services/scripts/gpo-bitlocker.py
 755 gpo-health           services/scripts/gpo-health.py
+755 gpo-timesync         services/scripts/gpo-timesync.py
 755 voucher-gc           services/scripts/voucher-gc.php
 755 time                 services/scripts/time-ctl.sh
 755 share-quota          services/scripts/share-quota.sh

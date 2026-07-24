@@ -219,6 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
         case 'gpo_create':   $out = ad('gpo', 'create', (string) ($_POST['name'] ?? '')); break;
         case 'kms_auto':     $out = ad('gpo', 'activation', '192.168.182.1'); break;
+        case 'timesync_deploy': $out = ad('gpo', 'timesync'); break;
         case 'sysvol_reset': $out = ad('gpo', 'sysvolreset', ''); break;
         case 'bitlocker_deploy':
             $blm = (string) ($_POST['bl_mode'] ?? 'tpm');
@@ -707,6 +708,31 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
       <form method="post" onsubmit="return confirm('Activer automatiquement Windows/Office sur tous les postes du domaine (KMS) ?')">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="kms_auto">
         <button class="btn">⚡ Activer automatiquement</button>
+      </form>
+      <?php endif; ?>
+    </div>
+  </div>
+</section>
+
+<!-- Recalage de l'heure des postes au démarrage -->
+<section class="ad-sec panel">
+  <div class="panel-head"><h2>🕒 Heure des postes du domaine</h2></div>
+  <div style="padding:1rem 1.2rem">
+    <?php $tsGpo = in_array('Bastion — Recaler l\'heure au démarrage', array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
+    <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#14324f,#152238);padding:1rem 1.2rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <span style="font-size:1.8rem">🕒</span>
+      <div style="flex:1;min-width:240px">
+        <div style="font-weight:600">Recaler l'heure au démarrage</div>
+        <div class="ad-help" style="margin:.2rem 0 0">Déploie une GPO (script de démarrage) qui, à <strong>chaque démarrage</strong> d'un poste,
+        pointe l'horloge sur la passerelle et <strong>force une resynchronisation</strong> (correction d'écart illimitée).
+        Indispensable pour les postes en <strong>machine virtuelle</strong> dont l'horloge se décale au boot — sinon Kerberos,
+        les GPO et les <strong>lecteurs réseau</strong> échouent tant que l'heure est fausse.</div>
+      </div>
+      <?php if ($tsGpo): ?><span class="badge on">✓ Déployée</span>
+      <?php else: ?>
+      <form method="post" onsubmit="return confirm('Déployer le recalage de l\'heure au démarrage sur tous les postes du domaine ?')">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="timesync_deploy">
+        <button class="btn">🕒 Déployer</button>
       </form>
       <?php endif; ?>
     </div>

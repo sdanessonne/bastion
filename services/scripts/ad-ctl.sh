@@ -166,6 +166,24 @@ PY
         "$ST" dns add 192.168.182.2 "$rl" _vlmcs._tcp SRV "kms.${rl} 1688 0 0" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid activation deployee"
         ;;
+      timesync)
+        # GPO « Bastion — Recaler l'heure au démarrage » : script de démarrage (SYSTEM) qui force
+        # w32tm /resync a chaque boot (postes/VM dont l'horloge se decale et ne se resynchronise pas).
+        name="Bastion — Recaler l'heure au démarrage"
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
+        python3 /usr/local/sbin/proxyfibre-gpo-timesync "$guid" "192.168.182.1" >/dev/null 2>&1 \
+          || { echo "ERROR: generation script heure echouee ($guid)" >&2; exit 1; }
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
+          || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
+        echo "$guid recalage heure deployee"
+        ;;
       drives)
         # Lecteurs réseau : GPO « Bastion — Lecteurs réseau » (GPP Drive Maps). $a = JSON.
         [ -f "$a" ] || { echo "ERROR: json absent" >&2; exit 2; }
