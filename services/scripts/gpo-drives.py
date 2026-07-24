@@ -64,8 +64,11 @@ def drives_xml(drives, when):
         props = ('<Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" '
                  'path=%s label=%s persistent="1" useLetter="1" letter=%s/>' %
                  (quoteattr(path), quoteattr(label), quoteattr(letter)))
+        # « removePolicy » et « userContext » : TOUJOURS écrits par l'outil Windows (GPMC).
+        # Leur absence fait échouer le CSE Drive Maps avec « Fonction incorrecte » (0x1) —
+        # on colle donc au format GPMC à l'identique.
         body.append('<Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name=%s status=%s image="2" '
-                    'changed=%s uid=%s bypassErrors="1">%s</Drive>' %
+                    'changed=%s uid=%s bypassErrors="1" removePolicy="0" userContext="0">%s</Drive>' %
                     (quoteattr(letter + ':'), quoteattr(letter + ':'), quoteattr(when), quoteattr(uid), props))
     body.append('</Drives>')
     return '\r\n'.join(body) + '\r\n'
