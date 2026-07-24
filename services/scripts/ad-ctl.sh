@@ -77,6 +77,18 @@ PY
   gpo)
     # La création de GPO nécessite des droits Administrateur du domaine.
     ADPASS=$(sed -n 's/^AD_ADMIN_PASS="\{0,1\}\([^"]*\)"\{0,1\}/\1/p' /etc/proxyfibre/ad.env 2>/dev/null || true)
+    # Jauge d'installation (facultative). Si un nonce est passé en 5e argument, l'avancement
+    # est écrit dans /run/proxyfibre/gpo-<nonce>.progress (« pourcentage TAB libellé »), lu par
+    # la console pour animer une barre de progression. PUREMENT COSMÉTIQUE : toutes les écritures
+    # sont « best effort » (|| true) et n'altèrent JAMAIS le déploiement. pct < 0 = échec.
+    PROG=""
+    prog(){ [ -n "$PROG" ] || return 0; printf '%s\t%s\n' "$1" "$2" > "$PROG" 2>/dev/null || true; }
+    if printf '%s' "$c" | grep -qE '^[A-Za-z0-9]+$'; then
+      # /dev/shm : tmpfs 1777 déjà utilisé pour le cache AD → lisible par www-data (la console).
+      find /dev/shm -maxdepth 1 -name 'pf-gpo-*.progress' -mmin +30 -delete 2>/dev/null || true
+      PROG="/dev/shm/pf-gpo-$c.progress"
+      prog 3 "Préparation…"; chmod 644 "$PROG" 2>/dev/null || true
+    fi
     case "$sub" in
       list)   exec "$ST" gpo listall ;;
       create) exec "$ST" gpo create "$a" -U "Administrator%${ADPASS}" ;;
@@ -87,23 +99,29 @@ PY
         # son GUID au lieu d'en créer une seconde. Sans cela, re-déployer une GPO du catalogue
         # (ex. corriger la stratégie de temps) laissait un DOUBLON : l'ancienne version,
         # incomplète et toujours liée, continuait de s'appliquer à côté de la nouvelle.
-        [ -f "$b" ] || { echo "ERROR: json absent" >&2; exit 2; }
+        prog 8 "Connexion au domaine…"
+        [ -f "$b" ] || { prog -1 "Fichier de stratégie manquant"; echo "ERROR: json absent" >&2; exit 2; }
+        prog 20 "Création de la stratégie…"
         guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$a" '
             /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
         if [ -z "$guid" ]; then
           guid=$("$ST" gpo create "$a" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
-          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+          [ -n "$guid" ] || { prog -1 "Création de la GPO échouée"; echo "ERROR: creation GPO echouee" >&2; exit 1; }
         fi
         # Écriture directe du Registry.pol sur le SYSVOL local (l'écriture SMB de
         # `gpo load` est refusée ; `gpo create` a déjà posé l'arborescence en local).
+        prog 45 "Écriture des paramètres…"
         python3 /usr/local/sbin/proxyfibre-gpo-apply "$guid" "$b" >/dev/null 2>&1 \
-          || { echo "ERROR: application des strategies echouee ($guid)" >&2; exit 1; }
+          || { prog -1 "Écriture des paramètres échouée"; echo "ERROR: application des strategies echouee ($guid)" >&2; exit 1; }
+        rm -f "$b" 2>/dev/null || true
+        prog 70 "Liaison au domaine…"
         realm=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
         dn=$(printf '%s' "$realm" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
         # Lien au domaine : posé seulement s'il n'existe pas déjà (re-déploiement).
         "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 \
           || echo "ATTENTION: GPO prete mais lien au domaine echoue"
+        prog 88 "Réparation des permissions…"
         echo "$guid deployee et liee au domaine"
         ;;
       appstore)
@@ -302,7 +320,9 @@ PY
     case "$sub" in
         list|create|sysvolreset|domainlinks) : ;;
         *) "$ST" ntacl sysvolreset >/dev/null 2>&1 || true ;;
-    esac ;;
+    esac
+    prog 100 "Terminé"
+    ;;
   bitlocker)
     ADPASS=$(sed -n 's/^AD_ADMIN_PASS="\{0,1\}\([^"]*\)"\{0,1\}/\1/p' /etc/proxyfibre/ad.env 2>/dev/null || true)
     case "$sub" in

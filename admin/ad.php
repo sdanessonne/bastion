@@ -42,6 +42,35 @@ try { foreach (pf_db()->query("SELECT k,v FROM pf_settings WHERE k IN ('ad_realm
 // ── Catalogue de GPO prêtes à déployer (stratégies registre) — voir inc/gpo-catalog.php ──
 $GPO_CATALOG = require __DIR__ . '/inc/gpo-catalog.php';
 
+// ── Jauge d'installation GPO : point de sondage (AJAX, lecture seule) ─────────
+// La console interroge cette route (?gpo_progress=<nonce>) pendant un déploiement lancé
+// en arrière-plan pour animer la barre. Le nonce nomme le fichier de progression écrit
+// par ad-ctl.sh. Aucun effet de bord, hormis vider le cache AD une fois le déploiement fini.
+if (isset($_GET['gpo_progress'])) {
+    header('Content-Type: application/json');
+    $nonce = preg_replace('/[^a-f0-9]/', '', (string) $_GET['gpo_progress']);
+    $pct = 0; $label = 'Préparation…'; $done = false; $ok = false; $msg = '';
+    if ($nonce !== '') {
+        $raw = @file_get_contents('/dev/shm/pf-gpo-' . $nonce . '.progress');
+        if (is_string($raw) && $raw !== '') {
+            $p = explode("\t", trim($raw));
+            $pct = (int) $p[0];
+            if (isset($p[1]) && $p[1] !== '') { $label = $p[1]; }
+        }
+        if ($pct >= 100)     { $done = true; $ok = true; }
+        elseif ($pct < 0)    { $done = true; $ok = false; $pct = 100; }
+        if ($done) {
+            $out = trim((string) @file_get_contents(sys_get_temp_dir() . '/pf-gpo-' . $nonce . '.out'));
+            $ls  = array_values(array_filter(array_map('trim', explode("\n", $out)), 'strlen'));
+            $msg = $ls ? end($ls) : '';
+            if ($ok && preg_match('/refuse|ERROR|Failed|Traceback|ATTENTION/i', $msg)) { $ok = false; }
+            ad_cache_clear();   // la nouvelle GPO doit apparaître au rechargement
+        }
+    }
+    echo json_encode(['pct' => max(0, min(100, $pct)), 'label' => $label, 'done' => $done, 'ok' => $ok, 'msg' => $msg]);
+    exit;
+}
+
 // ── Groupes intégrés d'Active Directory (créés automatiquement, non supprimables) et
 //    descriptions en clair pour les plus utiles. Tout groupe absent de cette liste est
 //    considéré comme un groupe MÉTIER créé par l'administration. ──
@@ -213,13 +242,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
         case 'gpo_deploy':
             $key = (string) ($_POST['tpl'] ?? '');
-            if (isset($GPO_CATALOG[$key])) {
-                $c = $GPO_CATALOG[$key];
-                $tmp = tempnam(sys_get_temp_dir(), 'gpo');
-                file_put_contents($tmp, json_encode($c['policies'], JSON_UNESCAPED_UNICODE));
-                $out = ad('gpo', 'deploy', 'Bastion — ' . $c['title'], $tmp);
-                @unlink($tmp);
-            } else { $out = 'ERROR: modèle inconnu.'; }
+            if (!isset($GPO_CATALOG[$key])) { $out = 'ERROR: modèle inconnu.'; break; }
+            $gc    = $GPO_CATALOG[$key];
+            $gname = 'Bastion — ' . $gc['title'];
+            $tmp   = tempnam(sys_get_temp_dir(), 'gpo');
+            file_put_contents($tmp, json_encode($gc['policies'], JSON_UNESCAPED_UNICODE));
+            if (($_POST['ajax'] ?? '') === '1') {
+                // Jauge d'installation : déploiement en ARRIÈRE-PLAN, la console suit
+                // l'avancement via ?gpo_progress=<nonce>. « setsid » détache le processus
+                // pour qu'il survive à la fin de la requête ; la sortie est captée dans
+                // /tmp pour être relue. NE PAS supprimer $tmp ici : le script le lit puis
+                // le supprime lui-même une fois les stratégies écrites.
+                $nonce = bin2hex(random_bytes(8));
+                $outf  = sys_get_temp_dir() . '/pf-gpo-' . $nonce . '.out';
+                @unlink($outf);
+                $inner = sprintf('sudo /usr/local/sbin/proxyfibre-ad gpo deploy %s %s %s',
+                    escapeshellarg($gname), escapeshellarg($tmp), escapeshellarg($nonce));
+                shell_exec(sprintf('setsid sh -c %s > %s 2>&1 & echo ok',
+                    escapeshellarg($inner), escapeshellarg($outf)));
+                audit('ad.gpo_deploy', $gname);
+                header('Content-Type: application/json');
+                echo json_encode(['nonce' => $nonce]);
+                exit;
+            }
+            // Repli sans JavaScript : déploiement bloquant classique.
+            $out = ad('gpo', 'deploy', $gname, $tmp);
+            @unlink($tmp);
             break;
         case 'gpo_unlink': $out = ad('gpo', 'unlink', (string) ($_POST['guid'] ?? '')); break;   // désactiver (délier)
         case 'gpo_link':   $out = ad('gpo', 'link',   (string) ($_POST['guid'] ?? '')); break;   // réactiver (relier)
@@ -1027,7 +1075,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
             <?php if ($isDep): ?>
               <span class="badge on">✓ Déployée</span>
             <?php else: ?>
-              <form method="post" onsubmit="return confirm('Déployer « <?= e($c['title']) ?> » sur tout le domaine ?')">
+              <form method="post" class="gpo-deploy-form" data-title="<?= e($c['title']) ?>">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_deploy">
                 <input type="hidden" name="tpl" value="<?= e($k) ?>">
                 <button class="btn-sm">⬇ Déployer</button>
@@ -1050,6 +1098,89 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
           });
           h.style.display=shown?'':'none';
         });
+      });
+    })();
+    </script>
+
+    <!-- Jauge d'installation d'une GPO du catalogue -->
+    <style>
+      .gpo-inst{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+        background:rgba(4,8,16,.72);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+      .gpo-inst[hidden]{display:none}
+      .gpo-inst-card{width:min(440px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:16px;
+        padding:1.7rem 1.6rem 1.35rem;text-align:center;box-shadow:0 30px 90px rgba(0,0,0,.55);
+        animation:gpoInstUp .4s cubic-bezier(.16,1,.3,1)}
+      @keyframes gpoInstUp{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
+      .gpo-inst-ico{font-size:2.3rem;line-height:1}
+      .gpo-inst-title{font-weight:700;font-size:1.12rem;margin:.5rem 0 .15rem;color:var(--text)}
+      .gpo-inst-name{color:var(--muted);font-size:.9rem;margin-bottom:1.15rem}
+      .gpo-inst-bar{height:12px;border-radius:8px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+      .gpo-inst-bar>span{display:block;height:100%;width:0;border-radius:8px;
+        background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .5s cubic-bezier(.4,0,.2,1)}
+      .gpo-inst.ok  .gpo-inst-bar>span{background:linear-gradient(90deg,#22c55e,#4ade80)}
+      .gpo-inst.err .gpo-inst-bar>span{background:linear-gradient(90deg,#ef4444,#f87171)}
+      .gpo-inst-step{margin-top:.75rem;font-size:.86rem;color:var(--muted)}
+      .gpo-inst-step b{color:var(--text);font-weight:600}
+      .gpo-inst-actions{margin-top:1.1rem}
+    </style>
+    <div id="gpo-inst" class="gpo-inst" hidden role="dialog" aria-live="polite" aria-label="Déploiement de la stratégie">
+      <div class="gpo-inst-card">
+        <div class="gpo-inst-ico">📋</div>
+        <div class="gpo-inst-title">Déploiement de la stratégie</div>
+        <div class="gpo-inst-name" id="gpo-inst-name">—</div>
+        <div class="gpo-inst-bar"><span id="gpo-inst-fill"></span></div>
+        <div class="gpo-inst-step"><b id="gpo-inst-pct">0 %</b> · <span id="gpo-inst-label">Préparation…</span></div>
+        <div class="gpo-inst-actions" id="gpo-inst-actions" hidden>
+          <button type="button" class="btn-sm" onclick="location.reload()">Fermer</button>
+        </div>
+      </div>
+    </div>
+    <script>
+    (function(){
+      var ov=document.getElementById('gpo-inst'); if(!ov) return;
+      var fill=document.getElementById('gpo-inst-fill'),  pctEl=document.getElementById('gpo-inst-pct'),
+          lblEl=document.getElementById('gpo-inst-label'), nameEl=document.getElementById('gpo-inst-name'),
+          acts=document.getElementById('gpo-inst-actions'),
+          icoEl=ov.querySelector('.gpo-inst-ico'), titleEl=ov.querySelector('.gpo-inst-title');
+      var timer=null, shownPct=0;
+      function setPct(p){ p=Math.max(0,Math.min(100,p)); shownPct=p; fill.style.width=p+'%'; pctEl.textContent=Math.round(p)+' %'; }
+      function stop(){ if(timer){clearInterval(timer);timer=null;} }
+      function show(name){ ov.className='gpo-inst'; icoEl.textContent='📋'; titleEl.textContent='Déploiement de la stratégie';
+        nameEl.textContent='« '+name+' »'; lblEl.textContent='Préparation…'; acts.hidden=true; setPct(0); ov.hidden=false; }
+      function fail(msg){ stop(); ov.classList.add('err'); icoEl.textContent='⛔';
+        titleEl.textContent='Échec du déploiement'; setPct(100); lblEl.textContent=msg||'Une erreur est survenue.'; acts.hidden=false; }
+      function succeed(){ stop(); ov.classList.add('ok'); icoEl.textContent='✅';
+        titleEl.textContent='Stratégie déployée'; setPct(100);
+        lblEl.textContent='Terminé — appliquée aux postes au prochain gpupdate.';
+        setTimeout(function(){ location.reload(); }, 1200); }
+      window.startGpoDeploy=function(form, title){
+        show(title);
+        var fd=new FormData(form); fd.append('ajax','1');
+        fetch(location.pathname, {method:'POST', body:fd, headers:{'X-Requested-With':'fetch'}})
+          .then(function(r){ return r.json(); })
+          .then(function(j){
+            if(!j || !j.nonce){ fail('Lancement du déploiement impossible.'); return; }
+            var nonce=j.nonce, misses=0;
+            timer=setInterval(function(){
+              fetch('ad.php?gpo_progress='+encodeURIComponent(nonce), {headers:{'X-Requested-With':'fetch'}})
+                .then(function(r){ return r.json(); })
+                .then(function(p){
+                  misses=0;
+                  if(typeof p.pct==='number' && p.pct>shownPct) setPct(p.pct);
+                  if(p.label) lblEl.textContent=p.label;
+                  if(p.done){ if(p.ok) succeed(); else fail(p.msg||'Le déploiement a échoué.'); }
+                })
+                .catch(function(){ if(++misses>12) fail('Perte de contact avec la passerelle.'); });
+            }, 600);
+          })
+          .catch(function(){ fail('Lancement du déploiement impossible (réseau).'); });
+      };
+      document.addEventListener('submit', function(ev){
+        var f=ev.target;
+        if(!f.classList || !f.classList.contains('gpo-deploy-form')) return;
+        ev.preventDefault();
+        var title=f.getAttribute('data-title')||'la stratégie';
+        if(confirm('Déployer « '+title+' » sur tout le domaine ?')) window.startGpoDeploy(f, title);
       });
     })();
     </script>
