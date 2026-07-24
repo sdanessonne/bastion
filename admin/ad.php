@@ -33,6 +33,14 @@ $di = $dcUp ? ad_cache('domaininfo', 300, 'domaininfo') : '';
 preg_match('/realm=(.+)/', $di, $mr);    $curRealm = trim($mr[1] ?? '') ?: 'BASTION.LOCAL';
 preg_match('/workgroup=(.+)/', $di, $mw); $curWg    = trim($mw[1] ?? '') ?: 'BASTION';
 $baseDN = 'DC=' . implode(',DC=', explode('.', strtolower($curRealm)));
+// FQDN du CONTRÔLEUR DE DOMAINE : un partage ordinaire s'atteint par le nom de SERVEUR, jamais
+// par le nom de domaine (\\domaine\Partage n'est pas une racine DFS → « Élément introuvable »).
+$curDc = '';
+if (preg_match('/dcfqdn=(\S+)/', $di, $md)) { $curDc = strtolower(trim($md[1])); }
+if ($curDc === '' || $curDc[0] === '.') {
+    $nb = trim((string) shell_exec("testparm -s --parameter-name='netbios name' 2>/dev/null")) ?: 'dc';
+    $curDc = strtolower($nb) . '.' . strtolower($curRealm);
+}
 $wantRealm = $curRealm; $wantDom = $curWg;
 try { foreach (pf_db()->query("SELECT k,v FROM pf_settings WHERE k IN ('ad_realm','ad_domain')") as $r) {
     if ($r['k'] === 'ad_realm'  && $r['v'] !== '') { $wantRealm = $r['v']; }
@@ -895,8 +903,9 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
     </form>
   </div>
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0">Connecte automatiquement des lecteurs réseau à l'ouverture
-  de session des agents (par GPO). Les chemins pointent vers les partages, ex.
-  <code>\\<?= e($curRealm) ?>\Commun</code>.</p>
+  de session des agents (par GPO). Les chemins pointent vers les partages par le <strong>nom du serveur</strong>, ex.
+  <code>\\<?= e($curDc) ?>\Commun</code> (et non <code>\\<?= e(strtolower($curRealm)) ?>\Commun</code> : un partage
+  ordinaire n'est pas dans l'espace DFS du domaine → « Élément introuvable »).</p>
   <div class="ad-help" style="margin:0 1.2rem .8rem;padding:.7rem .9rem;background:rgba(56,189,248,.06);border-radius:8px">
     <strong>Un poste affiche « Windows a tenté en vain de lire gpt.ini » ?</strong>
     Les permissions du SYSVOL sont désynchronisées (fréquent après création de GPO sur Samba).
@@ -935,8 +944,8 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
       <select name="letter" id="driveLetter" style="max-width:90px;padding:.55rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
         <?php foreach (str_split('ZYXWVUTSPNMLKJHGF') as $L): ?><option><?= $L ?></option><?php endforeach; ?>
       </select>
-      <input type="text" name="path" id="drivePath" required placeholder="\\<?= e($curRealm) ?>\Commun" list="sharelist" style="min-width:220px">
-      <datalist id="sharelist"><?php foreach ($shares as $sh): ?><option value="\\<?= e($curRealm) ?>\<?= e($sh['name']) ?>"><?php endforeach; ?></datalist>
+      <input type="text" name="path" id="drivePath" required placeholder="\\<?= e($curDc) ?>\Commun" list="sharelist" style="min-width:220px">
+      <datalist id="sharelist"><?php foreach ($shares as $sh): ?><option value="\\<?= e($curDc) ?>\<?= e($sh['name']) ?>"><?php endforeach; ?></datalist>
       <input type="text" name="label" id="driveLabel" placeholder="Étiquette (ex. Commun)" style="max-width:200px">
       <button class="btn-sm" id="driveSubmit">+ Ajouter</button>
       <button type="button" class="btn-sm" id="driveCancel" style="display:none" onclick="pfDriveReset()">Annuler</button>

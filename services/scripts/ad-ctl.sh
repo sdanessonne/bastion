@@ -470,8 +470,13 @@ PY
     printf 'dc=%s\n' "$(systemctl is-active samba-ad-dc 2>/dev/null)"
     "$ST" domain info 127.0.0.1 2>/dev/null || true ;;
   domaininfo)
-    printf 'realm=%s\n'     "$(testparm -s --parameter-name=realm 2>/dev/null || true)"
-    printf 'workgroup=%s\n' "$(testparm -s --parameter-name=workgroup 2>/dev/null || true)" ;;
+    _rl="$(testparm -s --parameter-name=realm 2>/dev/null || true)"
+    _nb="$(testparm -s --parameter-name='netbios name' 2>/dev/null || true)"
+    printf 'realm=%s\n'     "$_rl"
+    printf 'workgroup=%s\n' "$(testparm -s --parameter-name=workgroup 2>/dev/null || true)"
+    printf 'netbios=%s\n'   "$_nb"
+    # FQDN du DC : les partages ordinaires s'atteignent par le NOM DE SERVEUR, pas le nom de domaine.
+    printf 'dcfqdn=%s\n'    "$(printf '%s.%s' "$_nb" "$_rl" | tr 'A-Z' 'a-z')" ;;
   authlog)
     # Authentifications réussies : poste (workstation) TAB utilisateur TAB IP TAB horodatage.
     f=/var/log/samba/auth_audit.log

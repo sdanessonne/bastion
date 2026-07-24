@@ -53,6 +53,28 @@ def reliability_pol():
             _reg_entry(key, 'NoBackgroundPolicy', 4, struct.pack('<I', 0)))
     return b'PReg' + struct.pack('<I', 1) + body
 
+def dc_fqdn(realm):
+    """Nom de SERVEUR du contrôleur de domaine (netbios.realm). Un partage ordinaire n'est PAS
+    dans l'espace de noms DFS du domaine : \\\\domaine\\Partage renvoie « Élément introuvable ».
+    Il faut le nom du SERVEUR — d'où cette résolution du FQDN du DC."""
+    nb = subprocess.run(['testparm', '-s', '--parameter-name=netbios name'],
+                        capture_output=True, text=True).stdout.strip() or 'dc'
+    return (nb + '.' + realm).lower()
+
+def normalize_unc(path, realm, dc):
+    """Réécrit \\\\<nom-de-domaine>\\Partage en \\\\<nom-de-serveur>\\Partage. Le nom de domaine
+    ne dessert que SYSVOL/NETLOGON (racines DFS) ; un partage ordinaire atteint par le nom de
+    domaine échoue « Élément introuvable » / « Fonction incorrecte » côté Drive Maps."""
+    if not path.startswith('\\\\'):
+        return path
+    rest = path[2:]
+    i = rest.find('\\')
+    host = rest if i < 0 else rest[:i]
+    tail = '' if i < 0 else rest[i:]
+    if host.lower() == realm.lower():
+        host = dc
+    return '\\\\' + host + tail
+
 def drives_xml(drives, when):
     body = ['<?xml version="1.0" encoding="utf-8"?>',
             '<Drives clsid="{8FDDCC1A-0C3C-43cd-A6B4-71A6DF20DA8C}">']
@@ -79,6 +101,10 @@ def main():
     when = sys.argv[3] if len(sys.argv) > 3 else datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     realm = subprocess.run(['testparm', '-s', '--parameter-name=realm'], capture_output=True, text=True).stdout.strip().lower()
+    # Réécriture nom-de-domaine -> nom-de-serveur pour chaque chemin UNC (voir normalize_unc).
+    dc = dc_fqdn(realm)
+    for _d in drives:
+        _d['path'] = normalize_unc(_d.get('path', ''), realm, dc)
     base_dn = ','.join('DC=' + p for p in realm.split('.'))
     sysvol = '/var/lib/samba/sysvol/%s/Policies/%s' % (realm, guid)
     sam = '/var/lib/samba/private/sam.ldb'
