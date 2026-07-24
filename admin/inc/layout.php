@@ -20,6 +20,7 @@ function pf_header(string $title, string $active = ''): void {
             'groups.php'    => ['Groupes & quotas', '⚙'],
             'filter.php'    => ['Filtrage', '⛔'],
             'antivirus.php' => ['Antivirus', '🛡️'],
+            'visiteurs.php' => ['Accès visiteur', '🎟️'],
         ],
         'Réseau & postes' => [
             'ad.php'   => ['Active Directory', '🗄️'],

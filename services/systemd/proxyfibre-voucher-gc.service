@@ -1,0 +1,7 @@
+[Unit]
+Description=Bastion - nettoyage des bons visiteur arrives a echeance
+After=mariadb.service opennds.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proxyfibre-voucher-gc
