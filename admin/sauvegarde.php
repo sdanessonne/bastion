@@ -99,6 +99,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (function_exists('audit')) { audit('backup.usb_export', $ok ? $dev : 'echec'); }
             $flash = [$ok ? 'Sauvegarde copiée sur la clé USB (' . $dev . ').' : 'Échec de l\'export : ' . $r, $ok ? 'ok' : 'err'];
         }
+    } elseif ($do === 'offsite_set') {
+        $host  = trim((string) ($_POST['host'] ?? ''));
+        $share = trim((string) ($_POST['share'] ?? ''));
+        $ouser = trim((string) ($_POST['ouser'] ?? ''));
+        $opass = (string) ($_POST['opass'] ?? '');
+        $sub   = trim((string) ($_POST['subdir'] ?? 'Bastion')) ?: 'Bastion';
+        if ($host === '' || $share === '' || $ouser === '' || $opass === '') {
+            $flash = ['Renseignez l\'hôte, le partage, l\'utilisateur et le mot de passe.', 'err'];
+        } else {
+            $r = trim(bk('offsite', 'set', $host, $share, $ouser, $opass, $sub));
+            if (function_exists('audit')) { audit('backup.offsite.set', $host . '/' . $share); }   // jamais le mot de passe
+            $flash = [$r === 'enregistre' ? 'Destination hors-site enregistrée.' : 'Échec : ' . $r, $r === 'enregistre' ? 'ok' : 'err'];
+        }
+    } elseif ($do === 'offsite_off') {
+        bk('offsite', 'off');
+        if (function_exists('audit')) { audit('backup.offsite.off'); }
+        $flash = ['Destination hors-site supprimée.', 'ok'];
+    } elseif ($do === 'offsite_test') {
+        $r  = trim(bk('offsite', 'test'));
+        $ok = strpos($r, 'ok:') === 0;
+        $flash = [$ok ? 'Partage joignable ✔' : 'Test échoué : ' . $r, $ok ? 'ok' : 'err'];
+    } elseif ($do === 'offsite_push') {
+        $r  = trim(bk('offsite', 'push'));
+        $ok = strpos($r, 'envoye:') === 0;
+        if (function_exists('audit')) { audit('backup.offsite.push', $ok ? 'ok' : 'echec'); }
+        $flash = [$ok ? 'Sauvegarde envoyée hors-site ✔' : 'Envoi échoué : ' . $r, $ok ? 'ok' : 'err'];
+    } elseif ($do === 'offsite_auto') {
+        $sub = ($_POST['sub'] ?? '') === 'on' ? 'on' : 'off';
+        bk('offsite', 'auto', $sub);
+        $flash = ['Envoi automatique ' . ($sub === 'on' ? 'activé' : 'désactivé') . '.', 'ok'];
     }
 }
 // État du chiffrement.
@@ -125,6 +155,10 @@ $fmt = function ($n) { $u = ['o','Ko','Mo','Go']; $i = 0; while ($n >= 1024 && $
 $auto = bk_parse(bk('auto', 'status'));
 $autoOn = ($auto['enabled'] ?? '') === 'enabled';
 $autoNext = trim((string) ($auto['next'] ?? ''));   // déjà mis en forme par le script
+
+// État de la sauvegarde hors-site (partage SMB).
+$off   = bk_parse(bk('offsite', 'status'));
+$offOn = ($off['configured'] ?? '') === 'yes';
 
 pf_header('Sauvegarde', 'sauvegarde.php');
 if ($flash) { pf_flash($flash[0], $flash[1]); }
@@ -177,6 +211,47 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <input type="checkbox" id="autotoggle" <?= $autoOn ? 'checked' : '' ?>>
       <span class="slider"></span>
     </label>
+  </div>
+</section>
+
+<!-- ── Sauvegarde hors-site (partage SMB) ── -->
+<section class="panel">
+  <div class="panel-head"><h2>🌐 Sauvegarde hors-site</h2>
+    <span class="badge <?= $offOn ? 'on' : 'off' ?>"><?= $offOn ? 'Configurée' : 'Non configurée' ?></span></div>
+  <div style="padding:1.1rem 1.2rem">
+    <p class="muted small" style="margin:0 0 .9rem">Copie de la dernière sauvegarde (<strong>déjà chiffrée</strong>) vers un
+    <strong>partage réseau SMB</strong> — NAS ou 2ᵉ passerelle. Une panne matérielle de la passerelle ne fait alors plus
+    tout perdre. <strong>Reste sur votre réseau</strong> : aucune donnée n'est envoyée sur Internet.</p>
+    <?php if ($offOn): ?>
+      <p class="small" style="margin:0 0 .7rem">Destination : <code>\\<?= e($off['host'] ?? '') ?>\<?= e($off['share'] ?? '') ?>\<?= e($off['subdir'] ?: 'Bastion') ?></code>
+        (utilisateur <code><?= e($off['user'] ?? '') ?></code>).
+        <?php if (!empty($off['last_status'])): ?><br>Dernier envoi :
+          <?php if ($off['last_status'] === 'ok'): ?><span class="badge on">réussi</span> le <?= e($off['last_at'] ?? '') ?> — <code><?= e($off['last_file'] ?? '') ?></code>
+          <?php else: ?><span class="badge off">échec</span> le <?= e($off['last_at'] ?? '') ?><?php endif; ?>
+        <?php endif; ?></p>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <form method="post" style="margin:0"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="offsite_test"><button class="btn-sm">🔌 Tester la connexion</button></form>
+        <form method="post" style="margin:0"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="offsite_push"><button class="btn-sm">⬆️ Envoyer maintenant</button></form>
+        <form method="post" style="margin:0"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="offsite_auto"><input type="hidden" name="sub" value="<?= ($off['auto'] ?? '1') === '1' ? 'off' : 'on' ?>"><button class="btn-sm"><?= ($off['auto'] ?? '1') === '1' ? '⏸ Désactiver l\'envoi auto' : '▶️ Activer l\'envoi auto' ?></button></form>
+        <form method="post" style="margin:0" onsubmit="return confirm('Retirer la destination hors-site ?')"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="offsite_off"><button class="btn-sm btn-danger">Retirer</button></form>
+      </div>
+      <?php if (($off['auto'] ?? '1') === '1'): ?><p class="muted small" style="margin:.7rem 0 0">✅ Envoi automatique après chaque sauvegarde planifiée.</p><?php endif; ?>
+    <?php else: ?>
+      <form method="post" style="display:grid;gap:.6rem;max-width:540px">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="offsite_set">
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+          <label style="flex:1 1 200px">Hôte (IP ou nom)<input type="text" name="host" required placeholder="192.168.10.5"></label>
+          <label style="flex:1 1 140px">Partage<input type="text" name="share" required placeholder="Sauvegardes"></label>
+        </div>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+          <label style="flex:1 1 150px">Utilisateur<input type="text" name="ouser" required autocomplete="off"></label>
+          <label style="flex:1 1 150px">Mot de passe<input type="password" name="opass" required autocomplete="new-password"></label>
+          <label style="flex:1 1 120px">Sous-dossier<input type="text" name="subdir" value="Bastion"></label>
+        </div>
+        <div><button class="btn">💾 Enregistrer la destination</button></div>
+      </form>
+      <p class="muted small" style="margin:.6rem 0 0">Le mot de passe est conservé sur la passerelle en <strong>accès root strict</strong> (fichier 600) et n'apparaît jamais dans les journaux.</p>
+    <?php endif; ?>
   </div>
 </section>
 

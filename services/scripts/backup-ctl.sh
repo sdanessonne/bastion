@@ -252,6 +252,73 @@ case "$action" in
       *) echo "usage: usb list | export <device>" >&2; exit 2 ;;
     esac ;;
 
+  offsite)
+    # Copie HORS-SITE de la dernière sauvegarde (déjà chiffrée) vers un partage réseau SMB
+    # — NAS ou 2e passerelle — via smbclient (aucun montage). Reste ON-PREM : rien dans le cloud.
+    # Une panne matérielle de la passerelle ne fait alors plus tout perdre.
+    OENV=/etc/proxyfibre/offsite.env
+    STATE=/etc/proxyfibre/offsite.state
+    oget() { sed -n "s/^$1=//p" "$OENV" 2>/dev/null | head -1; }
+    case "$arg" in
+      set)
+        h="${3:-}"; shr="${4:-}"; us="${5:-}"; pw="${6:-}"; sub="${7:-Bastion}"
+        [ -n "$h" ] && [ -n "$shr" ] && [ -n "$us" ] || { echo "usage: offsite set <hote> <partage> <user> <pass> [sous-dossier]" >&2; exit 2; }
+        mkdir -p /etc/proxyfibre; umask 077
+        { printf 'OFFSITE_HOST=%s\n'   "$h"
+          printf 'OFFSITE_SHARE=%s\n'  "$shr"
+          printf 'OFFSITE_USER=%s\n'   "$us"
+          printf 'OFFSITE_PASS=%s\n'   "$pw"
+          printf 'OFFSITE_SUBDIR=%s\n' "$sub"
+          printf 'OFFSITE_AUTO=1\n'; } > "$OENV"
+        chmod 600 "$OENV"; chown root:root "$OENV" 2>/dev/null || true
+        echo "enregistre" ;;
+      off)  rm -f "$OENV" "$STATE"; echo "desactive" ;;
+      auto)
+        [ -f "$OENV" ] || { echo "aucune destination" >&2; exit 2; }
+        case "${3:-}" in
+          on)  sed -i 's/^OFFSITE_AUTO=.*/OFFSITE_AUTO=1/' "$OENV"; grep -q '^OFFSITE_AUTO=' "$OENV" || echo 'OFFSITE_AUTO=1' >> "$OENV"; echo "on" ;;
+          off) sed -i 's/^OFFSITE_AUTO=.*/OFFSITE_AUTO=0/' "$OENV"; grep -q '^OFFSITE_AUTO=' "$OENV" || echo 'OFFSITE_AUTO=0' >> "$OENV"; echo "off" ;;
+          *) echo "usage: offsite auto on|off" >&2; exit 2 ;;
+        esac ;;
+      status)
+        if [ -f "$OENV" ]; then
+          echo "configured=yes"
+          echo "host=$(oget OFFSITE_HOST)"
+          echo "share=$(oget OFFSITE_SHARE)"
+          echo "user=$(oget OFFSITE_USER)"
+          echo "subdir=$(oget OFFSITE_SUBDIR)"
+          echo "auto=$(oget OFFSITE_AUTO)"
+          [ -f "$STATE" ] && cat "$STATE"
+        else
+          echo "configured=no"
+        fi ;;
+      test|push)
+        [ -f "$OENV" ] || { echo "aucune destination configuree" >&2; exit 2; }
+        H=$(oget OFFSITE_HOST); SH=$(oget OFFSITE_SHARE); U=$(oget OFFSITE_USER)
+        P=$(oget OFFSITE_PASS); SUB=$(oget OFFSITE_SUBDIR); [ -n "$SUB" ] || SUB=Bastion
+        # Fichier d'authentification temporaire : le mot de passe n'apparaît PAS dans argv/ps,
+        # et un « % » ou une espace dans le mot de passe ne casse plus l'appel.
+        af=$(mktemp); chmod 600 "$af"
+        printf 'username = %s\npassword = %s\n' "$U" "$P" > "$af"
+        if [ "$arg" = "test" ]; then
+          if smbclient "//$H/$SH" -A "$af" -c 'ls' >/dev/null 2>&1; then rc=0; msg="ok: partage joignable"; else rc=1; msg="ECHEC: partage injoignable ou identifiants invalides"; fi
+          rm -f "$af"; [ "$rc" = 0 ] && echo "$msg" || { echo "$msg" >&2; exit 1; }
+        else
+          bk=$(ls -1t "$DIR"/bastion-*.tar.gz.gpg "$DIR"/bastion-*.tar.gz 2>/dev/null | head -1)
+          [ -f "$bk" ] || { rm -f "$af"; echo "aucune sauvegarde a envoyer" >&2; exit 2; }
+          smbclient "//$H/$SH" -A "$af" -c "mkdir \"$SUB\"" >/dev/null 2>&1 || true
+          when=$(date '+%Y-%m-%d %H:%M:%S')
+          if smbclient "//$H/$SH" -A "$af" -c "cd \"$SUB\"; put \"$bk\" \"$(basename "$bk")\"" >/dev/null 2>&1; then
+            printf 'last_status=ok\nlast_file=%s\nlast_at=%s\n' "$(basename "$bk")" "$when" > "$STATE"; chmod 600 "$STATE"
+            rm -f "$af"; echo "envoye: $(basename "$bk") vers //$H/$SH/$SUB"
+          else
+            printf 'last_status=fail\nlast_at=%s\n' "$when" > "$STATE"; chmod 600 "$STATE"
+            rm -f "$af"; echo "ECHEC de l'envoi vers //$H/$SH" >&2; exit 1
+          fi
+        fi ;;
+      *) echo "usage: offsite set|off|auto <on|off>|status|test|push" >&2; exit 2 ;;
+    esac ;;
+
   key)
     # Phrase secrète de chiffrement des sauvegardes (AES-256 via gpg).
     case "$arg" in
@@ -276,7 +343,10 @@ case "$action" in
     case "$arg" in
       enable)  systemctl enable --now proxyfibre-backup.timer >/dev/null 2>&1 && echo "active" || echo "echec" ;;
       disable) systemctl disable --now proxyfibre-backup.timer >/dev/null 2>&1 && echo "desactive" || echo "echec" ;;
-      run)     do_create >/dev/null; "$0" prune 8 >/dev/null; echo "ok" ;;
+      run)     do_create >/dev/null; "$0" prune 8 >/dev/null
+               # Poussée hors-site auto après la sauvegarde planifiée (si activée).
+               [ "$(sed -n 's/^OFFSITE_AUTO=//p' /etc/proxyfibre/offsite.env 2>/dev/null)" = "1" ] && "$0" offsite push >/dev/null 2>&1 || true
+               echo "ok" ;;
       status)
         en=$(systemctl is-enabled proxyfibre-backup.timer 2>/dev/null || true); [ -n "$en" ] || en=disabled
         ac=$(systemctl is-active  proxyfibre-backup.timer 2>/dev/null || true); [ -n "$ac" ] || ac=inactive
