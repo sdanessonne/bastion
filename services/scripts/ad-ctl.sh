@@ -532,31 +532,40 @@ PY
 
         adm=$(share_tok "Domain Admins")      # injecté ICI, jamais depuis la console : garantit
         vu=""; wl=""; roval=no                 # qu'un partage ne devienne jamais inadministrable.
+        # Découpage sur la VIRGULE uniquement : un nom de groupe contient souvent des espaces
+        # (« Domain Users », « SALLE INFORMATIQUE ») — un découpage par défaut le casserait en deux.
+        _oifs=$IFS
         if [ "$b" = "*" ] && [ -z "$c" ]; then
           roval=yes; wl="$adm"                                   # tous : lecture seule
         elif [ -n "$b" ] || [ -n "$c" ]; then
           roval=yes; vu="$adm"; wl="$adm"                        # groupes désignés
-          for g in $(printf '%s' "$b" | tr ',' ' '); do
+          IFS=','
+          for g in $b; do
             g=$(printf '%s' "$g" | tr -cd 'A-Za-z0-9 ._-'); [ -n "$g" ] || continue
             vu="$vu, $(share_tok "$g")"
           done
-          for g in $(printf '%s' "$c" | tr ',' ' '); do
+          for g in $c; do
             g=$(printf '%s' "$g" | tr -cd 'A-Za-z0-9 ._-'); [ -n "$g" ] || continue
             # Tout groupe en écriture doit AUSSI être dans valid users (valid users prime).
             vu="$vu, $(share_tok "$g")"; wl="$wl, $(share_tok "$g")"
           done
+          IFS=$_oifs
         fi
 
         cp -f "$SHFILE" "$SHFILE.bak-acl" 2>/dev/null || true
         # Réécrit la section visée : purge les directives de droits puis réinjecte le bloc canonique.
         # Toutes les autres lignes (path, comment, dfree command…) sont recopiées telles quelles.
-        awk -v s="[$name]" -v ro="$roval" -v vu="$vu" -v wl="$wl" -v masks="$SH_MASKS" '
-          function emit(){
+        # Les listes transitent par l'ENVIRONNEMENT et non par « awk -v » : ce dernier interprète
+        # les séquences d'échappement et mangerait l'antislash de « BASTION\Groupe ».
+        SH_RO="$roval" SH_VU="$vu" SH_WL="$wl" SH_MK="$SH_MASKS" \
+        awk -v s="[$name]" '
+          function emit(  ro, vu, wl) {
+            ro = ENVIRON["SH_RO"]; vu = ENVIRON["SH_VU"]; wl = ENVIRON["SH_WL"]
             print "   read only = " ro
             if (vu != "") print "   valid users = " vu
             if (wl != "") print "   write list = " wl
             if (vu != "") print "   access based share enum = yes"
-            print masks
+            print ENVIRON["SH_MK"]
           }
           $0==s { print; insec=1; next }
           insec && /^[[:space:]]*\[/ { emit(); insec=0 }
