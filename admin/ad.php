@@ -1121,6 +1121,8 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
       .gpo-inst.err .gpo-inst-bar>span{background:linear-gradient(90deg,#ef4444,#f87171)}
       .gpo-inst-step{margin-top:.75rem;font-size:.86rem;color:var(--muted)}
       .gpo-inst-step b{color:var(--text);font-weight:600}
+      .gpo-inst-note{margin-top:.5rem;font-size:.78rem;color:var(--muted);opacity:.85;line-height:1.4}
+      .gpo-inst-note[hidden]{display:none}
       .gpo-inst-actions{margin-top:1.1rem}
     </style>
     <div id="gpo-inst" class="gpo-inst" hidden role="dialog" aria-live="polite" aria-label="Déploiement de la stratégie">
@@ -1130,6 +1132,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
         <div class="gpo-inst-name" id="gpo-inst-name">—</div>
         <div class="gpo-inst-bar"><span id="gpo-inst-fill"></span></div>
         <div class="gpo-inst-step"><b id="gpo-inst-pct">0 %</b> · <span id="gpo-inst-label">Préparation…</span></div>
+        <div class="gpo-inst-note" id="gpo-inst-note" hidden>Réalignement des permissions du SYSVOL — cette étape peut durer jusqu'à une minute.</div>
         <div class="gpo-inst-actions" id="gpo-inst-actions" hidden>
           <button type="button" class="btn-sm" onclick="location.reload()">Fermer</button>
         </div>
@@ -1140,37 +1143,43 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
       var ov=document.getElementById('gpo-inst'); if(!ov) return;
       var fill=document.getElementById('gpo-inst-fill'),  pctEl=document.getElementById('gpo-inst-pct'),
           lblEl=document.getElementById('gpo-inst-label'), nameEl=document.getElementById('gpo-inst-name'),
-          acts=document.getElementById('gpo-inst-actions'),
+          acts=document.getElementById('gpo-inst-actions'), note=document.getElementById('gpo-inst-note'),
           icoEl=ov.querySelector('.gpo-inst-ico'), titleEl=ov.querySelector('.gpo-inst-title');
-      var timer=null, shownPct=0;
-      function setPct(p){ p=Math.max(0,Math.min(100,p)); shownPct=p; fill.style.width=p+'%'; pctEl.textContent=Math.round(p)+' %'; }
-      function stop(){ if(timer){clearInterval(timer);timer=null;} }
+      var poll=null, creep=null, shownPct=0, serverPct=0, t0=0;
+      var CAP=97;   // plafond de l'avance douce ; le 100 % est réservé à la vraie fin
+      function paint(){ var p=Math.max(0,Math.min(100,shownPct)); fill.style.width=p+'%'; pctEl.textContent=Math.round(p)+' %'; }
+      function stop(){ if(poll){clearInterval(poll);poll=null;} if(creep){clearInterval(creep);creep=null;} }
       function show(name){ ov.className='gpo-inst'; icoEl.textContent='📋'; titleEl.textContent='Déploiement de la stratégie';
-        nameEl.textContent='« '+name+' »'; lblEl.textContent='Préparation…'; acts.hidden=true; setPct(0); ov.hidden=false; }
-      function fail(msg){ stop(); ov.classList.add('err'); icoEl.textContent='⛔';
-        titleEl.textContent='Échec du déploiement'; setPct(100); lblEl.textContent=msg||'Une erreur est survenue.'; acts.hidden=false; }
-      function succeed(){ stop(); ov.classList.add('ok'); icoEl.textContent='✅';
-        titleEl.textContent='Stratégie déployée'; setPct(100);
-        lblEl.textContent='Terminé — appliquée aux postes au prochain gpupdate.';
+        nameEl.textContent='« '+name+' »'; lblEl.textContent='Préparation…'; note.hidden=true; acts.hidden=true;
+        shownPct=0; serverPct=0; paint(); ov.hidden=false; }
+      function fail(msg){ stop(); ov.classList.add('err'); icoEl.textContent='⛔'; titleEl.textContent='Échec du déploiement';
+        note.hidden=true; shownPct=100; paint(); lblEl.textContent=msg||'Une erreur est survenue.'; acts.hidden=false; }
+      function succeed(){ stop(); ov.classList.add('ok'); icoEl.textContent='✅'; titleEl.textContent='Stratégie déployée';
+        note.hidden=true; shownPct=100; paint(); lblEl.textContent='Terminé — appliquée aux postes au prochain gpupdate.';
         setTimeout(function(){ location.reload(); }, 1200); }
       window.startGpoDeploy=function(form, title){
-        show(title);
+        show(title); t0=Date.now();
+        // Avance douce : la barre glisse vers CAP tant que le serveur travaille — garde la
+        // jauge vivante pendant la longue réparation SYSVOL (~40 s), sans jamais atteindre 100.
+        creep=setInterval(function(){ if(shownPct<CAP){ shownPct += (CAP-shownPct)*0.02; paint(); } }, 250);
         var fd=new FormData(form); fd.append('ajax','1');
         fetch(location.pathname, {method:'POST', body:fd, headers:{'X-Requested-With':'fetch'}})
           .then(function(r){ return r.json(); })
           .then(function(j){
             if(!j || !j.nonce){ fail('Lancement du déploiement impossible.'); return; }
             var nonce=j.nonce, misses=0;
-            timer=setInterval(function(){
+            poll=setInterval(function(){
               fetch('ad.php?gpo_progress='+encodeURIComponent(nonce), {headers:{'X-Requested-With':'fetch'}})
                 .then(function(r){ return r.json(); })
                 .then(function(p){
                   misses=0;
-                  if(typeof p.pct==='number' && p.pct>shownPct) setPct(p.pct);
+                  if(typeof p.pct==='number'){ serverPct=p.pct; if(p.pct>shownPct){ shownPct=p.pct; paint(); } }
                   if(p.label) lblEl.textContent=p.label;
+                  // Note rassurante pendant l'étape SYSVOL (serveur figé à 65 % le temps du réalignement).
+                  note.hidden = !((Date.now()-t0)>8000 && serverPct>=60 && serverPct<100);
                   if(p.done){ if(p.ok) succeed(); else fail(p.msg||'Le déploiement a échoué.'); }
                 })
-                .catch(function(){ if(++misses>12) fail('Perte de contact avec la passerelle.'); });
+                .catch(function(){ if(++misses>15) fail('Perte de contact avec la passerelle.'); });
             }, 600);
           })
           .catch(function(){ fail('Lancement du déploiement impossible (réseau).'); });

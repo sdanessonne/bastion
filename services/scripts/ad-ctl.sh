@@ -110,18 +110,18 @@ PY
         fi
         # Écriture directe du Registry.pol sur le SYSVOL local (l'écriture SMB de
         # `gpo load` est refusée ; `gpo create` a déjà posé l'arborescence en local).
-        prog 45 "Écriture des paramètres…"
+        prog 40 "Écriture des paramètres…"
         python3 /usr/local/sbin/proxyfibre-gpo-apply "$guid" "$b" >/dev/null 2>&1 \
           || { prog -1 "Écriture des paramètres échouée"; echo "ERROR: application des strategies echouee ($guid)" >&2; exit 1; }
         rm -f "$b" 2>/dev/null || true
-        prog 70 "Liaison au domaine…"
+        prog 55 "Liaison au domaine…"
         realm=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
         dn=$(printf '%s' "$realm" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
         # Lien au domaine : posé seulement s'il n'existe pas déjà (re-déploiement).
         "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 \
           || echo "ATTENTION: GPO prete mais lien au domaine echoue"
-        prog 88 "Réparation des permissions…"
+        prog 65 "Réparation des permissions SYSVOL…"
         echo "$guid deployee et liee au domaine"
         ;;
       appstore)
