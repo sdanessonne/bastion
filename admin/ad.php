@@ -904,12 +904,11 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
         <label style="display:block;margin:.4rem 0;font-size:.85rem">
           <input type="checkbox" name="monter" value="1">
           Faire passer les postes <strong>Professionnel</strong> en <strong>Entreprise</strong></label>
-        <button class="btn">⚡ Activer automatiquement</button>
+        <button class="btn"><?= $kmsGpo ? '🔄 Redéployer' : '⚡ Activer automatiquement' ?></button>
         <p class="muted small" style="margin:.4rem 0 0;max-width:52ch">La montée d'édition ne réinstalle rien :
         elle applique une clé, puis le poste s'active sur le serveur KMS local. Elle suppose que vous
         <strong>déteniez les droits Entreprise</strong> (contrat en volume) — c'est une question de licence.</p>
       </form>
-      <?php endif; ?>
     </div>
   </div>
 </section>
