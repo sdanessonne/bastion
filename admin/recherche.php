@@ -7,6 +7,7 @@
  */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/userphoto.php';
 $db = pf_db();
 
 require_once __DIR__ . '/inc/adcache.php';
@@ -378,6 +379,9 @@ pf_header('Recherche fonctionnaire', 'recherche.php');
   .search-bar .big{min-width:280px;flex:1}
   .idcard{display:grid;grid-template-columns:auto 1fr;gap:1.2rem;align-items:center;padding:1.3rem}
   .idavatar{width:64px;height:64px;border-radius:50%;background:var(--accent2);color:#052536;display:grid;place-items:center;font-size:1.6rem;font-weight:800}
+  /* Variante photo : « cover » pour ne pas deformer un visage, et pas de fond coloré
+     derrière l'image (il déborderait sur les bords arrondis pendant le chargement). */
+  img.idavatar{object-fit:cover;background:none;border:1px solid var(--line)}
   .idmeta{display:flex;gap:1.6rem;flex-wrap:wrap;margin-top:.5rem;font-size:.9rem}
   .idmeta b{color:var(--muted);font-weight:500;display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em}
   .rbadge{display:inline-block;font-size:.72rem;padding:.15rem .55rem;border-radius:20px;margin-right:.3rem}
@@ -429,7 +433,18 @@ pf_header('Recherche fonctionnaire', 'recherche.php');
     <?php if ($detail['onlineNow']): ?><span class="badge on">En ligne</span><?php else: ?><span class="badge off">Hors ligne</span><?php endif; ?>
   </div>
   <div class="idcard">
-    <div class="idavatar"><?= e(mb_strtoupper(mb_substr($a['nom'] !== '' ? $a['nom'] : $a['username'], 0, 1))) ?></div>
+    <?php
+      // Photo de l'agent, comme dans l'annuaire et le badge. La fiche n'affichait que
+      // l'initiale du nom : la photo existait bien en base, mais cette page ne la
+      // consultait tout simplement pas. Repli sur l'initiale quand il n'y en a pas.
+      $phV = userphoto_all_versions($db)[$a['username']] ?? '';
+    ?>
+    <?php if ($phV !== ''): ?>
+      <img class="idavatar" src="user-photo.php?u=<?= e($a['username']) ?>&amp;v=<?= e($phV) ?>"
+           alt="Photo de <?= e($fullName($a)) ?>">
+    <?php else: ?>
+      <div class="idavatar"><?= e(mb_strtoupper(mb_substr($a['nom'] !== '' ? $a['nom'] : $a['username'], 0, 1))) ?></div>
+    <?php endif; ?>
     <div>
       <div style="font-size:1.35rem;font-weight:700"><?= e($fullName($a)) ?></div>
       <div class="idmeta">
