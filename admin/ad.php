@@ -355,6 +355,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = ad('gpo', 'drives', $tmp);
             @unlink($tmp);
             break;
+        case 'logon_deploy':
+            // Écran de connexion : image de fond (facultative) + titre/message + masquages.
+            $cap  = trim((string) ($_POST['caption'] ?? ''));
+            $txt  = trim((string) ($_POST['notice'] ?? ''));
+            // Une bannière ne s'affiche QUE si le titre est renseigné : on évite une fenêtre vide.
+            if ($cap === '' && $txt !== '') { $cap = 'Information'; }
+            $flags = '';
+            foreach (['u' => 'hide_user', 'd' => 'hide_details', 's' => 'hide_shutdown'] as $lt => $fld) {
+                if (!empty($_POST[$fld])) { $flags .= $lt; }
+            }
+            $imgPath = '-';   // « - » : conserver l'image déjà déployée
+            $f = $_FILES['logo'] ?? null;
+            if ($f && ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+                if ($f['size'] > 15 * 1024 * 1024) { $out = 'ERROR: image trop volumineuse (max 15 Mo).'; break; }
+                $info = @getimagesize($f['tmp_name']);
+                $allowed = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_BMP => 'bmp'];
+                if (!$info || !isset($allowed[$info[2]])) { $out = 'ERROR: format non supporté (JPG, PNG ou BMP).'; break; }
+                $imgPath = tempnam(sys_get_temp_dir(), 'lg') . '.' . $allowed[$info[2]];
+                if (!@move_uploaded_file($f['tmp_name'], $imgPath)) { $out = 'ERROR: réception de l\'image impossible.'; break; }
+            }
+            $out = ad('gpo', 'logon', $imgPath, $cap, $txt, $flags);
+            if ($imgPath !== '-') { @unlink($imgPath); }
+            if (strpos($out, 'deploye') !== false) {
+                try {
+                    $up = pf_db()->prepare('INSERT INTO pf_settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)');
+                    $up->execute(['logon_caption', $cap]);
+                    $up->execute(['logon_notice', $txt]);
+                    $up->execute(['logon_flags', $flags]);
+                } catch (Throwable $e) {}
+                $out = "Écran de connexion déployé. Effet au prochain démarrage des postes.";
+            }
+            break;
         case 'wallpaper_deploy':
             // Fond d'écran imposé : upload d'une image → GPO « Bastion — Fond d'écran ».
             $style = preg_replace('/[^0-9a-z]/', '', (string) ($_POST['style'] ?? '10'));
@@ -1128,6 +1160,64 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
   });
 })();
 </script>
+
+<!-- 3ter-bis. ÉCRAN DE CONNEXION -->
+<?php
+$lgGpo = in_array('Bastion — Écran de connexion', array_map(fn($g) => $g['name'] ?? '', $gpos), true);
+$lgCap = $lgTxt = $lgFlags = '';
+try {
+    foreach (pf_db()->query("SELECT k,v FROM pf_settings WHERE k IN ('logon_caption','logon_notice','logon_flags')") as $r) {
+        if ($r['k'] === 'logon_caption') { $lgCap = $r['v']; }
+        if ($r['k'] === 'logon_notice')  { $lgTxt = $r['v']; }
+        if ($r['k'] === 'logon_flags')   { $lgFlags = $r['v']; }
+    }
+} catch (Throwable $e) {}
+$lgHas = fn(string $l) => strpos($lgFlags, $l) !== false;
+?>
+<section class="ad-sec panel">
+  <div class="panel-head"><h2>🔐 Écran de connexion des postes</h2>
+    <?php if ($lgGpo): ?><span class="badge on">✓ GPO déployée</span><?php endif; ?>
+  </div>
+  <div style="padding:0 1.2rem 1.2rem">
+    <p class="lead" style="margin:.7rem 0">Personnalise l'écran affiché <strong>avant l'ouverture de session</strong> :
+    image de fond, message d'accueil, et informations masquées. S'applique à tous les postes du domaine.</p>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="logon_deploy">
+      <div style="display:grid;gap:.9rem;max-width:760px">
+        <label style="display:grid;gap:.3rem">
+          <span><strong>Image de fond</strong> <span class="muted small">(JPG, PNG ou BMP — 1920×1080 conseillé ; laisser vide conserve l'image actuelle)</span></span>
+          <input type="file" name="logo" accept="image/jpeg,image/png,image/bmp">
+        </label>
+        <label style="display:grid;gap:.3rem">
+          <span><strong>Titre du message</strong> <span class="muted small">(vide = aucun message affiché)</span></span>
+          <input type="text" name="caption" maxlength="120" value="<?= e($lgCap) ?>"
+                 placeholder="Accès réservé aux personnels habilités">
+        </label>
+        <label style="display:grid;gap:.3rem">
+          <span><strong>Message</strong></span>
+          <textarea name="notice" rows="3" maxlength="900"
+            placeholder="Ce système est réservé aux agents habilités. Toute activité est enregistrée et contrôlée."><?= e($lgTxt) ?></textarea>
+        </label>
+        <fieldset style="border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem">
+          <legend class="muted small" style="padding:0 .4rem">Informations à masquer</legend>
+          <label style="display:block;margin:.2rem 0"><input type="checkbox" name="hide_user"<?= $lgHas('u') ? ' checked' : '' ?>>
+            Ne pas afficher le <strong>dernier utilisateur connecté</strong></label>
+          <label style="display:block;margin:.2rem 0"><input type="checkbox" name="hide_details"<?= $lgHas('d') ? ' checked' : '' ?>>
+            Masquer les <strong>détails du compte</strong> (adresse de messagerie)</label>
+          <label style="display:block;margin:.2rem 0"><input type="checkbox" name="hide_shutdown"<?= $lgHas('s') ? ' checked' : '' ?>>
+            Retirer le <strong>bouton d'arrêt</strong> de l'écran de connexion</label>
+        </fieldset>
+        <div><button class="btn">🚀 Déployer sur les postes</button></div>
+      </div>
+    </form>
+    <p class="ad-help" style="margin:.8rem 0 0">
+      Le <strong>message</strong> et les <strong>masquages</strong> fonctionnent sur toutes les éditions de Windows.
+      L'<strong>image de fond</strong>, elle, n'est appliquée que par les éditions <strong>Entreprise</strong> et
+      <strong>Éducation</strong> : sur une édition <strong>Famille ou Professionnel</strong>, Windows ignore ce réglage
+      et garde son image par défaut. Effet au <strong>prochain démarrage</strong> du poste.
+    </p>
+  </div>
+</section>
 
 <!-- 3ter. FOND D'ÉCRAN (GPO Desktop Wallpaper) -->
 <?php

@@ -262,6 +262,79 @@ PY
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid fond d'ecran deploye"
         ;;
+      logon)
+        # Écran de connexion : GPO « Bastion — Écran de connexion ».
+        #   $a = image (facultatif, "-" pour ne pas y toucher)   $b = titre   $c = message
+        #   $d = masquages, lettres cumulables : u=dernier utilisateur, d=details du compte,
+        #        s=bouton d'arret. Vide = ne rien masquer.
+        name="Bastion — Écran de connexion"
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        pol="/var/lib/samba/sysvol/$rl/Policies/$guid"
+        [ -d "$pol" ] || { echo "ERROR: SYSVOL GPO introuvable" >&2; exit 1; }
+
+        unc=""
+        if [ -n "$a" ] && [ "$a" != "-" ] && [ -f "$a" ]; then
+          # Comme pour le fond d'écran, Windows ne rend fiablement que le JPG.
+          mdir="$pol/Machine"; mkdir -p "$mdir"
+          rm -f "$mdir"/bastion-logon.* 2>/dev/null || true
+          img="$mdir/bastion-logon.jpg"
+          if command -v convert >/dev/null 2>&1 && convert "${a}[0]" -background black -flatten -quality 90 "$img" 2>/dev/null && [ -s "$img" ]; then
+            :
+          else
+            cp "$a" "$img"
+          fi
+          chmod 644 "$img"
+          ref="$pol/GPT.INI"
+          if [ -f "$ref" ]; then
+            v=$(getfattr --absolute-names -n security.NTACL -e hex "$ref" 2>/dev/null | sed -n 's/^security.NTACL=//p')
+            if [ -n "$v" ]; then
+              setfattr -n security.NTACL -v "$v" "$mdir" 2>/dev/null || true
+              setfattr -n security.NTACL -v "$v" "$img"  2>/dev/null || true
+            fi
+          fi
+          unc="\\\\${rl}\\SysVol\\${rl}\\Policies\\${guid}\\Machine\\bastion-logon.jpg"
+        elif [ -f "$pol/Machine/bastion-logon.jpg" ]; then
+          unc="\\\\${rl}\\SysVol\\${rl}\\Policies\\${guid}\\Machine\\bastion-logon.jpg"
+        fi
+
+        tmpj=$(mktemp)
+        python3 - "$unc" "$b" "$c" "$d" > "$tmpj" <<'PY'
+import json, sys
+unc, cap, txt, flags = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+SYS  = "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System"
+PERS = "Software\\Policies\\Microsoft\\Windows\\Personalization"
+WSYS = "Software\\Policies\\Microsoft\\Windows\\System"
+p = []
+if unc:
+    # Image de l'écran de verrouillage/connexion. Stratégie officielle : éditions
+    # Entreprise/Éducation. Sur l'édition Famille/Pro, Windows l'ignore (voir l'aide).
+    p.append({"keyname": PERS, "valuename": "LockScreenImage", "class": "MACHINE", "type": "REG_SZ", "data": unc})
+# Titre + message affichés AVANT la saisie du mot de passe. Vides = pas de bannière.
+p.append({"keyname": SYS, "valuename": "legalnoticecaption", "class": "MACHINE", "type": "REG_SZ", "data": cap})
+p.append({"keyname": SYS, "valuename": "legalnoticetext",    "class": "MACHINE", "type": "REG_SZ", "data": txt})
+p.append({"keyname": SYS, "valuename": "DontDisplayLastUserName", "class": "MACHINE", "type": "REG_DWORD",
+          "data": 1 if "u" in flags else 0})
+# « shutdownwithoutlogon » = 0 retire le bouton d'arrêt de l'écran de connexion.
+p.append({"keyname": SYS, "valuename": "shutdownwithoutlogon", "class": "MACHINE", "type": "REG_DWORD",
+          "data": 0 if "s" in flags else 1})
+p.append({"keyname": WSYS, "valuename": "BlockUserFromShowingAccountDetailsOnSignin", "class": "MACHINE",
+          "type": "REG_DWORD", "data": 1 if "d" in flags else 0})
+print(json.dumps(p))
+PY
+        python3 /usr/local/sbin/proxyfibre-gpo-apply "$guid" "$tmpj" >/dev/null 2>&1; rc=$?
+        rm -f "$tmpj"
+        [ "$rc" -eq 0 ] || { echo "ERROR: application de l'ecran de connexion echouee ($guid)" >&2; exit 1; }
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
+          || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
+        echo "$guid ecran de connexion deploye"
+        ;;
       sysvolreset)
         # Réparation manuelle des permissions NT de SYSVOL (bouton console).
         "$ST" ntacl sysvolreset >/dev/null 2>&1 \
