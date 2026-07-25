@@ -9,14 +9,7 @@ require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
 $db = pf_db();
 
-function ad(...$args): string {
-    $cmd = 'sudo /usr/local/sbin/proxyfibre-ad';
-    foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string) $a); }
-    return (string) shell_exec($cmd . ' 2>&1');
-}
-function ad_lines(...$args): array {
-    return array_values(array_filter(array_map('trim', explode("\n", ad(...$args))), fn($l) => $l !== ''));
-}
+require_once __DIR__ . '/inc/adcache.php';
 $dcUp = trim((string) shell_exec('systemctl is-active samba-ad-dc 2>/dev/null')) === 'active';
 
 // ── Référentiels ─────────────────────────────────────────────────────────────

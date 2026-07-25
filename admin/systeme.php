@@ -3,6 +3,7 @@
 /** Bastion Admin — vue d'ensemble système (état de toutes les fonctions). */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/adcache.php';
 require_once __DIR__ . '/inc/audit.php';
 
 // ── Mise à jour Debian : point d'entrée AJAX ─────────────────────────────────
@@ -66,6 +67,7 @@ $db = pf_db();
 $aptFlash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'apt') {
     csrf_check();
+    pf_cmd_cache_clear();   // l'action change l'etat affiche : on relit au prochain rendu
     // Liste FERMÉE : ces deux verbes seuls sont autorisés côté sudo également. Aucun
     // nom de paquet n'est accepté nulle part — sinon la console offrirait « apt install
     // n'importe quoi » en root à qui saurait lui faire exécuter une requête.
@@ -83,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'apt') {
 $gitFlash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'git') {
     csrf_check();
+    pf_cmd_cache_clear();   // l'action change l'etat affiche : on relit au prochain rendu
     $act = (string) ($_POST['act'] ?? '');
     if ($act === 'conf') {
         // Le jeton part sur l'ENTRÉE STANDARD du script, jamais en argument : un argument
@@ -165,6 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'syspw') {
 $timeFlash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'time') {
     csrf_check();
+    pf_cmd_cache_clear();   // l'action change l'etat affiche : on relit au prochain rendu
     $act = (string) ($_POST['act'] ?? '');
     if ($act === 'set') {
         $srv = trim((string) ($_POST['server'] ?? ''));
@@ -183,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'time') {
 }
 // État courant du serveur de temps.
 $timeSt = ['sources' => []];
-foreach (explode("\n", (string) shell_exec('sudo /usr/local/sbin/proxyfibre-time status 2>/dev/null')) as $l) {
+foreach (explode("\n", (string) pf_cmd_cache('timestatus', 60, 'sudo /usr/local/sbin/proxyfibre-time status 2>/dev/null')) as $l) {
     if (substr($l, 0, 7) === "source\t") {
         $p = explode("\t", $l);
         $timeSt['sources'][] = ['ms' => $p[1] ?? '', 'name' => $p[2] ?? '', 'stratum' => $p[3] ?? '', 'reach' => $p[4] ?? '', 'lastrx' => $p[5] ?? ''];
@@ -192,12 +196,12 @@ foreach (explode("\n", (string) shell_exec('sudo /usr/local/sbin/proxyfibre-time
     }
 }
 
-$git = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate state 2>/dev/null'), true) ?: [];
+$git = json_decode((string) pf_cmd_cache('gitstate', 120, 'sudo /usr/local/sbin/proxyfibre-selfupdate state 2>/dev/null'), true) ?: [];
 // Clé publique de la passerelle — engendrée au premier affichage de cette page.
-$gitKey = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-selfupdate pubkey 2>/dev/null'));
+$gitKey = trim((string) pf_cmd_cache('gitpubkey', 3600, 'sudo /usr/local/sbin/proxyfibre-selfupdate pubkey 2>/dev/null'));
 
 // État courant (rapide : simulation locale, aucun accès réseau).
-$apt = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-apt state 2>/dev/null'), true) ?: [];
+$apt = json_decode((string) pf_cmd_cache('aptstate', 120, 'sudo /usr/local/sbin/proxyfibre-apt state 2>/dev/null'), true) ?: [];
 
 function cnt(PDO $db, string $t): int {
     try { return (int) $db->query("SELECT COUNT(*) FROM $t")->fetchColumn(); }

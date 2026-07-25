@@ -11,14 +11,7 @@ require_once __DIR__ . '/inc/userphoto.php';
 require_once __DIR__ . '/inc/audit.php';
 $db = pf_db();
 
-function ad(...$args): string {
-    $cmd = 'sudo /usr/local/sbin/proxyfibre-ad';
-    foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string) $a); }
-    return (string) shell_exec($cmd . ' 2>&1');
-}
-function ad_lines(...$args): array {
-    return array_values(array_filter(array_map('trim', explode("\n", ad(...$args))), fn($l) => $l !== ''));
-}
+require_once __DIR__ . '/inc/adcache.php';
 $dcUp = trim((string) shell_exec('systemctl is-active samba-ad-dc 2>/dev/null')) === 'active';
 
 /**
@@ -78,6 +71,9 @@ function pf_set_site(PDO $db, array $sites, string $u, int $sid): void {
 $flash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
+    // Toute action de cette page peut modifier l'annuaire (création, suppression, groupes,
+    // mot de passe) : on purge le cache de lecture pour que les autres pages voient l'état réel.
+    ad_cache_clear();
     $action = $_POST['action'] ?? '';
     $u = trim((string) ($_POST['username'] ?? ''));
     $u = preg_replace('/[^A-Za-z0-9._@-]/', '', $u);
@@ -312,6 +308,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = ['Commissariat supprimé.', 'ok'];
         }
     }
+    // Seconde purge, APRÈS les écritures : l'affichage qui suit relit donc l'annuaire réel
+    // (une lecture faite en cours de traitement aurait pu remettre en cache l'état d'avant).
+    ad_cache_clear();
 }
 
 // Rechargement des commissariats après une modification de la liste.

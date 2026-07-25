@@ -5,31 +5,12 @@ require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/audit.php';
 
-function ad(...$args): string {
-    $cmd = 'sudo /usr/local/sbin/proxyfibre-ad';
-    foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string) $a); }
-    return (string) shell_exec($cmd . ' 2>&1');
-}
-/** Lecture avec cache court (samba-tool est lent). */
-function ad_cache(string $key, int $ttl, ...$args): string {
-    $f = '/dev/shm/pf-ad-' . preg_replace('/[^a-z0-9]/', '', $key) . '.cache';
-    if (is_file($f) && (time() - filemtime($f)) < $ttl) {
-        $r = @file_get_contents($f);
-        if ($r !== false) { return $r; }
-    }
-    $r = ad(...$args);
-    if (trim($r) !== '') { @file_put_contents($f, $r); }
-    return $r;
-}
-function ad_lines_cached(string $key, int $ttl, ...$args): array {
-    return array_values(array_filter(array_map('trim', explode("\n", ad_cache($key, $ttl, ...$args))), fn($l) => $l !== ''));
-}
-function ad_cache_clear(): void { foreach (glob('/dev/shm/pf-ad-*.cache') ?: [] as $f) { @unlink($f); } }
+require_once __DIR__ . '/inc/adcache.php';
 
 $dcUp = trim((string) shell_exec('systemctl is-active samba-ad-dc 2>/dev/null')) === 'active';
 
 // ── Domaine actuel + nom souhaité (paramétrable) ─────────────────────────────
-$di = $dcUp ? ad_cache('domaininfo', 300, 'domaininfo') : '';
+$di = $dcUp ? ad_cache('domaininfo', 0, 'domaininfo') : '';
 preg_match('/realm=(.+)/', $di, $mr);    $curRealm = trim($mr[1] ?? '') ?: 'BASTION.LOCAL';
 preg_match('/workgroup=(.+)/', $di, $mw); $curWg    = trim($mw[1] ?? '') ?: 'BASTION';
 $baseDN = 'DC=' . implode(',DC=', explode('.', strtolower($curRealm)));
@@ -443,12 +424,12 @@ if ($dcUp) {
     // Cache froid → rafraîchir les 6 listes EN PARALLÈLE en un seul appel (~1,5 s au lieu de ~9 s).
     $wf = '/dev/shm/pf-ad-users.cache';
     if (!is_file($wf) || (time() - filemtime($wf)) > 20) { shell_exec('sudo /usr/local/sbin/proxyfibre-ad warm 2>/dev/null'); }
-    $users     = ad_lines_cached('users', 20, 'user', 'list');
-    $computers = ad_lines_cached('computers', 20, 'computer', 'list');
-    $groups    = ad_lines_cached('groups', 30, 'group', 'list');
-    $ous       = ad_lines_cached('ous', 30, 'ou', 'list');
+    $users     = ad_lines_cached('users', 0, 'user', 'list');
+    $computers = ad_lines_cached('computers', 0, 'computer', 'list');
+    $groups    = ad_lines_cached('groups', 0, 'group', 'list');
+    $ous       = ad_lines_cached('ous', 0, 'ou', 'list');
     $blk = [];
-    foreach (explode("\n", ad_cache('gpos', 20, 'gpo', 'list')) as $l) {
+    foreach (explode("\n", ad_cache('gpos', 0, 'gpo', 'list')) as $l) {
         if (trim($l) === '') { if (!empty($blk['name'])) { $gpos[] = $blk; } $blk = []; continue; }
         if (preg_match('/^GPO\s*:\s*(\{[0-9A-Fa-f-]+\})/', $l, $m)) { $blk['guid'] = $m[1]; }
         if (preg_match('/display name\s*:\s*(.+)/i', $l, $m)) { $blk['name'] = trim($m[1]); }
@@ -457,7 +438,7 @@ if ($dcUp) {
     // Partages : on analyse le contenu brut de shares.conf (déjà en cache) pour en extraire, par
     // section, le chemin et les drapeaux — de quoi les LISTER, MODIFIER et SUPPRIMER dans l'UI.
     $curSh = null;
-    foreach (explode("\n", ad_cache('shares', 30, 'share', 'list')) as $l) {
+    foreach (explode("\n", ad_cache('shares', 0, 'share', 'list')) as $l) {
         $t = trim($l);
         if (preg_match('/^\[([^\]]+)\]/', $t, $m)) {
             if ($curSh) { $shares[] = $curSh; }
@@ -541,12 +522,12 @@ if ($dcUp) {
 }
 // GPO actuellement liées à la racine du domaine (GUID en majuscules) : sert à distinguer,
 // dans la liste, une stratégie ACTIVE d'une stratégie DÉSACTIVÉE (déliée mais conservée).
-$gpoLinked = $dcUp ? ad_lines_cached('gpolinks', 20, 'gpo', 'domainlinks') : [];
+$gpoLinked = $dcUp ? ad_lines_cached('gpolinks', 0, 'gpo', 'domainlinks') : [];
 
 // Clés de récupération BitLocker séquestrées dans l'AD, par poste (nom en majuscules).
 $bitlockerKeys = [];
 if ($dcUp) {
-    foreach (explode("\n", ad_cache('blkeys', 60, 'bitlocker', 'keys')) as $l) {
+    foreach (explode("\n", ad_cache('blkeys', 0, 'bitlocker', 'keys')) as $l) {
         $p = explode("\t", $l);
         $comp = trim($p[0] ?? '');
         if ($comp === '' || $comp === '?') { continue; }
@@ -563,7 +544,7 @@ if ($dcUp) {
         pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_computer_desc (name VARCHAR(64) PRIMARY KEY, description TEXT)');
         foreach (pf_db()->query('SELECT name,description FROM pf_computer_desc') as $r) { $computerDesc[strtoupper($r['name'])] = $r['description']; }
     } catch (Throwable $e) {}
-    foreach (explode("\n", ad_cache('authlog', 20, 'authlog')) as $l) {
+    foreach (explode("\n", ad_cache('authlog', 0, 'authlog')) as $l) {
         $p = explode("\t", $l);
         if (count($p) < 4) { continue; }
         $ws = strtoupper(trim($p[0], "\\ "));
@@ -573,7 +554,7 @@ if ($dcUp) {
         if ($ws !== '') { $lastByWs[$ws] = ['user' => $user, 'ts' => substr($p[3], 0, 16)]; } // dernière ligne = plus récent
     }
     // Inventaire des postes : système d'exploitation + dernière ouverture de session (depuis l'AD).
-    foreach (explode("\n", ad_cache('compdetail', 120, 'computer', 'detail')) as $l) {
+    foreach (explode("\n", ad_cache('compdetail', 0, 'computer', 'detail')) as $l) {
         $p = explode("\t", $l);
         if (trim($p[0] ?? '') === '') { continue; }
         $computerDetail[strtoupper(trim($p[0]))] = ['os' => trim($p[1] ?? ''), 'll' => (int) trim($p[2] ?? '0')];
