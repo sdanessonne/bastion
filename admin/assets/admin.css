@@ -266,6 +266,10 @@ input,select,textarea{transition:border-color .16s ease,box-shadow .16s ease}
 @keyframes bienvUp{from{opacity:0;transform:translateY(18px) scale(.98)}to{opacity:1;transform:none}}
 .bienv-photo{width:92px;height:92px;border-radius:50%;object-fit:cover;display:block;margin:0 auto .9rem;
   border:2px solid var(--accent);box-shadow:0 8px 30px rgba(56,189,248,.28);background:var(--panel2)}
+/* Repli quand l'administrateur n'a pas de photo : initiale sur une pastille, plutot
+   que l'icone de fichier casse du navigateur au milieu de l'ecran d'accueil. */
+.bienv-photo.bienv-ini{display:grid;place-items:center;font-size:2.4rem;font-weight:700;
+  color:var(--accent);background:var(--panel2);border-color:var(--line);box-shadow:none}
 .bienv-salut{font-size:.8rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
 .bienv-nom{font-size:1.35rem;font-weight:700;margin:.15rem 0 .5rem;line-height:1.25}
 .bienv-meta{display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;margin-bottom:1.1rem}

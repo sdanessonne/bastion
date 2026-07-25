@@ -106,10 +106,20 @@ function bienvenue_afficher(): string
         $prec = $jour . ' à ' . date('H:i', $t);
     }
 
+    // Repli sur les initiales. « avatar_v » est vide tant qu'aucune photo n'a été
+    // téléversée : afficher quand même la balise image donnerait l'icône de fichier
+    // cassé du navigateur en plein milieu de l'écran d'accueil.
+    $av = (string) ($_SESSION['avatar_v'] ?? '');
+    $ini = mb_strtoupper(mb_substr($b['nom'] !== '' ? $b['nom'] : $b['user'], 0, 1));
+
     ob_start(); ?>
 <div id="bienvenue" class="bienv" role="status" aria-live="polite">
   <div class="bienv-carte">
-    <img class="bienv-photo" src="/avatar.php?v=<?= e((string) ($_SESSION['avatar_v'] ?? '')) ?>" alt="">
+    <?php if ($av !== ''): ?>
+      <img class="bienv-photo" src="/avatar.php?v=<?= e($av) ?>" alt="">
+    <?php else: ?>
+      <div class="bienv-photo bienv-ini" aria-hidden="true"><?= e($ini) ?></div>
+    <?php endif; ?>
     <div class="bienv-salut"><?= e($salut) ?></div>
     <div class="bienv-nom"><?= e($qui) ?></div>
     <div class="bienv-meta">
