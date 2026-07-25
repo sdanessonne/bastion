@@ -292,6 +292,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = ad('gpo', 'deploy', $gname, $tmp);
             @unlink($tmp);
             break;
+        case 'obj_move':
+            // Déplacement d'un objet vers une unité d'organisation. Le type est contraint,
+            // et la destination est revalidée côté script (aucun DN libre accepté).
+            $ty = (string) ($_POST['type'] ?? '');
+            $nm = trim((string) ($_POST['nom'] ?? ''));
+            $ds = trim((string) ($_POST['dest'] ?? ''));
+            if (!in_array($ty, ['user', 'computer', 'group', 'ou'], true) || $nm === '') {
+                $out = 'ERROR: objet invalide.'; break;
+            }
+            $out = ad('move', $ty, $nm, $ds);
+            if (stripos($out, 'ERROR') === false && stripos($out, 'Failed') === false) {
+                $out = "« $nm » déplacé vers " . ($ds === '' ? 'la racine du domaine' : preg_replace('/^OU=/i', '', $ds)) . '.';
+            }
+            break;
         case 'gpo_wmi':
             // Condition d'application : la stratégie n'est appliquée que par les postes qui la
             // remplissent (édition, version, portable/fixe…). Évaluée par le poste lui-même.
@@ -538,6 +552,34 @@ $humanUsers = array_values(array_filter($users, fn($u) => !in_array($u, $sys, tr
 
 // Groupes métier / système : calculés ICI (et non dans la section 5) car les droits des partages
 // et le ciblage des lecteurs, plus haut dans la page, doivent proposer la liste des groupes.
+/**
+ * Petit formulaire « déplacer » attaché à un objet de l'arborescence.
+ * La destination proposée se limite aux OU existantes (plus la racine du domaine) : on ne
+ * laisse jamais saisir un emplacement libre, qui pourrait viser un conteneur système.
+ */
+function pf_bouton_deplacer(string $type, string $nom, array $ous): string
+{
+    if ($nom === '') { return ''; }
+    $opts = '<option value="">— Racine du domaine —</option>';
+    foreach ($ous as $o) {
+        $o = trim($o);
+        // « Domain Controllers » est réservé aux contrôleurs : on ne le propose pas.
+        if ($o === '' || stripos($o, 'Domain Controllers') !== false) { continue; }
+        $lbl = preg_replace('/^OU=/i', '', $o);
+        $opts .= '<option value="' . e($o) . '">' . e($lbl) . '</option>';
+    }
+    return '<form method="post" style="display:inline-flex;gap:.25rem;margin-left:.5rem;vertical-align:middle"'
+         . ' onsubmit="return confirm(\'Déplacer « ' . e($nom) . ' » ?\')">'
+         . '<input type="hidden" name="csrf" value="' . e(csrf_token()) . '">'
+         . '<input type="hidden" name="do" value="obj_move">'
+         . '<input type="hidden" name="type" value="' . e($type) . '">'
+         . '<input type="hidden" name="nom" value="' . e($nom) . '">'
+         . '<select name="dest" style="font-size:.72rem;padding:.1rem .25rem;background:var(--bg);'
+         . 'color:var(--text);border:1px solid var(--line);border-radius:5px">' . $opts . '</select>'
+         . '<button class="btn-sm" style="font-size:.7rem;padding:.1rem .4rem" title="Déplacer vers cette unité d\'organisation">↪</button>'
+         . '</form>';
+}
+
 $customGroups = $sysGroups = [];
 foreach ($groups as $g) { if (isset($BUILTIN_GROUPS[$g])) { $sysGroups[] = $g; } else { $customGroups[] = $g; } }
 sort($customGroups); sort($sysGroups);
@@ -747,7 +789,8 @@ document.addEventListener('DOMContentLoaded', function () {
             <ul>
               <?php if (!$humanUsers): ?><li class="leaf-muted">Aucun compte.</li>
               <?php else: foreach ($humanUsers as $u): ?>
-                <li><span class="node">👤 <strong><?= e($u) ?></strong><?php if (!empty($agentNames[$u])): ?> <small>— <?= e($agentNames[$u]) ?></small><?php endif; ?></span></li>
+                <li><span class="node">👤 <strong><?= e($u) ?></strong><?php if (!empty($agentNames[$u])): ?> <small>— <?= e($agentNames[$u]) ?></small><?php endif; ?>
+                  <?= pf_bouton_deplacer('user', $u, $ous) ?></span></li>
               <?php endforeach; endif; ?>
             </ul>
           </details></li>
@@ -759,14 +802,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     $cd = $computerDesc[strtoupper($cn)] ?? ''; ?>
                 <li><span class="node">💻 <strong><?= e($cn) ?></strong>
                   <?php if ($cd !== ''): ?> <small>— <?= e($cd) ?></small><?php endif; ?>
-                  <?php if ($wu): ?> <small>· 👤 <?= e($wu['user']) ?></small><?php endif; ?></span></li>
+                  <?php if ($wu): ?> <small>· 👤 <?= e($wu['user']) ?></small><?php endif; ?>
+                  <?= pf_bouton_deplacer('computer', $cn, $ous) ?></span></li>
               <?php endforeach; endif; ?>
             </ul>
           </details></li>
           <li><details>
             <summary>👪 Groupes (<?= count($groups) ?>)</summary>
             <ul>
-              <?php foreach ($groups as $g): ?><li><span class="node">🏷️ <?= e($g) ?></span></li><?php endforeach; ?>
+              <?php foreach ($groups as $g): ?><li><span class="node">🏷️ <?= e($g) ?>
+                <?= pf_bouton_deplacer('group', $g, $ous) ?></span></li><?php endforeach; ?>
             </ul>
           </details></li>
           <li><details>

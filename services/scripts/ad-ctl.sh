@@ -140,6 +140,23 @@ PY
       create) exec "$ST" ou create "$a" ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;
     esac ;;
+  move)
+    # Déplace un objet vers une unité d'organisation. $sub = type, $a = nom, $b = OU de destination.
+    # La destination est fournie SANS la base du domaine (ex. « OU=CPN EVRY ») : on la complète
+    # ici, pour qu'aucun DN arbitraire ne puisse être injecté depuis la console.
+    rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+    dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+    [ -n "$a" ] || { echo "ERROR: objet requis" >&2; exit 2; }
+    case "$b" in
+      '') dest="$dn" ;;                                  # racine du domaine
+      *DC=*) echo "ERROR: destination invalide" >&2; exit 2 ;;
+      OU=*|CN=*) dest="$b,$dn" ;;
+      *) echo "ERROR: destination invalide" >&2; exit 2 ;;
+    esac
+    case "$sub" in
+      user|computer|group|ou) exec "$ST" "$sub" move "$a" "$dest" ;;
+      *) echo "type d'objet refuse" >&2; exit 2 ;;
+    esac ;;
   gpo)
     # La création de GPO nécessite des droits Administrateur du domaine.
     ADPASS=$(sed -n 's/^AD_ADMIN_PASS="\{0,1\}\([^"]*\)"\{0,1\}/\1/p' /etc/proxyfibre/ad.env 2>/dev/null || true)
