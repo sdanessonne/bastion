@@ -140,12 +140,16 @@ if ($stage === 'password' && !empty($_SESSION['pending_admin']) && $_SERVER['REQ
        de saisie utile. Un agent qui tape à l'aveugle sur un clavier de portable en a besoin. */
     .champ-mdp{position:relative;display:block}
     .champ-mdp input{width:100%;padding-right:2.9rem}
-    .oeil{position:absolute;right:.45rem;top:50%;transform:translateY(-50%);
-      width:2rem;height:2rem;display:grid;place-items:center;padding:0;margin:0;
+    /* Sélecteur VOLONTAIREMENT aussi spécifique : « .login-card button » (admin.css:45)
+       impose width:100% et un fond plein à TOUS les boutons de la carte. Avec une simple
+       classe, le bouton s'étalait sur toute la largeur du champ et recouvrait la zone de
+       saisie — mesuré à 294 px au lieu de 32. */
+    .login-card .champ-mdp .oeil{position:absolute;right:.45rem;top:50%;transform:translateY(-50%);
+      width:2rem;height:2rem;min-width:0;display:grid;place-items:center;padding:0;margin:0;
       background:transparent;border:0;border-radius:8px;cursor:pointer;font-size:1rem;
-      line-height:1;color:var(--muted);opacity:.75}
-    .oeil:hover{opacity:1;background:rgba(120,150,190,.14)}
-    .oeil[aria-pressed="true"]{opacity:1;color:var(--accent2,#38bdf8)}
+      line-height:1;color:var(--muted);opacity:.75;box-shadow:none}
+    .login-card .champ-mdp .oeil:hover{opacity:1;background:rgba(120,150,190,.16);color:var(--text)}
+    .login-card .champ-mdp .oeil[aria-pressed="true"]{opacity:1;color:#38bdf8}
     /* Focus VISIBLE : la navigation au clavier est le seul recours quand la souris lâche,
        et c'est aussi une exigence d'accessibilité. */
     .login-card :is(input,button,a):focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
