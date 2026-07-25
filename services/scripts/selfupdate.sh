@@ -239,6 +239,16 @@ case "${1:-}" in
         # (le fichier de réponse ne contient qu'un amorçage, jamais d'identifiants).
         [ -d /var/www/html/boot ] && [ -f "$REPO_DIR/services/tftp/join-domain.ps1" ] && \
             install -m644 "$REPO_DIR/services/tftp/join-domain.ps1" /var/www/html/boot/join-domain.ps1 2>/dev/null || true
+        # Fichiers de réponse Windows : déposés à l'installation PXE, mais ils évoluent avec le
+        # produit — sans cette copie, une correction n'atteindrait jamais les postes déjà déployés.
+        if [ -d /srv/pxe/images ]; then
+            _rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+            for _u in uefi bios; do
+                [ -f "$REPO_DIR/services/tftp/unattend-${_u}.xml" ] || continue
+                install -m644 "$REPO_DIR/services/tftp/unattend-${_u}.xml" "/srv/pxe/images/unattend-${_u}.xml" 2>/dev/null || true
+                [ -n "$_rl" ] && sed -i "s/bastion\.pn\.int/$_rl/gI" "/srv/pxe/images/unattend-${_u}.xml" 2>/dev/null || true
+            done
+        fi
         find /var/www/admin /var/www/html/portal -type f -exec chmod 644 {} + 2>/dev/null
         find /var/www/admin /var/www/html/portal -type d -exec chmod 755 {} + 2>/dev/null
         chmod 640 /var/www/admin/watchdog.php /var/www/admin/logseal.php 2>/dev/null
