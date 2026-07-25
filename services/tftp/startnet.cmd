@@ -102,12 +102,25 @@ if %N%==8 ipconfig /renew >nul 2>&1
 if %N% GEQ 25 goto nfail
 ping -n 2 127.0.0.1 >nul 2>&1
 goto nwait
+:garde_ip
+rem Retient l'adresse seulement si elle est sur le reseau du commissariat : le filtre
+rem « IPv4 » seul attraperait AUSSI la passerelle par defaut, du meme sous-reseau.
+set "V=%V: =%"
+if "%V:~0,12%"=="192.168.182." set "IP=%V%"
+goto :eof
+
 :haveip
 ipconfig | find "IPv4"
 rem Adresse retenue pour l'affichage du menu. DOUBLE filtre : "192.168.182." seul
 rem attraperait AUSSI la ligne "Passerelle par defaut" (meme sous-reseau) et le
 rem menu afficherait l'IP de la passerelle a la place de celle du poste.
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /C:"IPv4" ^| findstr /C:"192.168.182."') do set IP=%%a
+rem « findstr » N'EXISTE PAS dans WinPE : son absence faisait echouer la detection
+rem en silence, et le menu affichait « Poste - » sans adresse. On n'utilise donc que
+rem « find » (present) et des commandes internes.
+set IP=
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| find "IPv4"') do (
+  if not defined IP ( set "V=%%a" & call :garde_ip )
+)
 set IP=%IP: =%
 rem 2) Verifier une VRAIE reponse de la passerelle. ATTENTION : le code retour de ping
 rem    vaut 0 meme sur "Destination host unreachable" -> on teste la presence de "TTL=".
@@ -232,7 +245,9 @@ if not exist \\%GW%\Images\master.wim (
 )
 echo.
 echo  Image trouvee :
-Dism /Get-ImageInfo /ImageFile:\\%GW%\Images\master.wim /Index:1 | findstr /i "Nom Name Taille Size Version"
+rem Sans findstr (absent de WinPE) : on affiche la fiche complete de l'image.
+rem Quelques lignes de plus, mais l'information est la et la commande ne peut plus echouer.
+Dism /Get-ImageInfo /ImageFile:\\%GW%\Images\master.wim /Index:1
 echo.
 echo   *****************************************************
 echo    ATTENTION : le DISQUE 0 de ce poste va etre EFFACE
