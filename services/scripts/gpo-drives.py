@@ -175,10 +175,12 @@ def main():
     for p in (os.path.join(sysvol, 'User'), os.path.join(sysvol, 'User', 'Preferences'), d):
         if os.path.exists(ref): copy_ntacl(ref, p)
     xml = os.path.join(d, 'Drives.xml')
-    with open(xml, 'wb') as w:
-        w.write(drives_xml([], when).encode('utf-8'))
-    os.chmod(xml, 0o644)
-    if os.path.exists(ref): copy_ntacl(ref, xml)
+    # On SUPPRIME le fichier au lieu d'en laisser un vide : le moteur GPP le traitait quand meme
+    # et echouait « Fonction incorrecte » a chaque ouverture de session, polluant les rapports
+    # alors que les lecteurs, eux, sont montes par le script ci-dessous.
+    if os.path.exists(xml):
+        try: os.unlink(xml)
+        except OSError: pass
 
     # Connexion à l'annuaire AVANT d'écrire le script : nécessaire pour résoudre le SID des
     # groupes auxquels un lecteur est réservé (test d'appartenance par SID dans le .cmd).
@@ -232,7 +234,9 @@ def main():
     m = ldb.Message(); m.dn = ldb.Dn(samdb, gpo_dn)
     m['versionNumber'] = ldb.MessageElement(str(newver), ldb.FLAG_MOD_REPLACE, 'versionNumber')
     # CSE utilisateur : GPP Drive Maps (traite le Drives.xml vide) + Scripts (script de session).
-    uext = '[%s%s][%s%s][%s%s]' % (NULL_GUID, DRIVES_CSE, SCRIPTS_CSE, SCRIPTS_TOOL, DRIVES_CSE, GPP_TOOL)
+    # SEULE l'extension « Scripts » est declaree : celle des preferences GPP est retiree, sinon
+    # le poste continue de l'executer et signale un echec pour un mecanisme qu'on n'utilise plus.
+    uext = '[%s%s]' % (SCRIPTS_CSE, SCRIPTS_TOOL)
     m['gPCUserExtensionNames'] = ldb.MessageElement(uext, ldb.FLAG_MOD_REPLACE, 'gPCUserExtensionNames')
     mext = '[%s%s]' % (REG_CSE, REG_TOOL)
     m['gPCMachineExtensionNames'] = ldb.MessageElement(mext, ldb.FLAG_MOD_REPLACE, 'gPCMachineExtensionNames')
