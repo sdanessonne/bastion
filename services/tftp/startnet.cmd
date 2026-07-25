@@ -15,8 +15,8 @@ rem des sequences d'echappement (verifie : GetConsoleMode = 0x0003, le bit
 rem ENABLE_VIRTUAL_TERMINAL_PROCESSING est absent). Un "ESC[96m" s'afficherait donc
 rem en clair a l'ecran. Seuls "color" (global) et les semi-graphiques fonctionnent.
 rem
-rem N'utiliser QUE des cadres PURS  ═ ║ ╔ ╗ ╚ ╝ ─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼  et des
-rem blocs █ ▀ ▄ : ceux-la occupent les MEMES positions en CP437 et CP850, donc ils
+rem N'utiliser QUE des cadres PURS  =      -            et des
+rem blocs    : ceux-la occupent les MEMES positions en CP437 et CP850, donc ils
 rem s'affichent bien quelle que soit la langue du WinPE. En revanche les jonctions
 rem MIXTES simple/double - celles qui melangent un trait simple et un trait double -
 rem sont a PROSCRIRE : CP850 a reaffecte leurs positions a des lettres accentuees,
@@ -45,7 +45,7 @@ rem options n'ont plus a attendre. Un echec n'est pas bloquant - l'option [4] do
 rem rester accessible pour diagnostiquer, et [1]/[2]/[3] rappelleront :netinit qui
 rem reaffichera l'erreur en clair.
 rem NON silencieux : sans reseau, :netinit peut tourner ~25 s. Mieux vaut afficher
-rem sa progression qu'un ecran noir. Le « cls » du menu nettoie ensuite.
+rem sa progression qu'un ecran noir. Le " cls " du menu nettoie ensuite.
 call :netinit
 
 :menu
@@ -54,29 +54,29 @@ rem MISE EN PAGE : la console WinPE fait 80 colonnes sur 25 lignes. Ce menu occu
 rem 24 lignes sur 75 colonnes - toute ligne ajoutee ferait defiler le logo hors de
 rem l'ecran, toute ligne de plus de 80 caracteres serait repliee. Verifie au rendu.
 echo.
-echo    ╔═════════════════════════════════════════════════════════════════╗
-echo    ║   █▀▀▄ █▀▀█ █▀▀ ▀▀█▀▀ ▀█▀ █▀▀█ █▄ █                             ║
-echo    ║   █▀▀▄ █▄▄█ ▀▀█   █    █  █  █ █ ▀█    Deploiement Windows      ║
-echo    ║   ▀▀▀  ▀  ▀ ▀▀▀   ▀   ▀▀▀ ▀▀▀▀ ▀  ▀    par le reseau            ║
-echo    ╚═════════════════════════════════════════════════════════════════╝
+echo    =================================================================
+echo                                           
+echo                          Deploiement Windows      
+echo                          par le reseau            
+echo    =================================================================
 echo.
-echo      ┌───┬─────────────────────────────────────────────────────────┐
-echo      │ 1 │  Installer Windows 11 Pro                               │
-echo      │   │  Automatise de bout en bout - le disque 0 sera EFFACE   │
-echo      ├───┼─────────────────────────────────────────────────────────┤
-echo      │ 2 │  Deployer l'image master                                │
-echo      │   │  Restauration rapide depuis la bibliotheque             │
-echo      ├───┼─────────────────────────────────────────────────────────┤
-echo      │ 3 │  Capturer ce poste                                      │
-echo      │   │  Cree l'image master - exige un poste sysprepe          │
-echo      ├───┼─────────────────────────────────────────────────────────┤
-echo      │ 4 │  Invite de commandes                                    │
-echo      │   │  Diagnostic reseau et disque                            │
-echo      └───┴─────────────────────────────────────────────────────────┘
+echo      ------------------------------------------------------------
+echo       1   Installer Windows 11 Pro                               
+echo           Automatise de bout en bout - le disque 0 sera EFFACE   
+echo      ------------------------------------------------------------
+echo       2   Deployer l'image master                                
+echo           Restauration rapide depuis la bibliotheque             
+echo      ------------------------------------------------------------
+echo       3   Capturer ce poste                                      
+echo           Cree l'image master - exige un poste sysprepe          
+echo      ------------------------------------------------------------
+echo       4   Invite de commandes                                    
+echo           Diagnostic reseau et disque                            
+echo      ------------------------------------------------------------
 echo.
-rem Le separateur est le semi-graphique │ (CP437 0xB3), PAS la barre verticale ASCII
-rem « | » qui serait interpretee par cmd comme un TUBE.
-echo      Poste %IP%  │  Passerelle %GW% %NETLBL%  │  Amorcage %FW%
+rem Le separateur est le semi-graphique  (CP437 0xB3), PAS la barre verticale ASCII
+rem " | " qui serait interpretee par cmd comme un TUBE.
+echo      Poste %IP%    Passerelle %GW% %NETLBL%    Amorcage %FW%
 echo.
 set CH=
 set /p CH=      Votre choix [1-4] :
@@ -104,7 +104,7 @@ ping -n 2 127.0.0.1 >nul 2>&1
 goto nwait
 :garde_ip
 rem Retient l'adresse seulement si elle est sur le reseau du commissariat : le filtre
-rem « IPv4 » seul attraperait AUSSI la passerelle par defaut, du meme sous-reseau.
+rem " IPv4 " seul attraperait AUSSI la passerelle par defaut, du meme sous-reseau.
 set "V=%V: =%"
 if "%V:~0,12%"=="192.168.182." set "IP=%V%"
 goto :eof
@@ -114,9 +114,9 @@ ipconfig | find "IPv4"
 rem Adresse retenue pour l'affichage du menu. DOUBLE filtre : "192.168.182." seul
 rem attraperait AUSSI la ligne "Passerelle par defaut" (meme sous-reseau) et le
 rem menu afficherait l'IP de la passerelle a la place de celle du poste.
-rem « findstr » N'EXISTE PAS dans WinPE : son absence faisait echouer la detection
-rem en silence, et le menu affichait « Poste - » sans adresse. On n'utilise donc que
-rem « find » (present) et des commandes internes.
+rem " findstr " N'EXISTE PAS dans WinPE : son absence faisait echouer la detection
+rem en silence, et le menu affichait " Poste - " sans adresse. On n'utilise donc que
+rem " find " (present) et des commandes internes.
 set IP=
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| find "IPv4"') do (
   if not defined IP ( set "V=%%a" & call :garde_ip )
@@ -156,14 +156,14 @@ rem en affichant l'erreur exacte.
 rem %1 = nom du partage. On ouvre la session puis on travaille en chemins UNC directs
 rem (\\gw\Install\setup.exe), sans lettre de lecteur : inutile ici, et ca marche partout.
 rem
-rem POURQUOI LA BOUCLE DE 15 TENTATIVES - la vraie cause de l'« erreur systeme 53 » :
+rem POURQUOI LA BOUCLE DE 15 TENTATIVES - la vraie cause de l'" erreur systeme 53 " :
 rem quand un poste redemarre, il n'envoie aucun FIN, donc Samba garde sa session TCP
 rem ouverte. Or Windows REUTILISE le meme port source ephemere au demarrage suivant :
 rem le serveur voit alors un SYN sur une connexion qu'il croit deja etablie, repond ACK
 rem au lieu de SYN-ACK, et le client echoue avec l'erreur 53. Diagnostique au tcpdump,
 rem confirme par smbstatus. C'est pour cela qu'une commande tapee A LA MAIN reussissait
 rem (autre port source) alors que le script echouait apres chaque redemarrage.
-rem Correctif de fond cote serveur : « keepalive = 30 » dans smb.conf (voir setup-ad.sh)
+rem Correctif de fond cote serveur : " keepalive = 30 " dans smb.conf (voir setup-ad.sh)
 rem purge les sessions mortes en ~30 s. La boucle ci-dessous couvre ce delai.
 set SHR=%~1
 set TGT=\\%GW%\%SHR%
@@ -204,8 +204,8 @@ reg query HKLM\System\CurrentControlSet\Control /v PEFirmwareType 2>nul | find "
 set ANS=\\%GW%\Images\unattend-%FW%.xml
 if not exist %ANS% (
   echo.
-  rem Parentheses ECHAPPEES (^( ^)) : obligatoire dans un bloc « ( ... ) », sinon le « ) »
-  rem referme le bloc et cmd echoue sur le reste de la ligne (« : etait inattendu »).
+  rem Parentheses ECHAPPEES (^( ^)) : obligatoire dans un bloc " ( ... ) ", sinon le " ) "
+  rem referme le bloc et cmd echoue sur le reste de la ligne (" : etait inattendu ").
   echo  Fichier de reponses absent ^(%ANS%^) : installation MANUELLE.
   \\%GW%\Install\setup.exe
   goto fin

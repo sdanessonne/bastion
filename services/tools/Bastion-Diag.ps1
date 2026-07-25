@@ -1,4 +1,4 @@
-﻿# Bastion - Bastion-Diag.ps1
+﻿﻿# Bastion - Bastion-Diag.ps1
 # (c) 2026 Mickael MONESTIER (Mle 110.480). Voir LICENCE.txt.
 #
 # A COLLER DANS UNE FENETRE POWERSHELL EN ADMINISTRATEUR, sur le poste a diagnostiquer.
@@ -57,6 +57,63 @@ net view \\VBOXSVR 2>$null
 H "6. CLIENT DFS (0x35 = BAD_NETPATH) + services cles"
 Get-Service Dfsc,Mup,LanmanWorkstation,Netlogon,W32Time,gpsvc -ErrorAction SilentlyContinue | Format-Table Name,Status,StartType -Auto
 sc.exe qc Dfsc
+
+H "7. PHOTO DE L'AGENT (image de compte Windows)"
+# But : dire POURQUOI la photo n'apparait pas, au lieu de le deviner. Chaque maillon est
+# teste separement et affiche son resultat, y compris l'erreur exacte de l'appel HTTPS.
+$dir = 'C:\ProgramData\Bastion'
+Write-Host "--- Tache planifiee ---" -ForegroundColor Yellow
+schtasks /query /tn "Bastion - Photo de l'agent" /v /fo LIST 2>&1 |
+    Select-String 'Nom de la tache|TaskName|Statut|Status|Derniere|Last Run|Dernier resultat|Last Result'
+
+Write-Host "--- Script pose sur le poste ---" -ForegroundColor Yellow
+$ps = Join-Path $dir 'photo-tile.ps1'
+if (Test-Path $ps) {
+    $o = [IO.File]::ReadAllBytes($ps)
+    $bom = ($o.Length -ge 3 -and $o[0] -eq 0xEF -and $o[1] -eq 0xBB -and $o[2] -eq 0xBF)
+    Write-Host ("  {0}  {1} octets  marque UTF-8 : {2}" -f $ps, $o.Length, $(if($bom){'OUI'}else{'NON - script illisible par PowerShell 5.1 !'}))
+    # Analyse SANS execution : si le fichier ne s'analyse pas, rien n'a jamais tourne.
+    $err = $null
+    [void][Management.Automation.Language.Parser]::ParseFile($ps, [ref]$null, [ref]$err)
+    if ($err -and $err.Count) { Write-Host ("  ANALYSE KO : " + $err[0].Message) -ForegroundColor Red }
+    else { Write-Host "  Analyse PowerShell : OK" -ForegroundColor Green }
+} else { Write-Host "  ABSENT - lancez Install-BastionPhoto.cmd" -ForegroundColor Red }
+
+Write-Host "--- Journal ---" -ForegroundColor Yellow
+if (Test-Path "$dir\photo.log") { Get-Content "$dir\photo.log" -Tail 15 }
+else { Write-Host "  aucun journal : le script n'a jamais atteint sa premiere ligne" -ForegroundColor Red }
+
+Write-Host "--- Appel a la passerelle (le maillon le plus fragile) ---" -ForegroundColor Yellow
+$login = $env:USERNAME
+$tok = ''
+if (Test-Path $ps) { $m = [regex]::Match((Get-Content $ps -Raw), "\`$TOKEN\s*=\s*'([^']*)'"); if ($m.Success) { $tok = $m.Groups[1].Value } }
+Write-Host ("  identifiant teste : {0}   jeton : {1}" -f $login, $(if($tok){'present'}else{'ABSENT'}))
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch { }
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 12288 } catch { }
+Write-Host ("  protocoles proposes : " + [Net.ServicePointManager]::SecurityProtocol)
+$cb = [Net.ServicePointManager]::ServerCertificateValidationCallback
+[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+try {
+    $r = Invoke-WebRequest -Uri "https://192.168.182.1:8443/api.php?action=poste.photo&user=$login" `
+         -Headers @{ Authorization = "Bearer $tok" } -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+    Write-Host ("  HTTP {0} - {1} octets recus" -f $r.StatusCode, $r.RawContentLength) -ForegroundColor Green
+} catch {
+    Write-Host ("  ECHEC : " + $_.Exception.Message) -ForegroundColor Red
+    if ($_.Exception.Response) { Write-Host ("  Code HTTP : " + [int]$_.Exception.Response.StatusCode) -ForegroundColor Red }
+} finally { [Net.ServicePointManager]::ServerCertificateValidationCallback = $cb }
+
+Write-Host "--- Image posee sur le poste ---" -ForegroundColor Yellow
+try {
+    $sid = (New-Object Security.Principal.NTAccount("$env:USERDOMAIN\$env:USERNAME")).Translate([Security.Principal.SecurityIdentifier]).Value
+    Write-Host ("  SID : " + $sid)
+    $d = "C:\Users\Public\AccountPictures\$sid"
+    if (Test-Path $d) { Get-ChildItem $d | Select-Object Name,Length | Format-Table -Auto }
+    else { Write-Host "  aucun dossier d'images de compte" -ForegroundColor Red }
+    $rk = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AccountPicture\Users\$sid"
+    if (Test-Path $rk) { Write-Host ("  registre : " + ((Get-Item $rk).Property -join ', ')) }
+    else { Write-Host "  registre : aucune entree" -ForegroundColor Red }
+} catch { Write-Host ("  SID irresoluble : " + $_.Exception.Message) -ForegroundColor Red }
+Write-Host "  RAPPEL : la photo n'apparait qu'apres FERMETURE puis REOUVERTURE de session." -ForegroundColor Cyan
 
 Stop-Transcript | Out-Null
 Write-Host "`nRapport : C:\bastion-diag.txt  |  RSoP : C:\bastion-gpresult.html" -ForegroundColor Green

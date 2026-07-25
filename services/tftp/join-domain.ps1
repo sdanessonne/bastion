@@ -1,4 +1,4 @@
-﻿# Bastion - join-domain.ps1
+﻿﻿# Bastion - join-domain.ps1
 # (c) 2026 Mickael MONESTIER (Mle 110.480). Voir LICENCE.txt.
 #
 # Jonction du poste au domaine, proposee a la premiere ouverture de session apres

@@ -36,6 +36,12 @@ def ps1(url, token):
     il ne fait que LIRE ; en cas de problème réseau il abandonne sans déranger l'agent."""
     L = [
         "$ErrorActionPreference='SilentlyContinue'",
+        "# TLS 1.2 AU MINIMUM : la console refuse TLS 1.0 et 1.1. Selon l'etat de .NET",
+        "# Framework, PowerShell 5.1 peut encore proposer TLS 1.0 et la remontee echouerait",
+        "# sur un « canal SSL/TLS impossible a creer », sans rien dire de plus. 3072 = Tls12,",
+        "# 12288 = Tls13 ; try separes car une version qui ignore Tls13 leve a l'affectation.",
+        "try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch { }",
+        "try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 12288 } catch { }",
         "# Une seule remontée par jour : inutile de solliciter le réseau à chaque ouverture.",
         "$marq=Join-Path $env:LOCALAPPDATA 'bastion-inv.txt'",
         "if (Test-Path $marq) { if ((Get-Item $marq).LastWriteTime -gt (Get-Date).AddHours(20)) { exit } }",

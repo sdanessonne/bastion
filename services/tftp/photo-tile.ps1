@@ -1,4 +1,4 @@
-﻿# Bastion - photo-tile.ps1
+﻿﻿# Bastion - photo-tile.ps1
 # (c) 2026 Mickael MONESTIER (Mle 110.480). Voir LICENCE.txt.
 #
 # Pose la photo de l'agent comme IMAGE DE COMPTE Windows (ecran de connexion, menu Demarrer,
@@ -35,6 +35,15 @@ $dest = "C:\Users\Public\AccountPictures\$sid"
 
 try {
     $tmp = Join-Path $env:TEMP "bastion-photo-$login.png"
+    # TLS 1.2 AU MINIMUM : la console refuse explicitement TLS 1.0 et 1.1
+    # (SSLProtocol ... -TLSv1 -TLSv1.1). Selon l'etat de .NET Framework et les strategies
+    # de durcissement en place, PowerShell 5.1 peut encore proposer TLS 1.0 en premier ; la
+    # connexion echoue alors sur un « Could not create SSL/TLS secure channel » qui ne dit
+    # rien de la cause. On ajoute donc les protocoles au lieu de s'en remettre au defaut.
+    # Valeurs numeriques (3072 = Tls12, 12288 = Tls13) et try separes : une version de .NET
+    # qui ignore Tls13 leve une exception a l'affectation et ferait tout echouer.
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch { }
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 12288 } catch { }
     $cb = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     try {
