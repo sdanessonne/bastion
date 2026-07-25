@@ -263,6 +263,22 @@ PY
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid fond d'ecran deploye"
         ;;
+      inventaire)
+        # GPO « Bastion — Inventaire du parc » : script d'ouverture de session qui releve les
+        # caracteristiques du poste et les transmet a la passerelle. $a = URL, $b = jeton.
+        name="Bastion — Inventaire du parc"
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
+        python3 /usr/local/sbin/proxyfibre-gpo-inventory "$guid" "$a" "$b" >/dev/null 2>&1           || { echo "ERROR: generation du collecteur echouee ($guid)" >&2; exit 1; }
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn"           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
+        echo "$guid inventaire deploye"
+        ;;
       wmi)
         # Filtre WMI : restreindre une stratégie aux postes qui remplissent une condition.
         #   $a = list | set | clear     $b = {GUID de la GPO}     $c = clé de filtre

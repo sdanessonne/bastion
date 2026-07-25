@@ -53,7 +53,18 @@ if ($given !== '') {
         } catch (Throwable $e) { /* table pas encore créée : seul le jeton partagé s'applique */ }
     }
 }
-if (!$estAdmin && !$estStation) { jout(['error' => 'unauthorized'], 401); }
+// Jeton POSTE : porté par le script d'inventaire déployé par stratégie. Il n'ouvre QUE la
+// remontée d'inventaire (voir $actionsPoste), rien d'autre.
+// Limite assumée, à connaître : ce script vit dans le SYSVOL, lisible par tout compte du
+// domaine — le jeton n'est donc pas un secret fort. L'inventaire est par nature DÉCLARATIF
+// (un poste décrit lui-même son matériel) : c'est une donnée d'exploitation, jamais une preuve.
+// L'adresse d'origine est enregistrée avec chaque remontée pour pouvoir recouper.
+$expectPoste = '';
+try { $expectPoste = (string) $db->query("SELECT v FROM pf_settings WHERE k='inventory_token'")->fetchColumn(); }
+catch (Throwable $e) { }
+$estPoste = $expectPoste !== '' && $given !== '' && hash_equals($expectPoste, $given);
+
+if (!$estAdmin && !$estStation && !$estPoste) { jout(['error' => 'unauthorized'], 401); }
 
 // Traçabilité : un jeton par-station note sa dernière activité (quand, IP, poste). La console
 // montre ainsi quel ordinateur se sert de quel jeton — et repère un jeton dormant ou compromis.
@@ -71,6 +82,8 @@ $action = (string) ($_GET['action'] ?? $_POST['action'] ?? '');
 // ouvrirait toute l'API : la limitation ne serait qu'une intention.
 $actionsStation = ['station.report', 'station.clamdb', 'station.auth', 'station.bitlocker'];
 if ($estStation && !$estAdmin && !in_array($action, $actionsStation, true)) { jout(['error' => 'forbidden'], 403); }
+// Même principe pour le jeton POSTE : il n'ouvre QUE la remontée d'inventaire.
+if ($estPoste && !$estAdmin && $action !== 'poste.inventaire') { jout(['error' => 'forbidden'], 403); }
 $active = fn(string $u) => trim((string) shell_exec('systemctl is-active ' . escapeshellarg($u) . ' 2>/dev/null'));
 
 switch ($action) {
@@ -343,6 +356,58 @@ switch ($action) {
                ->execute([$poste, $op, $volume, $rec, (string) ($_SERVER['REMOTE_ADDR'] ?? '')]);
         } catch (Throwable $e) { jout(['error' => 'stockage impossible'], 500); }
         jout(['ok' => true]);
+    }
+
+    case 'poste.inventaire': {
+        // Remontée d'inventaire par un poste du domaine (script d'ouverture de session).
+        // Le corps est du JSON ; on ne conserve QUE des champs connus, bornés en longueur.
+        $raw = file_get_contents('php://input');
+        if ($raw === false || strlen($raw) > 512 * 1024) { jout(['error' => 'corps invalide'], 400); }
+        $d = json_decode((string) $raw, true);
+        if (!is_array($d)) { jout(['error' => 'json invalide'], 400); }
+        $s = fn($k, $max = 190) => substr(trim((string) ($d[$k] ?? '')), 0, $max);
+        $i = fn($k) => (int) ($d[$k] ?? 0);
+        $poste = strtoupper($s('poste', 64));
+        if ($poste === '' || !preg_match('/^[A-Z0-9._-]{1,64}$/', $poste)) { jout(['error' => 'nom de poste invalide'], 400); }
+        // Les logiciels sont stockés à part, en JSON, et plafonnés.
+        $apps = [];
+        if (isset($d['logiciels']) && is_array($d['logiciels'])) {
+            foreach (array_slice($d['logiciels'], 0, 400) as $a) {
+                if (!is_array($a)) { continue; }
+                $n = substr(trim((string) ($a['n'] ?? '')), 0, 160);
+                if ($n !== '') { $apps[] = ['n' => $n, 'v' => substr(trim((string) ($a['v'] ?? '')), 0, 40)]; }
+            }
+        }
+        try {
+            $db->exec('CREATE TABLE IF NOT EXISTS pf_inventaire (
+                poste VARCHAR(64) PRIMARY KEY, vu_le TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                utilisateur VARCHAR(64), domaine VARCHAR(96),
+                os_nom VARCHAR(190), os_version VARCHAR(40), os_build VARCHAR(20), os_sku INT, os_install DATE NULL,
+                fabricant VARCHAR(96), modele VARCHAR(96), serie VARCHAR(96), bios VARCHAR(190), type_machine INT,
+                processeur VARCHAR(190), coeurs INT, memoire_mo INT,
+                disque_go INT, libre_go INT, disque_mdl VARCHAR(190),
+                ip VARCHAR(45), mac VARCHAR(20), secureboot INT, ip_source VARCHAR(45),
+                logiciels MEDIUMTEXT)');
+            $inst = $s('os_install', 10); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $inst)) { $inst = null; }
+            $db->prepare('INSERT INTO pf_inventaire
+                (poste,utilisateur,domaine,os_nom,os_version,os_build,os_sku,os_install,fabricant,modele,serie,bios,
+                 type_machine,processeur,coeurs,memoire_mo,disque_go,libre_go,disque_mdl,ip,mac,secureboot,ip_source,logiciels)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE vu_le=NOW(), utilisateur=VALUES(utilisateur), domaine=VALUES(domaine),
+                 os_nom=VALUES(os_nom), os_version=VALUES(os_version), os_build=VALUES(os_build), os_sku=VALUES(os_sku),
+                 os_install=VALUES(os_install), fabricant=VALUES(fabricant), modele=VALUES(modele), serie=VALUES(serie),
+                 bios=VALUES(bios), type_machine=VALUES(type_machine), processeur=VALUES(processeur), coeurs=VALUES(coeurs),
+                 memoire_mo=VALUES(memoire_mo), disque_go=VALUES(disque_go), libre_go=VALUES(libre_go),
+                 disque_mdl=VALUES(disque_mdl), ip=VALUES(ip), mac=VALUES(mac), secureboot=VALUES(secureboot),
+                 ip_source=VALUES(ip_source), logiciels=VALUES(logiciels)')
+               ->execute([$poste, $s('utilisateur', 64), $s('domaine', 96), $s('os_nom'), $s('os_version', 40),
+                          $s('os_build', 20), $i('os_sku'), $inst, $s('fabricant', 96), $s('modele', 96),
+                          $s('serie', 96), $s('bios'), $i('type'), $s('processeur'), $i('coeurs'), $i('memoire_mo'),
+                          $i('disque_go'), $i('libre_go'), $s('disque_mdl'), $s('ip', 45), $s('mac', 20),
+                          $i('secureboot'), (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+                          json_encode($apps, JSON_UNESCAPED_UNICODE)]);
+        } catch (Throwable $e) { jout(['error' => 'stockage impossible'], 500); }
+        jout(['ok' => true, 'poste' => $poste, 'logiciels' => count($apps)]);
     }
 
     case 'status':
