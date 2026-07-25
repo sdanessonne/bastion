@@ -362,7 +362,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Une bannière ne s'affiche QUE si le titre est renseigné : on évite une fenêtre vide.
             if ($cap === '' && $txt !== '') { $cap = 'Information'; }
             $flags = '';
-            foreach (['u' => 'hide_user', 'd' => 'hide_details', 's' => 'hide_shutdown'] as $lt => $fld) {
+            foreach (['u' => 'hide_user', 'd' => 'hide_details', 's' => 'hide_shutdown',
+                      'c' => 'csp_force'] as $lt => $fld) {
                 if (!empty($_POST[$fld])) { $flags .= $lt; }
             }
             $imgPath = '-';   // « - » : conserver l'image déjà déployée
@@ -1207,14 +1208,23 @@ $lgHas = fn(string $l) => strpos($lgFlags, $l) !== false;
           <label style="display:block;margin:.2rem 0"><input type="checkbox" name="hide_shutdown"<?= $lgHas('s') ? ' checked' : '' ?>>
             Retirer le <strong>bouton d'arrêt</strong> de l'écran de connexion</label>
         </fieldset>
+        <fieldset style="border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem">
+          <legend class="muted small" style="padding:0 .4rem">Compatibilité de l'image</legend>
+          <label style="display:block"><input type="checkbox" name="csp_force"<?= $lgHas('c') ? ' checked' : '' ?>>
+            Appliquer l'image <strong>aussi sur les éditions Famille et Professionnel</strong></label>
+          <p class="muted small" style="margin:.4rem 0 0">Utile tant que des postes ne sont pas en édition
+          Entreprise. Contrairement aux autres réglages, celui-ci <strong>reste inscrit sur le poste</strong>
+          même après retrait de la stratégie : décocher cette case efface l'inscription au prochain
+          déploiement (ne supprimez donc pas la GPO avant d'avoir décoché).</p>
+        </fieldset>
         <div><button class="btn">🚀 Déployer sur les postes</button></div>
       </div>
     </form>
     <p class="ad-help" style="margin:.8rem 0 0">
       Le <strong>message</strong> et les <strong>masquages</strong> fonctionnent sur toutes les éditions de Windows.
-      L'<strong>image de fond</strong>, elle, n'est appliquée que par les éditions <strong>Entreprise</strong> et
-      <strong>Éducation</strong> : sur une édition <strong>Famille ou Professionnel</strong>, Windows ignore ce réglage
-      et garde son image par défaut. Effet au <strong>prochain démarrage</strong> du poste.
+      L'<strong>image de fond</strong> n'est appliquée nativement que par les éditions <strong>Entreprise</strong>
+      et <strong>Éducation</strong> ; pour les éditions Famille et Professionnel, cochez la case de compatibilité
+      ci-dessus. Effet au <strong>prochain démarrage</strong> du poste.
     </p>
   </div>
 </section>

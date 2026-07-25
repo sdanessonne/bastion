@@ -266,8 +266,9 @@ PY
       logon)
         # Écran de connexion : GPO « Bastion — Écran de connexion ».
         #   $a = image (facultatif, "-" pour ne pas y toucher)   $b = titre   $c = message
-        #   $d = masquages, lettres cumulables : u=dernier utilisateur, d=details du compte,
-        #        s=bouton d'arret. Vide = ne rien masquer.
+        #   $d = options, lettres cumulables : u=masquer le dernier utilisateur,
+        #        d=masquer les details du compte, s=retirer le bouton d'arret,
+        #        c=forcer l'image aussi sur les editions Famille/Professionnel (PersonalizationCSP).
         name="Bastion — Écran de connexion"
         guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
             /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
@@ -311,11 +312,24 @@ unc, cap, txt, flags = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 SYS  = "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System"
 PERS = "Software\\Policies\\Microsoft\\Windows\\Personalization"
 WSYS = "Software\\Policies\\Microsoft\\Windows\\System"
+CSP  = "Software\\Microsoft\\Windows\\CurrentVersion\\PersonalizationCSP"
 p = []
 if unc:
     # Image de l'écran de verrouillage/connexion. Stratégie officielle : éditions
     # Entreprise/Éducation. Sur l'édition Famille/Pro, Windows l'ignore (voir l'aide).
     p.append({"keyname": PERS, "valuename": "LockScreenImage", "class": "MACHINE", "type": "REG_SZ", "data": unc})
+# Repli pour les éditions Famille/Professionnel : PersonalizationCSP applique l'image là où la
+# stratégie officielle est ignorée. Ce ne sont PAS des clés de stratégie : elles restent inscrites
+# sur le poste après le retrait de la GPO (« tatouage ») — d'où le nettoyage explicite ci-dessous
+# quand l'option est décochée, faute de quoi l'image ne pourrait plus jamais être retirée.
+if "c" in flags and unc:
+    p.append({"keyname": CSP, "valuename": "LockScreenImagePath",   "class": "MACHINE", "type": "REG_SZ", "data": unc})
+    p.append({"keyname": CSP, "valuename": "LockScreenImageUrl",    "class": "MACHINE", "type": "REG_SZ", "data": unc})
+    p.append({"keyname": CSP, "valuename": "LockScreenImageStatus", "class": "MACHINE", "type": "REG_DWORD", "data": 1})
+else:
+    p.append({"keyname": CSP, "valuename": "LockScreenImageStatus", "class": "MACHINE", "type": "REG_DWORD", "data": 0})
+    p.append({"keyname": CSP, "valuename": "LockScreenImagePath",   "class": "MACHINE", "type": "REG_SZ", "data": ""})
+    p.append({"keyname": CSP, "valuename": "LockScreenImageUrl",    "class": "MACHINE", "type": "REG_SZ", "data": ""})
 # Titre + message affichés AVANT la saisie du mot de passe. Vides = pas de bannière.
 p.append({"keyname": SYS, "valuename": "legalnoticecaption", "class": "MACHINE", "type": "REG_SZ", "data": cap})
 p.append({"keyname": SYS, "valuename": "legalnoticetext",    "class": "MACHINE", "type": "REG_SZ", "data": txt})
