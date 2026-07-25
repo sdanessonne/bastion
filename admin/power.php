@@ -58,7 +58,7 @@ if ($lance || $apercu):
       </section>
       <script>
       (function(){
-        var ESTIME=90000, t0=Date.now(), fails=0, wasDown=false, back=false;
+        var ESTIME=90000, t0=Date.now(), fails=0, oks=0, wasDown=false, back=false;
         var bar=document.getElementById('rbbar'), pct=document.getElementById('rbpct'),
             step=document.getElementById('rbstep'), title=document.getElementById('rbtitle'),
             ico=document.getElementById('rbico'), note=document.getElementById('rbnote');
@@ -78,10 +78,25 @@ if ($lance || $apercu):
           // Une réponse (200/302/…) = serveur joignable ; une erreur réseau = injoignable.
           // On n'annonce le retour QUE s'il a d'abord été VU indisponible (sinon le tout premier
           // sondage, alors que les services n'ont pas encore coupé, croirait à tort au retour).
-          fetch('/login.php?ping=' + Date.now(), { cache:'no-store', redirect:'manual' })
-            .then(function(){ fails=0; if(wasDown) arrive(); })
-            .catch(function(){ fails++; if(fails>=2){ wasDown=true; step.textContent='Redémarrage du serveur…'; } })
-            .finally(function(){ if(!back) setTimeout(ping, 3000); });
+          //
+          // DÉLAI D'ATTENTE INDISPENSABLE : pendant l'arrêt puis le démarrage, la machine ne
+          // REFUSE pas la connexion, elle ne répond simplement plus — la requête reste donc en
+          // attente très longtemps au lieu d'échouer. Sans ce délai, l'indisponibilité n'était
+          // jamais constatée, « wasDown » restait faux, et la page tournait indéfiniment à 92 %
+          // alors que le serveur était déjà revenu.
+          var ctl = new AbortController();
+          var to  = setTimeout(function(){ ctl.abort(); }, 2500);
+          fetch('/login.php?ping=' + Date.now(), { cache:'no-store', redirect:'manual', signal: ctl.signal })
+            .then(function(){ clearTimeout(to); fails=0; oks++; if(wasDown) arrive(); })
+            .catch(function(){ clearTimeout(to); oks=0; fails++;
+                               if(fails>=2){ wasDown=true; step.textContent='Redémarrage du serveur…'; } })
+            .finally(function(){
+              // Filet de sécurité : si le serveur répond de façon stable bien au-delà du temps
+              // d'un redémarrage, c'est qu'il est revenu (ou qu'il n'est jamais parti) — on
+              // recharge plutôt que de laisser la page bloquée.
+              if(!back && oks>=3 && (Date.now()-t0) > ESTIME*1.6){ arrive(); return; }
+              if(!back) setTimeout(ping, 3000);
+            });
         }
         // Laisser au serveur le temps de commencer à s'arrêter avant de sonder.
         setTimeout(ping, 4000);
