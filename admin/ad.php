@@ -215,7 +215,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
         case 'user_delete':     $out = ad('user', 'delete', (string) ($_POST['name'] ?? '')); break;
         case 'user_setpw':      $out = ad('user', 'setpassword', (string) ($_POST['name'] ?? ''), (string) ($_POST['password'] ?? '')); break;
-        case 'computer_delete': $out = ad('computer', 'delete', (string) ($_POST['name'] ?? '')); break;
+        case 'computer_delete':
+            // Retirer un poste du domaine DEPUIS LE POSTE ne supprime pas son objet dans
+            // l'annuaire : c'est le comportement de Windows. On le supprime donc ici, et on
+            // retire aussi sa fiche d'inventaire — sans quoi un poste mis au rebut resterait
+            // affiché indéfiniment dans le parc.
+            $cnm = (string) ($_POST['name'] ?? '');
+            $out = ad('computer', 'delete', $cnm);
+            if (stripos($out, 'ERROR') === false && stripos($out, 'Failed') === false) {
+                try { pf_db()->prepare('DELETE FROM pf_inventaire WHERE poste=?')
+                             ->execute([strtoupper(rtrim($cnm, '$'))]); } catch (Throwable $e) {}
+                $out = "Poste « " . rtrim($cnm, '$') . " » retiré du domaine et de l'inventaire.";
+            }
+            break;
         case 'group_add':       $out = ad('group', 'add', (string) ($_POST['name'] ?? '')); break;
         case 'group_del':
             $gn = (string) ($_POST['name'] ?? '');
