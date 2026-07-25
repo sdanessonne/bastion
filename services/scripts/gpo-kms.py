@@ -35,11 +35,14 @@ def ps1(gw):
         "# Ne rien faire si Windows est déjà activé (préserve OEM/numérique).",
         "$win=Get-CimInstance SoftwareLicensingProduct -Filter \"ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL\" | Where-Object {$_.LicenseStatus -eq 1}",
         "if (-not $win) {",
-        "  $cap=(Get-CimInstance Win32_OperatingSystem).Caption",
+        "# Edition determinee par son CODE NUMERIQUE et non par le libelle : sur un Windows",
+        "# FRANCAIS le libelle vaut « Entreprise » et « Professionnel » — un test sur",
+        "# 'Enterprise' ne correspondait donc a rien, et un poste Entreprise recevait la cle Pro.",
+        "  $sku=(Get-CimInstance Win32_OperatingSystem).OperatingSystemSKU",
         "  $gvlk=$null",
-        "  if ($cap -match 'Enterprise') { $gvlk='NPPR9-FWDCX-D2C8J-H872K-2YT43' }",
-        "  elseif ($cap -match 'Education') { $gvlk='NW6C2-QMPVW-D7KKK-3GKT6-VCFB2' }",
-        "  elseif ($cap -match 'Pro') { $gvlk='W269N-WFGWX-YVC9B-4J6C9-T83GX' }",
+        "  if ($sku -in 4,27,125) { $gvlk='NPPR9-FWDCX-D2C8J-H872K-2YT43' }",          # Entreprise
+        "  elseif ($sku -in 121,122) { $gvlk='NW6C2-QMPVW-D7KKK-3GKT6-VCFB2' }",       # Education
+        "  elseif ($sku -in 48,49) { $gvlk='W269N-WFGWX-YVC9B-4J6C9-T83GX' }",         # Professionnel
         "  if ($gvlk) { cscript //nologo $slmgr /ipk $gvlk | Out-Null }",
         "  cscript //nologo $slmgr /skms $kms | Out-Null",
         "  cscript //nologo $slmgr /ato | Out-Null",
