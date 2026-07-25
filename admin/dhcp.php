@@ -76,6 +76,18 @@ catch (Throwable $e) {}
 $lanNet = trim((string) shell_exec("ip -4 addr show scope global 2>/dev/null | awk '/inet /{print \$2}' | cut -d/ -f1 | head -1"));
 $lanPre = $lanNet ? preg_replace('/\.\d+$/', '.', $lanNet) : '192.168.182.';
 
+// Baux DHCP en cours : adresses réellement distribuées par dnsmasq.
+// Format d'une ligne : « <expiration epoch> <MAC> <IP> <nom du poste> <identifiant client> ».
+$leases = [];
+foreach (@file('/var/lib/misc/dnsmasq.leases', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $l) {
+    $p = preg_split('/\s+/', trim($l));
+    if (count($p) >= 3 && filter_var($p[2], FILTER_VALIDATE_IP)) {
+        $leases[] = ['exp' => (int) $p[0], 'mac' => strtolower($p[1]), 'ip' => $p[2],
+                     'host' => ($p[3] ?? '*') === '*' ? '' : ($p[3] ?? '')];
+    }
+}
+usort($leases, fn($a, $b) => ip2long($a['ip']) <=> ip2long($b['ip']));
+
 // Clients actuellement en ligne (pour proposer leur MAC en un clic).
 $live = [];
 foreach (nds_clients() as $mac => $c) {
@@ -114,17 +126,57 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
 </section>
 
 <section class="panel">
+  <div class="panel-head"><h2>📋 Adresses attribuées (<?= count($leases) ?>)</h2></div>
+  <div style="padding:1.2rem">
+    <p class="muted small" style="margin-top:0">Adresses <strong>réellement distribuées</strong> par le serveur DHCP
+    en ce moment, avec le nom que le poste a annoncé. Un appareil éteint reste listé jusqu'à l'expiration de son bail.</p>
+    <table class="grid-table">
+      <thead><tr><th style="width:150px">Adresse IP</th><th style="width:170px">Adresse MAC</th><th>Nom du poste</th>
+        <th style="width:150px">Bail expire</th><th style="width:120px">État</th><th style="width:120px"></th></tr></thead>
+      <tbody>
+        <?php if (!$leases): ?>
+          <tr><td colspan="6" class="muted center">Aucun bail en cours. Les appareils apparaîtront ici dès qu'ils
+            demanderont une adresse.</td></tr>
+        <?php else: $now = time(); foreach ($leases as $lz):
+                $resv = false; foreach ($rows as $rw) { if (strtolower($rw['mac']) === $lz['mac']) { $resv = true; break; } }
+                $online = isset($live[$lz['mac']]); ?>
+          <tr>
+            <td class="mono"><strong><?= e($lz['ip']) ?></strong></td>
+            <td class="mono small"><?= e($lz['mac']) ?></td>
+            <td><?= $lz['host'] !== '' ? e($lz['host']) : '<span class="muted">(sans nom)</span>' ?></td>
+            <td class="small"><?= $lz['exp'] > 0
+                  ? ($lz['exp'] > $now ? e(date('d/m/Y H:i', $lz['exp'])) : '<span class="muted">expiré</span>')
+                  : '<span class="muted">illimité</span>' ?></td>
+            <td>
+              <?php if ($online): ?><span class="badge on">En ligne</span><?php endif; ?>
+              <?php if ($resv): ?><span class="badge">Réservée</span><?php endif; ?>
+              <?php if (!$online && !$resv): ?><span class="muted small">—</span><?php endif; ?>
+            </td>
+            <td class="row-actions">
+              <?php if (!$resv): ?>
+                <button type="button" class="btn-sm js-resv" data-mac="<?= e($lz['mac']) ?>" data-ip="<?= e($lz['ip']) ?>"
+                  title="Toujours attribuer cette adresse à cet appareil">Réserver</button>
+              <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; endif; ?>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
   <div class="panel-head"><h2>🔌 Réservations DHCP (<?= count($rows) ?>)</h2></div>
   <div style="padding:1.2rem">
     <p class="muted small" style="margin-top:0">Attribue toujours la même adresse IP à un appareil (repéré par son
     adresse MAC) — imprimantes, serveurs, bornes… L'appareil prend l'IP réservée à son prochain renouvellement de bail.</p>
 
-    <form method="post" class="ad-inline" style="margin-bottom:1rem">
+    <form method="post" class="ad-inline" style="margin-bottom:1rem" id="resvForm">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="add">
-      <input type="text" name="mac" required placeholder="Adresse MAC (aa:bb:cc:dd:ee:ff)" list="livemac"
+      <input type="text" name="mac" id="resvMac" required placeholder="Adresse MAC (aa:bb:cc:dd:ee:ff)" list="livemac"
              style="min-width:210px;font-family:ui-monospace,monospace">
       <datalist id="livemac"><?php foreach ($live as $m => $ip): ?><option value="<?= e($m) ?>"><?= e($ip) ?></option><?php endforeach; ?></datalist>
-      <input type="text" name="ip" required placeholder="<?= e($lanPre) ?>50" style="max-width:150px;font-family:ui-monospace,monospace">
+      <input type="text" name="ip" id="resvIp" required placeholder="<?= e($lanPre) ?>50" style="max-width:150px;font-family:ui-monospace,monospace">
       <input type="text" name="label" placeholder="Nom (ex. Imprimante accueil)" maxlength="64" style="min-width:180px">
       <button class="btn-sm">＋ Réserver</button>
     </form>
@@ -151,3 +203,17 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   </div>
 </section>
 <?php pf_footer(); ?>
+
+<script>
+// « Réserver » depuis la liste des adresses attribuées : pré-remplit le formulaire ci-dessous
+// avec l'adresse MAC et l'IP déjà obtenue par l'appareil, puis y amène l'administrateur.
+document.querySelectorAll('.js-resv').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var m = document.getElementById('resvMac'), i = document.getElementById('resvIp');
+    if (!m || !i) { return; }
+    m.value = b.dataset.mac; i.value = b.dataset.ip;
+    document.getElementById('resvForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    i.focus();
+  });
+});
+</script>
