@@ -121,8 +121,37 @@ if ($stage === 'password' && !empty($_SESSION['pending_admin']) && $_SERVER['REQ
     .brand-center .logo{animation:logoPulse 3s ease-in-out infinite}
     @keyframes logoPulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 0 rgba(56,189,248,0))}
       50%{transform:scale(1.05);filter:drop-shadow(0 6px 20px rgba(56,189,248,.5))}}
+    /* « opacity:.7 » sur une couleur déjà atténuée descendait le contraste sous le seuil
+       lisible. On garde la discrétion par la taille et la graisse, pas en effaçant le texte. */
     .login-tag{text-align:center;color:var(--muted);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
-      margin-top:1.2rem;opacity:.7}
+      margin-top:1.2rem}
+    /* Les champs ne sont plus IMBRIQUÉS dans leur étiquette : il fallait sortir le bouton
+       « afficher le mot de passe » du <label>, sinon cliquer dessus activait aussi le champ.
+       « .login-card label » (admin.css:41) était une grille qui portait tout l'espacement —
+       on le rétablit ici, sans quoi étiquettes et champs se collent. */
+    .login-card form label{display:block;margin:0 0 .35rem;font-size:.82rem;color:var(--muted)}
+    .login-card form #username{margin-bottom:0}
+    .login-card .champ-mdp{margin-bottom:1rem}
+    .champ-aide{margin:.4rem 0 .9rem;font-size:.76rem;color:var(--muted);line-height:1.4}
+    .champ-aide code{background:rgba(120,150,190,.16);padding:.05rem .3rem;border-radius:4px;font-size:.95em}
+    .champ-alerte{margin:.4rem 0 0;font-size:.78rem;color:#fbbf24}
+    .champ-alerte[hidden]{display:none}
+    /* Révélation du mot de passe : le bouton est DANS le champ, sans en réduire la zone
+       de saisie utile. Un agent qui tape à l'aveugle sur un clavier de portable en a besoin. */
+    .champ-mdp{position:relative;display:block}
+    .champ-mdp input{width:100%;padding-right:2.9rem}
+    .oeil{position:absolute;right:.45rem;top:50%;transform:translateY(-50%);
+      width:2rem;height:2rem;display:grid;place-items:center;padding:0;margin:0;
+      background:transparent;border:0;border-radius:8px;cursor:pointer;font-size:1rem;
+      line-height:1;color:var(--muted);opacity:.75}
+    .oeil:hover{opacity:1;background:rgba(120,150,190,.14)}
+    .oeil[aria-pressed="true"]{opacity:1;color:var(--accent2,#38bdf8)}
+    /* Focus VISIBLE : la navigation au clavier est le seul recours quand la souris lâche,
+       et c'est aussi une exigence d'accessibilité. */
+    .login-card :is(input,button,a):focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
+    /* Envoi en cours : la limitation de tentatives côté serveur peut rendre la réponse
+       lente ; sans retour, l'agent reclique et déclenche une seconde tentative. */
+    #btnLogin[aria-busy="true"]{opacity:.7;cursor:progress}
     @media(prefers-reduced-motion:reduce){.login-body,.orb,.brand-center .logo{animation:none}#bgnet{display:none}}
   </style>
 </head>
@@ -140,7 +169,9 @@ if ($stage === 'password' && !empty($_SESSION['pending_admin']) && $_SERVER['REQ
   <script>if(sessionStorage.getItem('pf_splash')){var s=document.getElementById('splash');if(s)s.style.display='none';}</script>
   <main class="login-card">
     <div class="brand-center"><img class="logo" src="/assets/bastion-icon.svg" alt="Bastion"><h1>Bastion</h1><p class="muted">Console d'administration</p></div>
-    <?php if ($error): ?><div class="flash err"><?= e($error) ?></div><?php endif; ?>
+    <?php // role="alert" : sans lui, un lecteur d'écran n'annonce jamais l'échec — l'agent
+          // ré-essaie sans savoir pourquoi ça a échoué. ?>
+    <?php if ($error): ?><div class="flash err" role="alert"><?= e($error) ?></div><?php endif; ?>
     <?php if ($stage === 'totp'): ?>
       <p class="muted" style="text-align:center;margin:.2rem 0 1rem">🔐 Saisissez le code à 6 chiffres de votre application d'authentification.</p>
       <form method="post" autocomplete="off">
@@ -154,12 +185,32 @@ if ($stage === 'password' && !empty($_SESSION['pending_admin']) && $_SERVER['REQ
       </form>
       <p style="text-align:center;margin-top:1rem"><a class="muted" href="/logout.php" style="font-size:.8rem">← Annuler</a></p>
     <?php else: ?>
-      <form method="post" autocomplete="off">
+      <?php
+        // « autocomplete » ACTIVÉ, contrairement à l'usage réflexe. Le bloquer n'empêche
+        // personne d'entrer : il empêche seulement le gestionnaire de mots de passe de
+        // remplir le champ, ce qui pousse à choisir un mot de passe court et mémorisable —
+        // exactement l'inverse du but recherché. Les navigateurs ignorent d'ailleurs
+        // largement « autocomplete=off » sur les champs de connexion depuis des années.
+      ?>
+      <form method="post" id="fLogin">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="step" value="password">
-        <label>Identifiant<input type="text" name="username" required autofocus placeholder="0110480 ou admin-0110480"></label>
-        <label>Mot de passe<input type="password" name="password" required></label>
-        <button type="submit">Se connecter</button>
+        <label for="username">Identifiant</label>
+        <input id="username" type="text" name="username" required autofocus
+               autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false"
+               inputmode="text" placeholder="0110480 ou admin-0110480"
+               aria-describedby="aideId">
+        <p id="aideId" class="champ-aide">Votre matricule. Préfixez-le de <code>admin-</code> pour un compte d'administration.</p>
+
+        <label for="password">Mot de passe</label>
+        <div class="champ-mdp">
+          <input id="password" type="password" name="password" required autocomplete="current-password">
+          <button type="button" class="oeil" id="voirMdp" aria-label="Afficher le mot de passe"
+                  aria-pressed="false" title="Afficher le mot de passe">👁</button>
+        </div>
+        <p id="majAlerte" class="champ-alerte" hidden>⇪ Le verrouillage des majuscules est activé.</p>
+
+        <button type="submit" id="btnLogin">Se connecter</button>
       </form>
     <?php endif; ?>
     <div class="login-tag">🛡️ Contrôle d'accès réseau sécurisé</div>
@@ -182,6 +233,55 @@ if ($stage === 'password' && !empty($_SESSION['pending_admin']) && $_SERVER['REQ
         requestAnimationFrame(frame);
       }
       size(); frame(); addEventListener('resize',size);
+    })();
+    // Confort et robustesse de la saisie. Tout est facultatif : si ce bloc ne s'exécute
+    // pas, le formulaire reste parfaitement utilisable — aucune de ces aides n'est un
+    // prérequis pour se connecter.
+    (function(){
+      var mdp=document.getElementById('password'), alerte=document.getElementById('majAlerte'),
+          oeil=document.getElementById('voirMdp'), form=document.getElementById('fLogin'),
+          btn=document.getElementById('btnLogin'), id=document.getElementById('username');
+
+      // Verrouillage des majuscules : première cause d'échec sur un mot de passe saisi
+      // à l'aveugle, et le message d'erreur du serveur ne peut pas le deviner.
+      function maj(e){
+        if(!alerte||typeof e.getModifierState!=='function') return;
+        alerte.hidden=!e.getModifierState('CapsLock');
+      }
+      if(mdp){ mdp.addEventListener('keydown',maj); mdp.addEventListener('keyup',maj);
+               mdp.addEventListener('blur',function(){ if(alerte) alerte.hidden=true; }); }
+
+      if(oeil&&mdp){ oeil.addEventListener('click',function(){
+        var vu=mdp.type==='text';
+        mdp.type=vu?'password':'text';
+        oeil.setAttribute('aria-pressed',String(!vu));
+        oeil.setAttribute('aria-label',vu?'Afficher le mot de passe':'Masquer le mot de passe');
+        oeil.title=oeil.getAttribute('aria-label');
+        mdp.focus();
+      }); }
+
+      // Matricule : on retire les espaces collés depuis un tableur ou un courriel, cause
+      // d'échec incompréhensible pour l'agent — l'identifiant a l'air correct à l'écran.
+      if(id){ id.addEventListener('blur',function(){ id.value=id.value.trim(); }); }
+
+      // Anti double-envoi : une seconde soumission consomme une tentative et rapproche
+      // du verrouillage, pour rien.
+      if(form&&btn){ form.addEventListener('submit',function(){
+        if(btn.dataset.envoye){ return; }
+        btn.dataset.envoye='1';
+        btn.setAttribute('aria-busy','true');
+        btn.textContent='Connexion…';
+        setTimeout(function(){ btn.disabled=true; },0);   // après l'envoi, sinon rien ne part
+      }); }
+
+      // Code à 6 chiffres : accepte un collage avec espaces et envoie tout seul une fois
+      // complet. Le code expire en 30 s, chaque frappe superflue compte.
+      var code=document.querySelector('input[name="code"]');
+      if(code){ code.addEventListener('input',function(){
+        var v=code.value.replace(/\D/g,'').slice(0,6);
+        if(v!==code.value) code.value=v;
+        if(v.length===6&&code.form&&!code.dataset.envoye){ code.dataset.envoye='1'; code.form.submit(); }
+      }); }
     })();
     (function(){
       var s=document.getElementById('splash'); if(!s||s.style.display==='none') return;
