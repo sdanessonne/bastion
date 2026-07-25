@@ -58,6 +58,19 @@ $GROUPS = [
       <p>Le blocage est appliqué au niveau DNS : il fonctionne quel que soit le site (HTTP comme HTTPS) et prend effet
       immédiatement pour tous les clients.</p>'],
 
+    ['visiteurs', '🎫', 'Accès visiteur (bons temporaires)', '
+      <p><strong>Accès visiteur</strong> : délivrez un <strong>bon</strong> — un identifiant et un mot de passe à
+      usage temporaire — à une personne de passage (intervenant, stagiaire, réunion), sans lui créer de compte.</p>
+      <ul>
+        <li>Choisissez la <strong>durée de validité</strong> et le nombre de bons à générer ; imprimez ou recopiez
+        les identifiants pour les remettre au visiteur.</li>
+        <li>Le visiteur se connecte par le <strong>portail</strong> comme un agent, et reste soumis au
+        <strong>filtrage</strong> et à la <strong>journalisation</strong>.</li>
+        <li>À l\'échéance, le bon cesse de fonctionner et disparaît automatiquement de la liste.</li>
+      </ul>
+      <p class="tip">Un bon n\'ouvre <strong>aucun</strong> accès au domaine ni aux dossiers partagés : il ne
+      donne que l\'accès Internet encadré. Pour un accès durable, créez un compte d\'agent.</p>'],
+
     ['antivirus', '🛡️', 'Antivirus &amp; stations blanches', '
       <p><strong>Antivirus</strong> (ClamAV) : état du moteur, mise à jour de la base virale, analyse à la demande des
       dossiers partagés et de l\'espace web, historique. Une analyse complète est aussi <strong>planifiée chaque
@@ -80,8 +93,57 @@ $GROUPS = [
         <li>Système → « Ce PC » → Domaine → <code>bastion.pn.int</code>.</li>
         <li>Identifiants <code>Administrator</code> / mot de passe du domaine, puis redémarrer.</li>
       </ol>
-      <p>Partages depuis un poste : <code>\\\\bastion.pn.int\\Commun</code>. Les dossiers partagés se créent, se
-      renomment en lecture seule/écriture, se rendent visibles ou se retirent depuis l\'onglet « Partages ».</p>'],
+      <p>Depuis un poste, un dossier partagé s\'ouvre par le <strong>nom du serveur</strong> :
+      <code>\\\\dc.bastion.pn.int\\Commun</code>. Le <em>nom de domaine</em> (<code>\\\\bastion.pn.int\\…</code>)
+      ne convient pas pour un dossier ordinaire : Windows répond « Élément introuvable ».</p>'],
+
+    ['partages', '📁', 'Dossiers partagés : droits &amp; quota', '
+      <p>Un <strong>dossier partagé</strong> est un espace commun sur la passerelle, ouvert depuis un poste par
+      <code>\\\\dc.bastion.pn.int\\NomDuDossier</code>. Les fichiers déposés sont analysés par l\'antivirus.</p>
+      <p><strong>Droits d\'accès</strong> (colonne « Droits d\'accès » → « Modifier les droits ») — deux régimes :</p>
+      <ul>
+        <li><strong>Tous les agents du domaine</strong>, en <em>lecture-écriture</em> (dépôt, modification,
+        suppression) ou en <em>lecture seule</em> (consultation uniquement) ;</li>
+        <li><strong>Seulement les groupes désignés</strong> : pour chaque groupe, <em>Aucun accès</em>,
+        <em>Lecture seule</em> ou <em>Lecture-écriture</em>. Les agents qui ne sont dans aucun de ces groupes
+        n\'ouvrent plus le dossier du tout.</li>
+      </ul>
+      <p>Les <strong>administrateurs du domaine</strong> conservent toujours l\'accès : un dossier ne peut pas
+      devenir inadministrable. <strong>Retirer un droit ne supprime aucun fichier</strong> — les documents déjà
+      déposés restent en place et redeviennent accessibles si le droit est rendu.</p>
+      <p><strong>Quota</strong> : une limite en Mo par dossier (0 = illimité). Les postes voient l\'espace plafonné
+      et l\'écriture est refusée une fois plein ; <strong>aucun fichier n\'est supprimé</strong>.</p>
+      <p class="tip">Un agent que vous venez d\'ajouter à un groupe travaille encore avec ses anciens droits : ils
+      sont figés à l\'ouverture de session. Il doit <strong>fermer sa session Windows et la rouvrir</strong>.</p>'],
+
+    ['lecteurs', '💽', 'Lecteurs réseau', '
+      <p>Un <strong>lecteur réseau</strong> connecte automatiquement un dossier partagé à une lettre (Z:, Y:…) à
+      l\'ouverture de session des agents. Ce n\'est qu\'un <strong>raccourci</strong> : il indique où se trouve le
+      dossier, il n\'accorde aucun droit — ceux-ci se règlent sur le dossier partagé lui-même.</p>
+      <ul>
+        <li><strong>Chemin réseau</strong> : toujours par le <strong>nom du serveur</strong>
+        (<code>\\\\dc.bastion.pn.int\\Commun</code>). La liste déroulante propose les dossiers existants.</li>
+        <li><strong>Pour qui ?</strong> : « Tous les agents », ou un <strong>groupe</strong> précis — le lecteur
+        n\'apparaît alors que chez ses membres.</li>
+        <li>Après toute modification : « <strong>🚀 Déployer sur les postes</strong> ».</li>
+      </ul>
+      <p class="tip">Les lecteurs se connectent <strong>à l\'ouverture de session</strong> : après un déploiement,
+      l\'agent doit <strong>fermer sa session et la rouvrir</strong>. Un <code>gpupdate</code> seul ne suffit pas.
+      Un compte administrateur du domaine ne voit pas les lecteurs connectés : testez avec un compte d\'agent.</p>'],
+
+    ['chiffrement', '🔒', 'Chiffrement des postes', '
+      <p><strong>Chiffrement des postes</strong> : vue d\'ensemble des postes du domaine et de l\'état de
+      chiffrement de leur disque, avec les <strong>clés de récupération</strong> conservées dans l\'annuaire.
+      En cas de disque bloqué ou de carte mère changée, la clé se retrouve ici (export possible).</p>
+      <ul>
+        <li><strong>Postes Windows</strong> : le chiffrement s\'active par la stratégie « Chiffrement BitLocker » ;
+        la clé de récupération est déposée automatiquement dans l\'annuaire.</li>
+        <li><strong>Postes Linux</strong> : l\'entrée PXE « <strong>Debian — installation chiffrée (LUKS)</strong> »
+        chiffre le disque dès l\'installation. La phrase secrète est <strong>saisie sur le poste</strong> pendant
+        l\'installation : elle n\'est jamais préenregistrée sur le serveur.</li>
+      </ul>
+      <p class="tip">Un poste chiffré protège les données <strong>quand il est éteint</strong> (vol, perte,
+      mise au rebut). Il ne remplace ni la session verrouillée, ni les droits sur les dossiers partagés.</p>'],
 
     ['gpo', '📋', 'Stratégies de groupe (GPO)', '
       <p>Le <strong>catalogue de stratégies</strong> déploie en un clic (sur tout le domaine) plus de 100 réglages
@@ -90,7 +152,8 @@ $GROUPS = [
       <ul>
         <li><strong>Fond d\'écran des postes</strong> : téléversez une image, elle s\'impose à l\'ouverture de session
         (un aperçu s\'affiche dans la console).</li>
-        <li><strong>Lecteurs réseau</strong> : montez automatiquement des partages (ex. <code>Z: → \\\\bastion.pn.int\\Commun</code>).</li>
+        <li><strong>Lecteurs réseau</strong> : connectez automatiquement des dossiers partagés
+        (ex. <code>Z: → \\\\dc.bastion.pn.int\\Commun</code>) — voir la rubrique « Lecteurs réseau ».</li>
         <li>Chaque GPO déployée peut être <strong>désactivée</strong> (déliée du domaine, réversible) ou
         <strong>désinstallée</strong>. Son état réel (active / désactivée) est indiqué.</li>
       </ul>
@@ -158,9 +221,13 @@ $GROUPS = [
   'Intranet' => [
     ['intranet', '🏠', 'Portail intranet &amp; contenu', '
       <p><strong>Portail intranet</strong> (onglets) : « Accueil » personnalise la page d\'accueil interne (titre,
-      message, liens rapides) ; « Pages » et « Actualités » sont un mini-CMS (Markdown léger, aperçu en direct) visible
-      par les utilisateurs après connexion ; « Médiathèque » stocke les images (ré-encodées à l\'import pour la sécurité).
-      L\'<strong>Assistance</strong> (demandes des agents) reste une entrée séparée.</p>'],
+      message, liens rapides) ; « Pages » et « Actualités » se rédigent dans un <strong>éditeur visuel</strong> —
+      on met en forme directement (gras, titres, listes, liens, images), sans aucun code à connaître, et l\'aperçu
+      est permanent. « Médiathèque » stocke les images (ré-encodées à l\'import pour la sécurité) : le bouton
+      « Insérer une image » y puise directement. Les pages sont visibles par les agents après connexion.
+      L\'<strong>Assistance</strong> (demandes des agents) reste une entrée séparée.</p>
+      <p class="tip">Le contenu collé depuis un traitement de texte est <strong>nettoyé automatiquement</strong> :
+      seule la mise en forme sûre est conservée. C\'est volontaire — cela protège le portail.</p>'],
   ],
 
   'Supervision &amp; exploitation' => [
@@ -174,7 +241,37 @@ $GROUPS = [
     ['sauvegarde', '💾', 'Sauvegarde &amp; restauration', '
       <p><strong>Sauvegarde</strong> : créez une archive complète (base, configuration, médias intranet,
       <strong>sauvegarde du domaine AD</strong>), téléchargez-la, ou restaurez une sauvegarde antérieure. Une
-      <strong>sauvegarde automatique hebdomadaire</strong> est active par défaut.</p>'],
+      <strong>sauvegarde automatique hebdomadaire</strong> est active par défaut.</p>
+      <p><strong>Sauvegarde hors-site</strong> : une archive qui ne quitte jamais la passerelle disparaît avec
+      elle. La dernière archive, <strong>déjà chiffrée</strong>, peut être recopiée automatiquement vers un
+      <strong>dossier partagé</strong> du réseau (NAS, seconde passerelle). Renseignez l\'hôte, le partage, un
+      compte et le sous-dossier, puis « <strong>Tester la connexion</strong> » avant d\'activer l\'envoi
+      automatique. Rien ne part sur Internet : la copie <strong>reste sur votre réseau</strong>.</p>
+      <p class="tip">Conservez la <strong>phrase secrète ailleurs que sur le support</strong> de sauvegarde :
+      sans elle, l\'archive chiffrée est inexploitable — y compris par vous.</p>'],
+
+    ['trafic', '📡', 'Trafic réseau en direct', '
+      <p><strong>Trafic réseau</strong> : ce qui passe par la passerelle <strong>en temps réel</strong> — débit
+      montant et descendant vers Internet, et <strong>classement des postes</strong> qui consomment le plus.
+      La page se rafraîchit toute seule.</p>
+      <p>C\'est l\'écran à ouvrir quand « Internet rame » : il montre en quelques secondes si la ligne est saturée
+      et, le cas échéant, par quel poste. Un poste peut être <strong>déconnecté</strong> d\'un clic depuis la liste
+      des clients (il devra se reconnecter au portail).</p>'],
+
+    ['temps', '🕒', 'Serveur de temps (heure)', '
+      <p>L\'heure est <strong>critique</strong> : au-delà de 5 minutes d\'écart entre un poste et le serveur,
+      l\'authentification du domaine est refusée — stratégies, applications et lecteurs réseau cessent de
+      s\'appliquer, et l\'horodatage des journaux perd sa valeur probante.</p>
+      <ul>
+        <li>La passerelle se synchronise sur un <strong>serveur de temps</strong> paramétrable (<em>Système</em>),
+        et sert elle-même de référence horaire à tous les postes du réseau.</li>
+        <li>Le panneau indique la source utilisée, l\'écart mesuré et la dernière synchronisation ; un bouton
+        force une resynchronisation immédiate.</li>
+        <li>Côté postes, déployez la stratégie « <strong>Recaler l\'heure au démarrage</strong> ».</li>
+      </ul>
+      <p class="tip">Les postes en <strong>machine virtuelle</strong> décalent souvent leur horloge au démarrage.
+      Dans ce cas, l\'outil <code>Install-BastionTimeGuard.cmd</code> (dossier « Commun ») corrige le poste
+      durablement — voir « Outils à lancer sur un poste ».</p>'],
 
     ['services', '🧰', 'Services', '
       <p><strong>Services</strong> : état de tous les services (portail, base, DNS, web, domaine, antivirus, KMS…), avec
@@ -205,6 +302,98 @@ $GROUPS = [
         <li><strong>Quota / horaire non appliqué</strong> : effet à la prochaine connexion, pas sur la session en cours.</li>
         <li><strong>Poste non joint au domaine</strong> : vérifier que son DNS pointe sur <code>192.168.182.2</code>.</li>
       </ul>'],
+
+    ['dep-lecteurs', '💽', 'Les lecteurs réseau ne remontent pas', '
+      <p><strong>Cause la plus fréquente :</strong> les lecteurs sont connectés par un <strong>script d\'ouverture
+      de session</strong>. Ils ne se montent donc qu\'<em>au moment où l\'agent ouvre sa session Windows</em>.</p>
+      <p><strong>Geste à faire, dans l\'ordre :</strong></p>
+      <ul>
+        <li>Sur le poste : <strong>fermer la session</strong> Windows puis la <strong>rouvrir</strong>. Verrouiller
+        et déverrouiller l\'écran ne suffit pas ; redémarrer le poste convient aussi.</li>
+        <li>Dans la console (<em>Active Directory</em> → « Partages &amp; lecteurs ») : le <strong>chemin
+        réseau</strong> doit désigner le <strong>nom du serveur</strong>, par exemple
+        <code>\\\\dc.bastion.pn.int\\Commun</code>.</li>
+        <li>Colonne « <strong>Pour qui ?</strong> » : si le lecteur est réservé à un groupe, l\'agent doit être
+        membre de ce groupe — et avoir rouvert sa session depuis son ajout.</li>
+        <li>Le dossier partagé visé doit accorder un accès à ce groupe : colonne « Droits d\'accès ».</li>
+        <li>Après toute modification : « <strong>🚀 Déployer sur les postes</strong> », puis réouverture de session
+        par l\'agent.</li>
+      </ul>
+      <p class="tip">Un compte <strong>administrateur du domaine</strong> ne voit pas les lecteurs montés : faites
+      le test avec un compte d\'agent ordinaire. Déployez « Attendre le réseau à l\'ouverture de session » pour
+      fiabiliser la toute première connexion d\'un poste.</p>'],
+
+    ['dep-partage-droits', '🔐', 'Le dossier partagé s\'ouvre, mais impossible d\'écrire', '
+      <p><strong>Symptôme :</strong> le dossier s\'ouvre mais l\'enregistrement est refusé — ou bien le fichier
+      déposé par un agent n\'est pas modifiable par ses collègues.</p>
+      <ul>
+        <li><strong>Droits du partage</strong> : <em>Active Directory</em> → « Partages &amp; lecteurs » → colonne
+        « <strong>Droits d\'accès</strong> » → « <strong>Modifier les droits</strong> ». Choisir « Tous les agents
+        du domaine » <em>en lecture-écriture</em>, ou « Seulement les groupes désignés » puis, pour chaque groupe :
+        <em>Aucun accès</em>, <em>Lecture seule</em> ou <em>Lecture-écriture</em>.</li>
+        <li><strong>Permissions du dossier</strong> : si l\'accès reste refusé, ou si les collègues ne peuvent pas
+        modifier un fichier déjà déposé, cliquer « <strong>🔧 Réparer l\'accès aux dossiers partagés</strong> ».
+        L\'opération réapplique les permissions de base aux dossiers et à leur contenu ; elle ne touche pas aux
+        droits par groupe et ne supprime aucun fichier.</li>
+        <li><strong>Quota atteint</strong> : si la jauge de la colonne « Quota » est pleine, la lecture fonctionne
+        mais l\'écriture est refusée. Relever la valeur en Mo (0 = illimité) ou faire faire le ménage.</li>
+        <li><strong>« Élément introuvable »</strong> à l\'ouverture : le chemin utilise le nom de domaine.
+        Utiliser <code>\\\\dc.bastion.pn.int\\Commun</code> (nom du serveur).</li>
+      </ul>
+      <p class="tip">Un agent que vous venez d\'ajouter à un groupe travaille encore avec ses anciens droits : ses
+      groupes sont figés à l\'ouverture de session. Il doit se déconnecter puis se reconnecter à Windows.</p>'],
+
+    ['dep-scripts-demarrage', '⚙️', 'Rien ne s\'applique sur les postes ?', '
+      <p>Une seule règle explique la majorité des cas :</p>
+      <ul>
+        <li><strong>Applications, activation Windows, chiffrement, recalage de l\'heure</strong> = scripts de
+        <strong>démarrage</strong> → il faut <strong>redémarrer le poste</strong>. Un <code>gpupdate</code> ne les
+        lance jamais, fermer et rouvrir la session non plus.</li>
+        <li><strong>Fond d\'écran, lecteurs réseau</strong> = <strong>ouverture de session</strong> → l\'agent ferme
+        sa session et la rouvre.</li>
+      </ul>
+      <p><strong>Geste à faire :</strong> redémarrer le poste et laisser le démarrage aller à son terme —
+      l\'installation est silencieuse et peut durer plusieurs minutes. Pour ne pas attendre, lancer
+      <code>Install-BastionApps.cmd</code> en administrateur sur le poste.</p>
+      <p class="tip">Si le problème revient à chaque démarrage, la cause est l\'heure du poste : voir la rubrique
+      suivante. Relancer un outil une seconde fois est sans risque : une application déjà installée est
+      ignorée.</p>'],
+
+    ['dep-gptini', '🕒', '« Windows a tenté en vain de lire gpt.ini »', '
+      <p>Ce message — comme « la stratégie de l\'ordinateur n\'a pas pu être mise à jour » — signifie que le poste
+      <strong>n\'a pas pu lire les stratégies</strong> sur le contrôleur de domaine. Deux causes, à traiter dans cet
+      ordre :</p>
+      <ul>
+        <li><strong>L\'heure du poste est fausse.</strong> Au-delà de 5 minutes d\'écart avec le serveur,
+        l\'authentification est refusée et plus rien ne s\'applique : ni stratégies, ni applications, ni lecteurs
+        réseau. C\'est le cas classique des postes en <strong>machine virtuelle</strong>, dont l\'horloge se décale
+        au démarrage. Geste : passer <code>Install-BastionTimeGuard.cmd</code> sur le poste, en administrateur, puis
+        redémarrer. Sur une machine virtuelle, vérifier aussi l\'horloge de l\'ordinateur hôte.</li>
+        <li><strong>Les permissions des stratégies sont désynchronisées</strong> côté serveur (fréquent après la
+        création d\'une stratégie). Geste : <em>Active Directory</em> → onglet « Stratégies (GPO) » →
+        « <strong>🩺 Diagnostic des stratégies</strong> », puis « <strong>🔧 Réparer les permissions SYSVOL</strong> »,
+        et redémarrer le poste.</li>
+      </ul>
+      <p class="tip">Le recalage de l\'heure par stratégie est lui-même un script de démarrage : sur un poste dont
+      l\'horloge est déjà trop décalée, il ne peut pas s\'exécuter — c\'est un cercle vicieux.
+      <code>Install-BastionTimeGuard.cmd</code>, installé localement et indépendant du domaine, est là pour le
+      rompre.</p>'],
+
+    ['outils-poste', '🧰', 'Outils à lancer sur un poste', '
+      <p>Trois outils sont mis à disposition dans le dossier partagé <strong>« Commun »</strong>
+      (<code>\\\\dc.bastion.pn.int\\Commun</code>). Ils se lancent <strong>en tant qu\'administrateur</strong>
+      sur le poste concerné, et peuvent être relancés sans risque.</p>
+      <ul>
+        <li><code>Install-BastionTimeGuard.cmd</code> — <strong>corrige l\'heure du poste</strong> et la maintient
+        à chaque démarrage. À passer sur tout poste dont l\'horloge se décale (machines virtuelles).</li>
+        <li><code>Install-BastionApps.cmd</code> — <strong>installe tout de suite</strong> les applications du
+        catalogue, sans attendre un redémarrage.</li>
+        <li><code>Bastion-Diag.ps1</code> — <strong>rapport de diagnostic</strong> (à ouvrir dans Windows
+        PowerShell en administrateur). Il ne modifie rien et produit <code>C:\\bastion-diag.txt</code> ainsi que
+        <code>C:\\bastion-gpresult.html</code> : joignez ces deux fichiers à une demande d\'assistance.</li>
+      </ul>
+      <p class="tip">Ces outils sont utiles quand un poste résiste alors que la console, elle, est correctement
+      configurée : ils agissent localement, sans dépendre du domaine.</p>'],
   ],
 ];
 
