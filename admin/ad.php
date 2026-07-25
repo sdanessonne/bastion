@@ -747,7 +747,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var map = [
     ['Arborescence', 'ensemble'], ['Nom de domaine', 'ensemble'], ['Activation Windows', 'ensemble'],
     ['Fonctionnaires', 'comptes'], ['Groupes &', 'comptes'],
-    ['Ordinateurs', 'postes'], ["Fond d'écran", 'postes'],
+    ['Ordinateurs', 'postes'], ["Fond d'écran", 'postes'], ['Écran de connexion', 'postes'],
     ['Dossiers partagés', 'partages'], ['Lecteurs réseau', 'partages'],
     ['Stratégies de groupe', 'gpo']
   ];
