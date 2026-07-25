@@ -268,6 +268,7 @@ PY
         #   $a = list | set | clear     $b = {GUID de la GPO}     $c = clé de filtre
         case "$a" in
           list)  exec python3 /usr/local/sbin/proxyfibre-gpo-wmi list ;;
+          status) exec python3 /usr/local/sbin/proxyfibre-gpo-wmi status ;;
           set)   exec python3 /usr/local/sbin/proxyfibre-gpo-wmi set "$b" "$c" ;;
           clear) exec python3 /usr/local/sbin/proxyfibre-gpo-wmi clear "$b" ;;
           *) echo "usage: gpo wmi list|set <guid> <filtre>|clear <guid>" >&2; exit 2 ;;

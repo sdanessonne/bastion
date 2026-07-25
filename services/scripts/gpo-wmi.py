@@ -120,6 +120,31 @@ def main():
             print('%s\t%s' % (k, label))
         return
 
+    if action == 'status':
+        # « {GUID de la GPO} TAB clé de filtre » pour chaque stratégie filtrée.
+        import ldb
+        db = db_open()
+        soms = {}
+        try:
+            for e in db.search(base='CN=SOM,CN=WMIPolicy,CN=System,%s' % bdn,
+                               scope=ldb.SCOPE_ONELEVEL, attrs=['msWMI-ID', 'msWMI-Name']):
+                soms[str(e['msWMI-ID'][0])] = str(e['msWMI-Name'][0])
+        except Exception:
+            pass
+        lbl2key = {v[0]: k for k, v in FILTRES.items()}
+        for e in db.search(base='CN=Policies,CN=System,%s' % bdn, scope=ldb.SCOPE_ONELEVEL,
+                           expression='(objectClass=groupPolicyContainer)', attrs=['cn', 'gPCWQLFilter']):
+            if 'gPCWQLFilter' not in e:
+                continue
+            ref = str(e['gPCWQLFilter'][0])            # « [domaine;{GUID};0] »
+            parts = ref.strip('[]').split(';')
+            fid = parts[1] if len(parts) > 1 else ''
+            nom = soms.get(fid, '')
+            key = lbl2key.get(nom.replace('Bastion — ', ''), '')
+            if key:
+                print('%s\t%s' % (str(e['cn'][0]), key))
+        return
+
     if action not in ('set', 'clear') or len(sys.argv) < 3:
         print('usage: gpo-wmi.py list | set <{GUID}> <filtre> | clear <{GUID}>', file=sys.stderr)
         sys.exit(2)

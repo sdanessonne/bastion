@@ -292,6 +292,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = ad('gpo', 'deploy', $gname, $tmp);
             @unlink($tmp);
             break;
+        case 'gpo_wmi':
+            // Condition d'application : la stratégie n'est appliquée que par les postes qui la
+            // remplissent (édition, version, portable/fixe…). Évaluée par le poste lui-même.
+            $gd = (string) ($_POST['guid'] ?? '');
+            $fk = preg_replace('/[^a-z0-9]/', '', (string) ($_POST['filtre'] ?? ''));
+            $out = $fk === '' ? ad('gpo', 'wmi', 'clear', $gd) : ad('gpo', 'wmi', 'set', $gd, $fk);
+            if (strpos($out, 'ERROR') === false) {
+                $out = $fk === '' ? 'Condition retirée : la stratégie s\'applique à tous les postes.'
+                                  : 'Condition appliquée. Effet au prochain traitement des stratégies sur les postes.';
+            }
+            break;
         case 'gpo_unlink': $out = ad('gpo', 'unlink', (string) ($_POST['guid'] ?? '')); break;   // désactiver (délier)
         case 'gpo_link':   $out = ad('gpo', 'link',   (string) ($_POST['guid'] ?? '')); break;   // réactiver (relier)
         case 'gpo_delete': $out = ad('gpo', 'delete', (string) ($_POST['guid'] ?? '')); break;   // désinstaller (supprimer)
@@ -556,6 +567,20 @@ if ($dcUp) {
 // GPO actuellement liées à la racine du domaine (GUID en majuscules) : sert à distinguer,
 // dans la liste, une stratégie ACTIVE d'une stratégie DÉSACTIVÉE (déliée mais conservée).
 $gpoLinked = $dcUp ? ad_lines_cached('gpolinks', 0, 'gpo', 'domainlinks') : [];
+
+// Conditions d'application (filtres WMI) : libellés proposés + condition posée sur chaque GPO.
+// Le poste évalue lui-même la condition au traitement des stratégies — d'où l'intérêt : une
+// même stratégie peut ne concerner que les portables, que Windows 11, que telle édition…
+$WMI_FILTRES = [];
+foreach (ad_lines_cached('wmilist', 0, 'gpo', 'wmi', 'list') as $l) {
+    $p = explode("\t", $l);
+    if (count($p) >= 2) { $WMI_FILTRES[$p[0]] = $p[1]; }
+}
+$gpoWmi = [];   // {GUID} => clé de filtre, lu directement dans l'annuaire
+foreach (ad_lines_cached('wmistatus', 0, 'gpo', 'wmi', 'status') as $l) {
+    $p = explode("\t", $l);
+    if (count($p) >= 2) { $gpoWmi[strtoupper($p[0])] = $p[1]; }
+}
 
 // Clés de récupération BitLocker séquestrées dans l'AD, par poste (nom en majuscules).
 $bitlockerKeys = [];
@@ -1689,6 +1714,21 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
             </div>
           <?php else: ?>
             <p class="ad-help" style="margin-bottom:.7rem">🔒 Stratégie système Windows — ni désactivable ni supprimable depuis la console.</p>
+          <?php endif; ?>
+          <?php if (!$builtin): $curF = $gpoWmi[$guid] ?? ''; ?>
+            <form method="post" style="margin-bottom:.7rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+              <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_wmi">
+              <input type="hidden" name="guid" value="<?= e($g['guid'] ?? '') ?>">
+              <label style="font-size:.85rem">N'appliquer qu'aux postes :
+                <select name="filtre" style="padding:.4rem;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;font-size:.82rem">
+                  <option value="">Tous les postes (aucune condition)</option>
+                  <?php foreach ($WMI_FILTRES as $k => $lab): ?>
+                    <option value="<?= e($k) ?>"<?= $curF === $k ? ' selected' : '' ?>><?= e($lab) ?></option>
+                  <?php endforeach; ?>
+                </select></label>
+              <button class="btn-sm">Appliquer</button>
+              <?php if ($curF !== ''): ?><span class="badge on">🎯 <?= e($WMI_FILTRES[$curF] ?? $curF) ?></span><?php endif; ?>
+            </form>
           <?php endif; ?>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_desc">
