@@ -61,10 +61,25 @@ SRC="${1:-}"
 if [ -z "$SRC" ]; then
     SRC="$ICI/debian-netinst.iso"
     if [ ! -f "$SRC" ]; then
-        echo "→ Téléchargement de l'image Debian netinst…"
-        curl -fL --progress-bar -o "$SRC" \
-            "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.11.0-amd64-netinst.iso" \
+        # Le NOM du fichier contient le numéro de version, qui change à chaque publication :
+        # le figer garantit un 404 tôt ou tard — c'est arrivé dès la première fabrication.
+        # On le découvre donc dans le fichier de sommes de contrôle, dont le nom est stable.
+        BASE="https://cdimage.debian.org/debian-cd/current/amd64/iso-cd"
+        echo "→ Recherche de l'image Debian netinst la plus récente…"
+        SUMS=$(curl -fsSL "$BASE/SHA256SUMS" 2>/dev/null) || SUMS=""
+        NOM=$(printf '%s\n' "$SUMS" | awk '$2 ~ /netinst\.iso$/ {print $2; exit}')
+        [ -n "$NOM" ] || { echo "ERREUR : image Debian introuvable en ligne. Fournissez l'ISO en argument."; exit 1; }
+        echo "   $NOM"
+        curl -fL --progress-bar -o "$SRC" "$BASE/$NOM" \
             || { echo "ERREUR : téléchargement impossible. Fournissez l'ISO en argument."; exit 1; }
+        # Intégrité : on ne fabrique pas un support d'installation système à partir d'un
+        # fichier non contrôlé.
+        ATT=$(printf '%s\n' "$SUMS" | awk -v n="$NOM" '$2==n {print $1}')
+        if [ -n "$ATT" ]; then
+            OBT=$(sha256sum "$SRC" | awk '{print $1}')
+            [ "$ATT" = "$OBT" ] || { echo "ERREUR : somme de contrôle incorrecte — image corrompue ou altérée."; rm -f "$SRC"; exit 1; }
+            echo "   somme de contrôle vérifiée."
+        fi
     fi
 fi
 [ -f "$SRC" ] || { echo "ERREUR : image introuvable ($SRC)"; exit 1; }
