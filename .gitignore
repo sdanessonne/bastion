@@ -37,3 +37,7 @@ Thumbs.db
 [Oo]bj/
 publish/
 *.user
+
+# Secrets de fabrication de l ISO : ne doivent JAMAIS partir sur le depot.
+provisioning/iso/iso-secrets.env
+provisioning/iso/*.iso
