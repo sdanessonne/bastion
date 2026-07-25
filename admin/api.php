@@ -83,7 +83,8 @@ $action = (string) ($_GET['action'] ?? $_POST['action'] ?? '');
 $actionsStation = ['station.report', 'station.clamdb', 'station.auth', 'station.bitlocker'];
 if ($estStation && !$estAdmin && !in_array($action, $actionsStation, true)) { jout(['error' => 'forbidden'], 403); }
 // Même principe pour le jeton POSTE : il n'ouvre QUE la remontée d'inventaire.
-if ($estPoste && !$estAdmin && $action !== 'poste.inventaire') { jout(['error' => 'forbidden'], 403); }
+$actionsPoste = ['poste.inventaire', 'poste.photo'];
+if ($estPoste && !$estAdmin && !in_array($action, $actionsPoste, true)) { jout(['error' => 'forbidden'], 403); }
 $active = fn(string $u) => trim((string) shell_exec('systemctl is-active ' . escapeshellarg($u) . ' 2>/dev/null'));
 
 switch ($action) {
@@ -356,6 +357,23 @@ switch ($action) {
                ->execute([$poste, $op, $volume, $rec, (string) ($_SERVER['REMOTE_ADDR'] ?? '')]);
         } catch (Throwable $e) { jout(['error' => 'stockage impossible'], 500); }
         jout(['ok' => true]);
+    }
+
+    case 'poste.photo': {
+        // Photo d'un agent, pour que le poste la pose comme image de compte Windows.
+        // Renvoie l'image telle quelle (PNG) ; 404 si l'agent n'en a pas.
+        $u = preg_replace('/[^A-Za-z0-9._@-]/', '', (string) ($_GET['user'] ?? ''));
+        if ($u === '') { jout(['error' => 'utilisateur requis'], 400); }
+        try {
+            $st = $db->prepare('SELECT photo FROM pf_user_photo WHERE username=?');
+            $st->execute([$u]);
+            $img = $st->fetchColumn();
+        } catch (Throwable $e) { $img = false; }
+        if ($img === false || $img === null || $img === '') { jout(['error' => 'aucune photo'], 404); }
+        header('Content-Type: image/png');
+        header('Content-Length: ' . strlen((string) $img));
+        echo $img;
+        exit;
     }
 
     case 'poste.inventaire': {

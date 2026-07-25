@@ -239,6 +239,14 @@ case "${1:-}" in
         # (le fichier de réponse ne contient qu'un amorçage, jamais d'identifiants).
         [ -d /var/www/html/boot ] && [ -f "$REPO_DIR/services/tftp/join-domain.ps1" ] && \
             install -m644 "$REPO_DIR/services/tftp/join-domain.ps1" /var/www/html/boot/join-domain.ps1 2>/dev/null || true
+        # Vignette de compte Windows : le jeton d'inventaire y est substitue a la publication,
+        # comme pour le collecteur (le script est servi en anonyme, il ne doit rien contenir
+        # d'autre que ce jeton deja porte par les postes).
+        if [ -d /var/www/html/boot ] && [ -f "$REPO_DIR/services/tftp/photo-tile.ps1" ]; then
+            install -m644 "$REPO_DIR/services/tftp/photo-tile.ps1" /var/www/html/boot/photo-tile.ps1 2>/dev/null || true
+            _tk=$(mysql -N -e "SELECT v FROM pf_settings WHERE k='inventory_token'" radius 2>/dev/null | head -1)
+            [ -n "$_tk" ] && sed -i "s|__TOKEN__|$_tk|" /var/www/html/boot/photo-tile.ps1 2>/dev/null || true
+        fi
         # Adapter le script au domaine REEL de cette installation (il est ecrit pour bastion.pn.int).
         if [ -f /var/www/html/boot/join-domain.ps1 ]; then
             _rj=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
