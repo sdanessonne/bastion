@@ -423,7 +423,7 @@ $users = $computers = $groups = $ous = $gpos = $shares = [];
 if ($dcUp) {
     // Cache froid → rafraîchir les 6 listes EN PARALLÈLE en un seul appel (~1,5 s au lieu de ~9 s).
     $wf = '/dev/shm/pf-ad-users.cache';
-    if (!is_file($wf) || (time() - filemtime($wf)) > 20) { shell_exec('sudo /usr/local/sbin/proxyfibre-ad warm 2>/dev/null'); }
+    if (!is_file($wf) || (time() - filemtime($wf)) >= AD_TTL) { shell_exec('sudo /usr/local/sbin/proxyfibre-ad warm 2>/dev/null'); }
     $users     = ad_lines_cached('users', 0, 'user', 'list');
     $computers = ad_lines_cached('computers', 0, 'computer', 'list');
     $groups    = ad_lines_cached('groups', 0, 'group', 'list');
@@ -485,7 +485,7 @@ if ($dcUp) {
 }
 // Quotas des partages : occupation (octets) + limite (Mo) par nom de partage.
 $squota = [];
-foreach (explode("\n", (string) shell_exec('sudo /usr/local/sbin/proxyfibre-share-quota list 2>/dev/null')) as $l) {
+foreach (explode("\n", pf_cmd_cache('sharequota', 60, 'sudo /usr/local/sbin/proxyfibre-share-quota list 2>/dev/null')) as $l) {
     $p = explode("\t", $l);
     if (count($p) >= 4 && $p[0] !== '') { $squota[$p[0]] = ['used' => (int) $p[2], 'quota' => (int) $p[3]]; }
 }
@@ -753,8 +753,9 @@ document.addEventListener('DOMContentLoaded', function () {
 <!-- 0bis. ACTIVATION KMS -->
 <section class="ad-sec panel">
   <div class="panel-head"><h2>🔑 Activation Windows / Office (KMS)</h2>
-    <span class="badge <?= trim((string) shell_exec('systemctl is-active proxyfibre-kms 2>/dev/null')) === 'active' ? 'on' : 'off' ?>">
-      <?= trim((string) shell_exec('systemctl is-active proxyfibre-kms 2>/dev/null')) === 'active' ? 'Serveur KMS actif' : 'Inactif' ?></span></div>
+    <?php $kmsUp = trim((string) shell_exec('systemctl is-active proxyfibre-kms 2>/dev/null')) === 'active'; ?>
+    <span class="badge <?= $kmsUp ? 'on' : 'off' ?>">
+      <?= $kmsUp ? 'Serveur KMS actif' : 'Inactif' ?></span></div>
   <div style="padding:1rem 1.2rem">
     <p class="lead" style="margin:0 0 .7rem">Les postes du domaine activent Windows et Office automatiquement
     contre la passerelle. Sur un poste, en <strong>Invite de commandes (administrateur)</strong> :</p>
