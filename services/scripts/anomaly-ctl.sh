@@ -94,9 +94,11 @@ detect_gpo() {
   fi
   # Suppression du bruit : si la console a fait une action GPO récemment, les changements
   # sont ATTENDUS — on met à jour la référence sans alerter.
-  # Toutes les actions console qui MODIFIENT une GPO (déploiements inclus : lecteurs, heure,
-  # fond d'écran, activation, BitLocker, réparation SYSVOL) sont journalisées « ad.<verbe> ».
-  console=$(msql -e "SELECT COUNT(*) FROM pf_audit WHERE (action LIKE 'ad.gpo%' OR action LIKE 'ad.bitlocker%' OR action LIKE 'ad.timesync%' OR action LIKE 'ad.drives%' OR action LIKE 'ad.wallpaper%' OR action LIKE 'ad.kms%' OR action LIKE 'ad.sysvol%') AND ts >= DATE_SUB(NOW(), INTERVAL 25 MINUTE)")
+  # Toute action de la page Active Directory est journalisée « ad.<verbe> ». On teste donc le
+  # PRÉFIXE et non une liste de verbes : cette liste devait être rallongée à chaque nouvelle
+  # fonctionnalité de la console, et l'oubli produisait une fausse alerte « hors console »
+  # (constaté deux fois : déploiement des lecteurs, puis écran de connexion et filtres WMI).
+  console=$(msql -e "SELECT COUNT(*) FROM pf_audit WHERE action LIKE 'ad.%' AND ts >= DATE_SUB(NOW(), INTERVAL 25 MINUTE)")
   console=${console:-0}
   if [ "$console" -eq 0 ] 2>/dev/null; then
     # GUID seuls, pour repérer ajouts / suppressions.
