@@ -27,7 +27,7 @@ def copy_ntacl(src, dst):
     except Exception:
         pass
 
-def ps1(gw):
+def ps1(gw, monter=False):
     L = [
         "$ErrorActionPreference='SilentlyContinue'",
         "$kms='%s:1688'" % gw,
@@ -39,6 +39,19 @@ def ps1(gw):
         "# FRANCAIS le libelle vaut « Entreprise » et « Professionnel » — un test sur",
         "# 'Enterprise' ne correspondait donc a rien, et un poste Entreprise recevait la cle Pro.",
         "  $sku=(Get-CimInstance Win32_OperatingSystem).OperatingSystemSKU",
+    ]
+    if monter:
+        # Montée d'édition Professionnel → Entreprise. OPTIONNELLE et demandée explicitement
+        # depuis la console : « changepk » change l'édition du poste SANS réinstallation, ce
+        # n'est pas anodin. Suppose que l'organisation détienne les droits Entreprise (contrat
+        # en volume) — c'est une question de licence, pas de technique.
+        L += [
+            "  if ($sku -in 48,49) {",
+            "    $r = Start-Process changepk.exe -ArgumentList '/ProductKey','NPPR9-FWDCX-D2C8J-H872K-2YT43' -Wait -PassThru",
+            "    if ($r.ExitCode -eq 0) { $sku = 4 }",
+            "  }",
+        ]
+    L += [
         "  $gvlk=$null",
         "  if ($sku -in 4,27,125) { $gvlk='NPPR9-FWDCX-D2C8J-H872K-2YT43' }",          # Entreprise
         "  elseif ($sku -in 121,122) { $gvlk='NW6C2-QMPVW-D7KKK-3GKT6-VCFB2' }",       # Education
@@ -59,6 +72,7 @@ def ps1(gw):
 
 def main():
     guid = sys.argv[1]; gw = sys.argv[2]
+    monter = len(sys.argv) > 3 and sys.argv[3] == '1'
     realm = subprocess.run(['testparm', '-s', '--parameter-name=realm'], capture_output=True, text=True).stdout.strip().lower()
     base_dn = ','.join('DC=' + p for p in realm.split('.'))
     sysvol = '/var/lib/samba/sysvol/%s/Policies/%s' % (realm, guid)
@@ -74,7 +88,7 @@ def main():
         if os.path.exists(ref): copy_ntacl(ref, d)
 
     with open(os.path.join(startup, 'bastion-activate.ps1'), 'wb') as w:
-        w.write(ps1(gw).encode('utf-8'))
+        w.write(ps1(gw, monter).encode('utf-8'))
     with open(os.path.join(startup, 'bastion-activate.cmd'), 'wb') as w:
         w.write(b"@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0bastion-activate.ps1\"\r\n")
     with open(os.path.join(sysvol, 'Machine', 'Scripts', 'scripts.ini'), 'wb') as w:

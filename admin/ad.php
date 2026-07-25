@@ -239,7 +239,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = ad('ou', 'create', 'OU=' . $n . ',' . $baseDN);
             break;
         case 'gpo_create':   $out = ad('gpo', 'create', (string) ($_POST['name'] ?? '')); break;
-        case 'kms_auto':     $out = ad('gpo', 'activation', '192.168.182.1'); break;
+        case 'kms_auto':
+            // « monter » : faire passer les postes Professionnel en Entreprise (changement
+            // d'édition sans réinstallation). Volontairement OPT-IN — ce n'est pas anodin, et
+            // cela suppose de détenir les droits Entreprise (contrat en volume).
+            $out = ad('gpo', 'activation', '192.168.182.1', empty($_POST['monter']) ? '0' : '1');
+            break;
         case 'timesync_deploy': $out = ad('gpo', 'timesync'); break;
         case 'sysvol_reset': $out = ad('gpo', 'sysvolreset', ''); break;
         case 'bitlocker_deploy':
@@ -895,7 +900,13 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
       <?php else: ?>
       <form method="post" onsubmit="return confirm('Activer automatiquement Windows/Office sur tous les postes du domaine (KMS) ?')">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="kms_auto">
+        <label style="display:block;margin:.4rem 0;font-size:.85rem">
+          <input type="checkbox" name="monter" value="1">
+          Faire passer les postes <strong>Professionnel</strong> en <strong>Entreprise</strong></label>
         <button class="btn">⚡ Activer automatiquement</button>
+        <p class="muted small" style="margin:.4rem 0 0;max-width:52ch">La montée d'édition ne réinstalle rien :
+        elle applique une clé, puis le poste s'active sur le serveur KMS local. Elle suppose que vous
+        <strong>déteniez les droits Entreprise</strong> (contrat en volume) — c'est une question de licence.</p>
       </form>
       <?php endif; ?>
     </div>

@@ -241,7 +241,8 @@ PY
           guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
           [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
         fi
-        python3 /usr/local/sbin/proxyfibre-gpo-kms "$guid" "$a" >/dev/null 2>&1 \
+        # $b = 1 : faire monter les postes Professionnel en Entreprise (option de la console).
+        python3 /usr/local/sbin/proxyfibre-gpo-kms "$guid" "$a" "$b" >/dev/null 2>&1 \
           || { echo "ERROR: generation script activation echouee ($guid)" >&2; exit 1; }
         dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
         "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
