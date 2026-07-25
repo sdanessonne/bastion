@@ -263,6 +263,15 @@ PY
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid fond d'ecran deploye"
         ;;
+      wmi)
+        # Filtre WMI : restreindre une stratégie aux postes qui remplissent une condition.
+        #   $a = list | set | clear     $b = {GUID de la GPO}     $c = clé de filtre
+        case "$a" in
+          list)  exec python3 /usr/local/sbin/proxyfibre-gpo-wmi list ;;
+          set)   exec python3 /usr/local/sbin/proxyfibre-gpo-wmi set "$b" "$c" ;;
+          clear) exec python3 /usr/local/sbin/proxyfibre-gpo-wmi clear "$b" ;;
+          *) echo "usage: gpo wmi list|set <guid> <filtre>|clear <guid>" >&2; exit 2 ;;
+        esac ;;
       logon)
         # Écran de connexion : GPO « Bastion — Écran de connexion ».
         #   $a = image (facultatif, "-" pour ne pas y toucher)   $b = titre   $c = message
