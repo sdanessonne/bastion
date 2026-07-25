@@ -14,7 +14,10 @@ MODE="${1:-full}"
 WWW=/var/www/admin
 BASE=https://127.0.0.1:8443
 SBIN=/usr/local/sbin
-REPO_DIR="${REPO_DIR:-/opt/proxyfibre}"
+# Même emplacement que celui utilisé par proxyfibre-selfupdate. Un chemin faux ne
+# provoquerait AUCUNE erreur — les contrôles ne trouveraient simplement rien à inspecter
+# et passeraient au vert à tort, ce qui est pire qu'un échec.
+REPO_DIR="${REPO_DIR:-/home/proxyfibre/proxyFibre}"
 
 pass=0; fail=0; warn=0
 ok() { pass=$((pass+1)); printf '  OK   %s\n' "$1"; }

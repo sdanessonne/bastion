@@ -97,6 +97,12 @@ def main():
     racine = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+    # Un chemin de dépôt faux ne doit PAS passer au vert : sans ce garde-fou, le contrôle
+    # ne trouverait rien à inspecter et annoncerait « conforme » en n'ayant rien lu.
+    if not os.path.isdir(os.path.join(racine, 'services')):
+        print('ERREUR : depot introuvable (%s) - rien n\'a ete controle.' % racine)
+        return 2
+
     for sous in ('services/tftp', 'services/tools', 'provisioning'):
         d = os.path.join(racine, sous)
         if os.path.isdir(d):

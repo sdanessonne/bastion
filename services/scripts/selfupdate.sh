@@ -332,6 +332,19 @@ SCRIPTS
         for m in psfile.py check-scripts.py; do
             [ -f "$REPO_DIR/services/scripts/$m" ] && install -m755 "$REPO_DIR/services/scripts/$m" "/usr/local/sbin/$m"
         done
+        # OUTILS POSTE : publiés sur le partage « Commun », d'où les administrateurs les
+        # lancent. Sans cette étape ils n'étaient copiés QU'À LA MAIN : une correction
+        # poussée sur Git ne parvenait jamais aux postes, et l'ancienne version continuait
+        # de tourner (c'est ce qui est arrivé au correctif « w32tm /resync »).
+        COMMUN=$(testparm -s --section-name=Commun --parameter-name=path 2>/dev/null | tr -d '\r')
+        if [ -n "${COMMUN:-}" ] && [ -d "$COMMUN" ] && [ -d "$REPO_DIR/services/tools" ]; then
+            n=0
+            for t in "$REPO_DIR"/services/tools/*; do
+                [ -f "$t" ] || continue
+                install -m666 "$t" "$COMMUN/$(basename "$t")" && n=$((n+1))
+            done
+            echo "  $n outil(s) poste publié(s) sur le partage Commun"
+        fi
         # custombinauth : appelé par OpenNDS à chaque (dé)connexion (quotas + journalisation),
         # hors /usr/local/sbin. Fait partie du code, doit suivre les mises à jour.
         [ -f "$REPO_DIR/services/opennds/custombinauth.sh" ] && install -m755 "$REPO_DIR/services/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh
