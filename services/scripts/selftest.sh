@@ -14,6 +14,7 @@ MODE="${1:-full}"
 WWW=/var/www/admin
 BASE=https://127.0.0.1:8443
 SBIN=/usr/local/sbin
+REPO_DIR="${REPO_DIR:-/opt/proxyfibre}"
 
 pass=0; fail=0; warn=0
 ok() { pass=$((pass+1)); printf '  OK   %s\n' "$1"; }
@@ -80,10 +81,30 @@ else
   done
 fi
 
-# ── 5) Contrôles approfondis (mode full uniquement) ──────────────────────────
+# ── 5) Scripts des postes : encodage et caractères ───────────────────────────
+# Une faute d'encodage ne se voit NULLE PART côté serveur : le fichier est bien écrit,
+# bien déployé, bien lu par le poste... qui n'arrive pas à l'analyser et n'exécute alors
+# pas une seule ligne, pas même sa propre journalisation. C'est arrivé deux fois (photo
+# de l'agent, applications). Ce contrôle inspecte le SYSVOL, donc CE QUI EST RÉELLEMENT
+# DÉPLOYÉ, et pas seulement les générateurs.
+h "Scripts des postes (encodage)"
+if [ -x "$SBIN/check-scripts.py" ]; then
+  res=$(python3 "$SBIN/check-scripts.py" "$REPO_DIR" 2>&1)
+  if [ $? -eq 0 ]; then
+    ok "PowerShell/cmd : marque UTF-8 et caractères conformes"
+  else
+    echo "$res" | sed -n 's/^  X /  KO   /p'
+    fail=$((fail + $(echo "$res" | grep -c '^  X ')))
+  fi
+else
+  wn "check-scripts.py non déployé — contrôle d'encodage ignoré"
+fi
+
+# ── 6) Contrôles approfondis (mode full uniquement) ──────────────────────────
 if [ "$MODE" != "quick" ]; then
   h "Python (py_compile)"
-  for p in gpo-apply gpo-apps gpo-kms gpo-drives gpo-bitlocker; do
+  for p in gpo-apply gpo-apps gpo-kms gpo-drives gpo-bitlocker gpo-timesync gpo-inventory \
+           gpo-wmi gpo-health; do
     b="$SBIN/proxyfibre-$p"; [ -f "$b" ] || continue
     if python3 -c 'import py_compile,sys; py_compile.compile(sys.argv[1],doraise=True)' "$b" >/dev/null 2>&1; then
       ok "py_compile $p"

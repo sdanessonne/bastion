@@ -326,6 +326,12 @@ case "${1:-}" in
 755 selftest             services/scripts/selftest.sh
 755 anomaly              services/scripts/anomaly-ctl.sh
 SCRIPTS
+        # MODULES Python importés par les générateurs de GPO : déployés sous leur VRAI nom
+        # (et non « proxyfibre-… »), sinon « import psfile » ne les trouverait pas. Sans eux,
+        # gpo-apps/kms/drives/timesync/inventory/bitlocker échouent dès l'import.
+        for m in psfile.py check-scripts.py; do
+            [ -f "$REPO_DIR/services/scripts/$m" ] && install -m755 "$REPO_DIR/services/scripts/$m" "/usr/local/sbin/$m"
+        done
         # custombinauth : appelé par OpenNDS à chaque (dé)connexion (quotas + journalisation),
         # hors /usr/local/sbin. Fait partie du code, doit suivre les mises à jour.
         [ -f "$REPO_DIR/services/opennds/custombinauth.sh" ] && install -m755 "$REPO_DIR/services/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh

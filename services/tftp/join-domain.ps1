@@ -1,4 +1,4 @@
-# Bastion — join-domain.ps1
+﻿# Bastion - join-domain.ps1
 # (c) 2026 Mickael MONESTIER (Mle 110.480). Voir LICENCE.txt.
 #
 # Jonction du poste au domaine, proposee a la premiere ouverture de session apres
@@ -22,7 +22,7 @@ $LOG    = Join-Path $env:TEMP 'bastion-jonction.log'
 function Note($m, $c = 'Gray') { Write-Host $m -ForegroundColor $c
     try { ("[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m) | Out-File -FilePath $LOG -Append -Encoding utf8 } catch {} }
 
-# ── Elevation : indispensable pour joindre un domaine ────────────────────────
+# -- Elevation : indispensable pour joindre un domaine ------------------------
 $moi = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $moi.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Note 'Relance avec les droits administrateur...' 'Yellow'
@@ -46,7 +46,7 @@ Write-Host '  ======================================================' -Foregroun
 Write-Host ''
 Note "Poste $env:COMPUTERNAME - domaine vise : $DOMAIN"
 
-# ── Deja joint ? ─────────────────────────────────────────────────────────────
+# -- Deja joint ? -------------------------------------------------------------
 try {
     $cs = Get-CimInstance Win32_ComputerSystem
     if ($cs.PartOfDomain) {
@@ -55,7 +55,7 @@ try {
     }
 } catch {}
 
-# ── Attente du reseau et du controleur de domaine ────────────────────────────
+# -- Attente du reseau et du controleur de domaine ----------------------------
 Write-Host '  Recherche du controleur de domaine...' -ForegroundColor Gray
 $ok = $false
 for ($i = 1; $i -le 30; $i++) {
@@ -77,7 +77,7 @@ if (-not $ok) {
 }
 Note 'Controleur de domaine trouve.' 'Green'
 
-# ── Heure : au-dela de 5 minutes d'ecart, l'authentification est refusee ─────
+# -- Heure : au-dela de 5 minutes d'ecart, l'authentification est refusee -----
 try {
     $null = & w32tm /config /manualpeerlist:"$GW,0x9" /syncfromflags:manual /update 2>&1
     Start-Service w32time -ErrorAction SilentlyContinue
@@ -85,7 +85,7 @@ try {
     Note 'Heure du poste synchronisee sur la passerelle.'
 } catch { Note 'Synchronisation de l heure impossible (on continue).' 'Yellow' }
 
-# ── Identifiants (jamais stockes) + jusqu'a 3 tentatives ─────────────────────
+# -- Identifiants (jamais stockes) + jusqu'a 3 tentatives ---------------------
 $joint = $false
 for ($essai = 1; $essai -le 3 -and -not $joint; $essai++) {
     Write-Host ''

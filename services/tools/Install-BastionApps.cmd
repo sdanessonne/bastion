@@ -8,7 +8,7 @@ REM  attendre un redemarrage.
 REM
 REM  Pourquoi : le deploiement d'applications passe par un SCRIPT DE
 REM  DEMARRAGE de GPO, qui ne s'execute qu'au boot du poste (jamais sur
-REM  un « gpupdate »). Si le traitement de la strategie ORDINATEUR echoue
+REM  un " gpupdate "). Si le traitement de la strategie ORDINATEUR echoue
 REM  au demarrage (horloge desynchronisee -> Kerberos -> SYSVOL illisible),
 REM  le script n'est jamais lance et rien ne s'installe.
 REM

@@ -12,6 +12,8 @@ un utilisateur ordinaire — aucune élévation n'est nécessaire.
 Usage : gpo-inventory.py <{GUID}> <URL de collecte> <jeton>
 """
 import sys, os, subprocess
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import psfile
 
 SCRIPTS_CSE  = '{42B5FAAE-6536-11D2-AE5A-0000F87571E3}'
 SCRIPTS_TOOL = '{40B6664F-4972-11D1-A7CA-0000F87571E3}'
@@ -143,13 +145,10 @@ def main():
     for d in (os.path.join(sysvol, 'User'), os.path.join(sysvol, 'User', 'Scripts'), logon):
         if os.path.exists(ref): copy_ntacl(ref, d)
 
-    p_ps1 = os.path.join(logon, 'bastion-inventaire.ps1')
-    with open(p_ps1, 'wb') as w:
-        w.write(ps1(url, token).encode('utf-8'))
-    p_cmd = os.path.join(logon, 'bastion-inventaire.cmd')
-    with open(p_cmd, 'wb') as w:
-        w.write(b"@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden "
-                b"-File \"%~dp0bastion-inventaire.ps1\"\r\n")
+    p_ps1 = psfile.ecrire_ps1(os.path.join(logon, 'bastion-inventaire.ps1'), ps1(url, token))
+    p_cmd = psfile.ecrire_cmd(os.path.join(logon, 'bastion-inventaire.cmd'),
+                              '@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass '
+                              '-WindowStyle Hidden -File "%~dp0bastion-inventaire.ps1"\r\n')
     p_ini = os.path.join(sysvol, 'User', 'Scripts', 'scripts.ini')
     with open(p_ini, 'wb') as w:
         w.write(b'\xff\xfe' + "\r\n[Logon]\r\n0CmdLine=bastion-inventaire.cmd\r\n0Parameters=\r\n".encode('utf-16-le'))

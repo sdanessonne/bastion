@@ -1,4 +1,4 @@
-# Bastion — photo-tile.ps1
+﻿# Bastion - photo-tile.ps1
 # (c) 2026 Mickael MONESTIER (Mle 110.480). Voir LICENCE.txt.
 #
 # Pose la photo de l'agent comme IMAGE DE COMPTE Windows (ecran de connexion, menu Demarrer,
@@ -6,7 +6,7 @@
 #
 # Pourquoi ce detour : Windows 11 ne lit PAS la photo de l'annuaire pour l'image de compte. Il
 # faut deposer le fichier dans C:\Users\Public\AccountPictures\<SID>\ et l'enregistrer dans la
-# base de registre — deux operations qui exigent des droits ADMINISTRATEUR. D'ou une tache
+# base de registre - deux operations qui exigent des droits ADMINISTRATEUR. D'ou une tache
 # planifiee executee en tant que SYSTEME a chaque ouverture de session, plutot qu'un script de
 # session ordinaire (qui, lui, tourne sans privileges).
 #
@@ -39,7 +39,7 @@ try {
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     try {
         # « ${GW} » et non « $GW » : suivi de « : », PowerShell interprète le nom comme un
-        # qualificateur de portée et la variable se résout à vide — l'adresse serait fausse.
+        # qualificateur de portée et la variable se résout à vide - l'adresse serait fausse.
         Invoke-WebRequest -Uri "https://${GW}:8443/api.php?action=poste.photo&user=$login" `
             -Headers @{ Authorization = "Bearer $TOKEN" } -OutFile $tmp -UseBasicParsing `
             -TimeoutSec 30 -ErrorAction Stop
@@ -71,5 +71,10 @@ try {
     Set-Content -Path $marq -Value $sig
     Note "$login : photo appliquee ($sid)"
 } catch {
-    Note ("$login : echec — " + $_.Exception.Message)
+    # Trait d'union ASCII, JAMAIS de tiret cadratin (U+2014) dans une chaine : PowerShell 5.1
+    # lit un .ps1 sans marque d'ordre d'octets en CP1252, et le dernier octet de ce caractere
+    # y VAUT un guillemet fermant -- il coupe la chaine en deux et rend le fichier entier
+    # inanalysable. Ce script ne s'executait alors plus du tout, pas meme sa journalisation.
+    # Voir services/scripts/psfile.py et services/scripts/check-scripts.py.
+    Note ("$login : echec - " + $_.Exception.Message)
 }

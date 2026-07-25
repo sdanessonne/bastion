@@ -35,21 +35,30 @@ tzutil /s "Romance Standard Time"
 
 echo [2/4] Ecriture du worker C:\ProgramData\Bastion\time-guard.cmd ...
 if not exist "C:\ProgramData\Bastion" mkdir "C:\ProgramData\Bastion"
-> "C:\ProgramData\Bastion\time-guard.cmd" echo @echo off
->>"C:\ProgramData\Bastion\time-guard.cmd" echo w32tm /config /manualpeerlist:"192.168.182.1,0x9" /syncfromflags:manual /update
->>"C:\ProgramData\Bastion\time-guard.cmd" echo sc.exe config w32time start= auto
->>"C:\ProgramData\Bastion\time-guard.cmd" echo net start w32time
->>"C:\ProgramData\Bastion\time-guard.cmd" echo set /a n=0
->>"C:\ProgramData\Bastion\time-guard.cmd" echo :loop
->>"C:\ProgramData\Bastion\time-guard.cmd" echo set /a n+=1
->>"C:\ProgramData\Bastion\time-guard.cmd" echo w32tm /resync /rediscover /force
->>"C:\ProgramData\Bastion\time-guard.cmd" echo if %%errorlevel%% EQU 0 goto ok
->>"C:\ProgramData\Bastion\time-guard.cmd" echo if %%n%% GEQ 30 goto end
->>"C:\ProgramData\Bastion\time-guard.cmd" echo timeout /t 10 /nobreak ^>nul
->>"C:\ProgramData\Bastion\time-guard.cmd" echo goto loop
->>"C:\ProgramData\Bastion\time-guard.cmd" echo :ok
->>"C:\ProgramData\Bastion\time-guard.cmd" echo gpupdate /target:computer /force
->>"C:\ProgramData\Bastion\time-guard.cmd" echo :end
+REM  ATTENTION aux arguments de w32tm : " /resync " n'accepte PAS " /force " (ce commutateur
+REM  appartient a gpupdate). Il repond " Les arguments suivants n'etaient pas attendus :
+REM  /force " puis " Parametre incorrect (0x80070057) " -- la resynchronisation n'a jamais lieu
+REM  et la boucle de reessai tourne 30 fois pour rien. Seuls /rediscover, /nowait, /soft et
+REM  /computer: existent. On tente /rediscover (redecouverte du pair) puis, en repli, /nowait.
+set "TG=C:\ProgramData\Bastion\time-guard.cmd"
+> "%TG%" echo @echo off
+>>"%TG%" echo w32tm /config /manualpeerlist:"192.168.182.1,0x9" /syncfromflags:manual /update ^>nul 2^>^&1
+>>"%TG%" echo sc.exe config w32time start= auto ^>nul 2^>^&1
+>>"%TG%" echo REM  " deja demarre " (2182) n'est pas une erreur : on tait la sortie.
+>>"%TG%" echo net start w32time ^>nul 2^>^&1
+>>"%TG%" echo set /a n=0
+>>"%TG%" echo :loop
+>>"%TG%" echo set /a n+=1
+>>"%TG%" echo w32tm /resync /rediscover ^>nul 2^>^&1
+>>"%TG%" echo if %%errorlevel%% EQU 0 goto ok
+>>"%TG%" echo w32tm /resync /nowait ^>nul 2^>^&1
+>>"%TG%" echo if %%errorlevel%% EQU 0 goto ok
+>>"%TG%" echo if %%n%% GEQ 30 goto end
+>>"%TG%" echo timeout /t 10 /nobreak ^>nul
+>>"%TG%" echo goto loop
+>>"%TG%" echo :ok
+>>"%TG%" echo gpupdate /target:computer /force ^>nul 2^>^&1
+>>"%TG%" echo :end
 
 echo [3/4] Creation de la tache planifiee ONSTART (SYSTEM, delai 10 s)...
 schtasks /create /tn "Bastion - Recaler horloge au demarrage" /ru SYSTEM /rl HIGHEST ^

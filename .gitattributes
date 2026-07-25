@@ -31,6 +31,10 @@
 *.bat  text eol=crlf
 *.ini  text eol=crlf
 *.xml  text eol=crlf
+# PowerShell : lu UNIQUEMENT par des postes Windows. Ces fichiers portent une marque
+# d'ordre d'octets UTF-8 (indispensable — voir services/scripts/psfile.py) ; Git ne
+# touche pas à la marque, seulement aux fins de ligne.
+*.ps1  text eol=crlf
 
 # BINAIRES — surtout ne pas y toucher : une conversion de fin de ligne les CORROMPRAIT
 # silencieusement (l'iPXE compilé ne démarrerait plus, l'image de fond serait illisible).

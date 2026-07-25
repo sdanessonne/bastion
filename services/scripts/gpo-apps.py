@@ -11,6 +11,8 @@ apps.json : {"gw":"192.168.182.1","apps":[
   {"marker":"7zip","url":"http://.../apps/7zip.msi","args":"/qn","msi":true}, ...]}
 """
 import sys, os, json, subprocess
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import psfile
 
 # CSE « Scripts » (démarrage/arrêt) + outil administratif standard.
 SCRIPTS_CSE = '{42B5FAAE-6536-11D2-AE5A-0000F87571E3}'
@@ -109,15 +111,14 @@ def main():
         copy_ntacl(ref, os.path.join(sysvol, 'Machine', 'Scripts'))
         copy_ntacl(ref, startup)
 
-    # 1) PowerShell d'installation.
-    p_ps1 = os.path.join(startup, 'bastion-apps.ps1')
-    with open(p_ps1, 'wb') as w:
-        w.write(ps1(apps).encode('utf-8'))
-    # 2) Lanceur .cmd (contourne la politique d'exécution PowerShell).
-    p_cmd = os.path.join(startup, 'bastion-apps.cmd')
-    cmd = "@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0bastion-apps.ps1\"\r\n"
-    with open(p_cmd, 'wb') as w:
-        w.write(cmd.encode('utf-8'))
+    # 1) PowerShell d'installation. Écrit par psfile : marque d'ordre d'octets UTF-8 +
+    #    caractères sûrs. Sans cela, un simple tiret cadratin dans un message rendait
+    #    le fichier inanalysable par PowerShell 5.1 (voir services/scripts/psfile.py).
+    p_ps1 = psfile.ecrire_ps1(os.path.join(startup, 'bastion-apps.ps1'), ps1(apps))
+    # 2) Lanceur .cmd (contourne la politique d'exécution PowerShell) : ASCII, sans marque.
+    p_cmd = psfile.ecrire_cmd(os.path.join(startup, 'bastion-apps.cmd'),
+                              '@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass '
+                              '-File "%~dp0bastion-apps.ps1"\r\n')
     # 3) scripts.ini (UTF-16LE + BOM, comme GPMC) référencant le .cmd.
     p_ini = os.path.join(sysvol, 'Machine', 'Scripts', 'scripts.ini')
     ini = "\r\n[Startup]\r\n0CmdLine=bastion-apps.cmd\r\n0Parameters=\r\n"

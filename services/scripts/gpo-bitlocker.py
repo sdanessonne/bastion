@@ -22,6 +22,8 @@ se retrouver avec un poste chiffré dont la clé serait introuvable.
 Usage : gpo-bitlocker.py <{GUID}> [tpm|tpmpin|tpmpin:<PIN>]
 """
 import sys, os, struct, subprocess
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import psfile
 
 REG_CSE      = '{35378EAC-683F-11D2-A89A-00C04FBBCFA2}'   # Client Side Extension « Registre »
 REG_TOOL     = '{D02B1F72-3407-48AE-BA88-E8213C6761F1}'
@@ -180,12 +182,10 @@ def main():
     if have_script:
         startup = os.path.join(mdir, 'Scripts', 'Startup')
         os.makedirs(startup, exist_ok=True)
-        p_ps1 = os.path.join(startup, 'bastion-bitlocker.ps1')
-        with open(p_ps1, 'wb') as w:
-            w.write(ps1.replace('\n', '\r\n').encode('utf-8'))
-        p_cmd = os.path.join(startup, 'bastion-bitlocker.cmd')
-        with open(p_cmd, 'wb') as w:
-            w.write(("@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0bastion-bitlocker.ps1\"\r\n").encode('utf-8'))
+        p_ps1 = psfile.ecrire_ps1(os.path.join(startup, 'bastion-bitlocker.ps1'), ps1)
+        p_cmd = psfile.ecrire_cmd(os.path.join(startup, 'bastion-bitlocker.cmd'),
+                                  '@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass '
+                                  '-File "%~dp0bastion-bitlocker.ps1"\r\n')
         p_ini = os.path.join(mdir, 'Scripts', 'scripts.ini')
         with open(p_ini, 'wb') as w:
             w.write(b'\xff\xfe' + ("\r\n[Startup]\r\n0CmdLine=bastion-bitlocker.cmd\r\n0Parameters=\r\n").encode('utf-16-le'))

@@ -10,6 +10,8 @@ déjà activé (licence OEM/numérique préservée).
 Usage : gpo-kms.py <{GUID}> <GW_IP>
 """
 import sys, os, subprocess
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import psfile
 
 SCRIPTS_CSE = '{42B5FAAE-6536-11D2-AE5A-0000F87571E3}'
 SCRIPTS_TOOL = '{40B6664F-4972-11D1-A7CA-0000F87571E3}'
@@ -87,10 +89,10 @@ def main():
     for d in (os.path.join(sysvol, 'Machine'), os.path.join(sysvol, 'Machine', 'Scripts'), startup):
         if os.path.exists(ref): copy_ntacl(ref, d)
 
-    with open(os.path.join(startup, 'bastion-activate.ps1'), 'wb') as w:
-        w.write(ps1(gw, monter).encode('utf-8'))
-    with open(os.path.join(startup, 'bastion-activate.cmd'), 'wb') as w:
-        w.write(b"@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0bastion-activate.ps1\"\r\n")
+    psfile.ecrire_ps1(os.path.join(startup, 'bastion-activate.ps1'), ps1(gw, monter))
+    psfile.ecrire_cmd(os.path.join(startup, 'bastion-activate.cmd'),
+                      '@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass '
+                      '-File "%~dp0bastion-activate.ps1"\r\n')
     with open(os.path.join(sysvol, 'Machine', 'Scripts', 'scripts.ini'), 'wb') as w:
         w.write(b'\xff\xfe' + "\r\n[Startup]\r\n0CmdLine=bastion-activate.cmd\r\n0Parameters=\r\n".encode('utf-16-le'))
     for f in ('Startup/bastion-activate.ps1', 'Startup/bastion-activate.cmd', 'scripts.ini'):

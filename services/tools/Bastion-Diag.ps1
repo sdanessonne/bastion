@@ -1,4 +1,4 @@
-# Bastion - Bastion-Diag.ps1
+﻿# Bastion - Bastion-Diag.ps1
 # (c) 2026 Mickael MONESTIER (Mle 110.480). Voir LICENCE.txt.
 #
 # A COLLER DANS UNE FENETRE POWERSHELL EN ADMINISTRATEUR, sur le poste a diagnostiquer.

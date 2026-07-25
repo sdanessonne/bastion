@@ -10,6 +10,8 @@ Usage : gpo-drives.py <{GUID}> <drives.json>
 drives.json : [{"letter":"Z","path":"\\\\bastion.pn.int\\Partage","label":"Partage"}, ...]
 """
 import sys, os, json, uuid, datetime, subprocess, struct
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import psfile
 from xml.sax.saxutils import quoteattr
 
 # CSE « Drive Maps » (GPP) + outil GPP.
@@ -203,9 +205,9 @@ def main():
     os.makedirs(logon, exist_ok=True)
     for p in (os.path.join(sysvol, 'User', 'Scripts'), logon):
         if os.path.exists(ref): copy_ntacl(ref, p)
-    lcmd = os.path.join(logon, 'bastion-lecteurs.cmd')
-    with open(lcmd, 'wb') as w:
-        w.write(logon_cmd(drives).encode('utf-8'))
+    # ASCII pur et SANS marque d'ordre d'octets : un .cmd prendrait la marque pour le
+    # debut de sa premiere commande et refuserait de demarrer.
+    lcmd = psfile.ecrire_cmd(os.path.join(logon, 'bastion-lecteurs.cmd'), logon_cmd(drives))
     sini = os.path.join(sysvol, 'User', 'Scripts', 'scripts.ini')
     with open(sini, 'wb') as w:
         w.write(b'\xff\xfe' + "\r\n[Logon]\r\n0CmdLine=bastion-lecteurs.cmd\r\n0Parameters=\r\n".encode('utf-16-le'))
