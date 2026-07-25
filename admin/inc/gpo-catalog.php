@@ -24,6 +24,7 @@ $K_CHROME = 'Software\\Policies\\Google\\Chrome';
 $K_FF     = 'Software\\Policies\\Mozilla\\Firefox';
 $K_WU     = 'Software\\Policies\\Microsoft\\Windows\\WindowsUpdate';
 $K_WUAU   = 'Software\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU';
+$K_DO     = 'Software\\Policies\\Microsoft\\Windows\\DeliveryOptimization';   // partage des MàJ entre postes
 $K_FW_DOM = 'Software\\Policies\\Microsoft\\WindowsFirewall\\DomainProfile';
 $K_FW_STD = 'Software\\Policies\\Microsoft\\WindowsFirewall\\StandardProfile';
 $K_FW_PUB = 'Software\\Policies\\Microsoft\\WindowsFirewall\\PublicProfile';
@@ -296,6 +297,29 @@ return [
         'policies'=>[
             ['keyname'=>$K_WUAU,'valuename'=>'NoAutoUpdate','class'=>'MACHINE','type'=>'REG_DWORD','data'=>0],
             ['keyname'=>$K_WUAU,'valuename'=>'AUOptions','class'=>'MACHINE','type'=>'REG_DWORD','data'=>4],
+        ]],
+    'wudo' => ['cat'=>'Windows Update','title'=>"Distribution des mises à jour entre postes",'icon'=>'🔗','scope'=>'Ordinateur',
+        'desc'=>"Les postes se partagent les mises à jour SUR LE RÉSEAU LOCAL : le premier les télécharge depuis Internet, "
+              . "les suivants les récupèrent auprès de leurs voisins. Économise fortement la ligne et accélère le déploiement, "
+              . "sans aucun serveur ni espace disque sur la passerelle. Le partage est LIMITÉ AU SOUS-RÉSEAU du commissariat "
+              . "(jamais vers Internet) et la bande passante d'arrière-plan est plafonnée à 60 % pour ne pas gêner le travail. "
+              . "À noter : les postes gardent besoin d'un accès à Internet pour la première récupération — ceci réduit le trafic, "
+              . "cela ne rend pas le site autonome.",
+        'policies'=>[
+            // 1 = partage sur le réseau local uniquement (0 = aucun, 3 = aussi via Internet : exclu ici).
+            ['keyname'=>$K_DO,'valuename'=>'DODownloadMode','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1],
+            // 1 = ne s'associer qu'aux postes du MÊME SOUS-RÉSEAU.
+            ['keyname'=>$K_DO,'valuename'=>'DORestrictPeerSelectionBy','class'=>'MACHINE','type'=>'REG_DWORD','data'=>1],
+            // Seuils par défaut trop hauts pour un parc modeste : on les abaisse pour que les
+            // postes participent réellement au partage (sinon la fonction reste lettre morte).
+            ['keyname'=>$K_DO,'valuename'=>'DOMinFileSizeToCache','class'=>'MACHINE','type'=>'REG_DWORD','data'=>10],
+            ['keyname'=>$K_DO,'valuename'=>'DOMinDiskSizeAllowedToPeer','class'=>'MACHINE','type'=>'REG_DWORD','data'=>16],
+            ['keyname'=>$K_DO,'valuename'=>'DOMinRAMAllowedToPeer','class'=>'MACHINE','type'=>'REG_DWORD','data'=>2],
+            // Conservation du cache 7 jours, plafonné à 20 % du disque.
+            ['keyname'=>$K_DO,'valuename'=>'DOMaxCacheAge','class'=>'MACHINE','type'=>'REG_DWORD','data'=>604800],
+            ['keyname'=>$K_DO,'valuename'=>'DOMaxCacheSize','class'=>'MACHINE','type'=>'REG_DWORD','data'=>20],
+            // Téléchargements d'arrière-plan bridés à 60 % de la bande passante disponible.
+            ['keyname'=>$K_DO,'valuename'=>'DOPercentageMaxBackgroundBandwidth','class'=>'MACHINE','type'=>'REG_DWORD','data'=>60],
         ]],
     'wunoreboot' => ['cat'=>'Windows Update','title'=>"Pas de redémarrage auto si session ouverte",'icon'=>'⏸️','scope'=>'Ordinateur',
         'desc'=>"Empêche le redémarrage automatique après mise à jour tant qu'un utilisateur est connecté.",
