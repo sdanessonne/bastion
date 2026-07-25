@@ -1640,7 +1640,14 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
         var b=ev.target.closest('.js-depl'); if(!b||!f) return;
         f.setAttribute('data-title', b.dataset.title);   // repris par la jauge d'installation
         document.getElementById('deplTpl').value=b.dataset.tpl;
-        if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); }
+        // « requestSubmit » DÉCLENCHE l'événement submit — c'est indispensable : la confirmation
+        // et la jauge d'installation y sont accrochées. « submit() », lui, ne le déclenche PAS :
+        // en repli, on émet donc l'événement nous-mêmes plutôt que de court-circuiter les deux.
+        if (f.requestSubmit) {
+          f.requestSubmit();
+        } else if (f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))) {
+          f.submit();   // personne n'a intercepté : envoi direct
+        }
       });
       var q=document.getElementById('gposearch'); if(!q) return;
       q.addEventListener('input',function(){
