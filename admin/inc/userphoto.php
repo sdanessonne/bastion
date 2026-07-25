@@ -36,6 +36,11 @@ function userphoto_supprimer(PDO $db, string $user): void
 {
     try { $db->prepare('DELETE FROM pf_user_photo WHERE username = ?')->execute([$user]); }
     catch (Throwable $e) {}
+    // Retirer aussi la photo de l'annuaire, sinon elle continuerait d'apparaître dans Outlook
+    // et les autres clients alors qu'elle a été supprimée de la console.
+    if (trim((string) shell_exec('systemctl is-active samba-ad-dc 2>/dev/null')) === 'active') {
+        shell_exec('sudo /usr/local/sbin/proxyfibre-ad user photo ' . escapeshellarg($user) . ' - 2>&1');
+    }
 }
 
 /**
@@ -103,5 +108,30 @@ function userphoto_traiter(PDO $db, string $user, array $file): array
     } catch (Throwable $e) {
         return [false, "Enregistrement en base impossible."];
     }
+    userphoto_publier_ad($user, $png);
     return [true, "Photo enregistrée."];
+}
+
+/**
+ * Publie la photo dans l'ANNUAIRE (attribut « thumbnailPhoto »), pour qu'elle suive l'agent
+ * hors de Bastion : Outlook, Teams, et tout client qui interroge l'annuaire.
+ * Sans effet de bord si le contrôleur de domaine est arrêté ou le compte absent.
+ */
+function userphoto_publier_ad(string $user, string $png): void
+{
+    if (trim((string) shell_exec('systemctl is-active samba-ad-dc 2>/dev/null')) !== 'active') { return; }
+    // L'annuaire plafonne « thumbnailPhoto » à 100 Ko : on réduit en JPEG si besoin.
+    $data = $png;
+    if (strlen($data) > 95 * 1024 && function_exists('imagecreatefromstring')) {
+        $im = @imagecreatefromstring($png);
+        if ($im) {
+            ob_start(); imagejpeg($im, null, 82); $data = (string) ob_get_clean(); imagedestroy($im);
+        }
+    }
+    if (strlen($data) > 100 * 1024) { return; }   // on n'écrit pas une valeur que les clients ignoreraient
+    $tmp = tempnam(sys_get_temp_dir(), 'ph');
+    if ($tmp === false) { return; }
+    file_put_contents($tmp, $data);
+    shell_exec('sudo /usr/local/sbin/proxyfibre-ad user photo ' . escapeshellarg($user) . ' ' . escapeshellarg($tmp) . ' 2>&1');
+    @unlink($tmp);
 }

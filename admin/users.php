@@ -197,17 +197,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Les comptes créés avant que la console ne renseigne « displayName » affichent encore
     // leur matricule sur les postes. Ce bouton les met tous à jour d'un coup.
     if ($action === 'sync_identity' && $dcUp) {
-        $n = 0; $adList = ad_lines('user', 'list');
+        $n = $np = 0; $adList = ad_lines('user', 'list');
         foreach ($profiles as $pu => $pr) {
             if (!in_array($pu, $adList, true)) { continue; }
-            if ($pr['nom'] === '' && $pr['prenom'] === '') { continue; }
-            $r = ad('user', 'identity', $pu, $pr['prenom'], $pr['nom'], $pr['service']);
-            if (stripos($r, 'ERROR') === false) { $n++; }
+            if ($pr['nom'] !== '' || $pr['prenom'] !== '') {
+                $r = ad('user', 'identity', $pu, $pr['prenom'], $pr['nom'], $pr['service']);
+                if (stripos($r, 'ERROR') === false) { $n++; }
+            }
         }
-        audit('users.sync_identity', (string) $n);
-        $flash = [$n > 0
-            ? "$n compte(s) mis à jour dans l'annuaire. Les agents verront leur nom à leur prochaine ouverture de session."
-            : "Aucun compte à mettre à jour (renseignez d'abord nom et prénom).", $n > 0 ? 'ok' : 'err'];
+        // Photos déjà enregistrées dans la console : on les publie aussi dans l'annuaire.
+        try {
+            $st = $db->query('SELECT username, photo FROM pf_user_photo');
+            foreach ($st as $row) {
+                $pu = (string) $row['username'];
+                if (!in_array($pu, $adList, true)) { continue; }
+                userphoto_publier_ad($pu, (string) $row['photo']);
+                $np++;
+            }
+        } catch (Throwable $e) {}
+        audit('users.sync_identity', $n . ' identites, ' . $np . ' photos');
+        $flash = [($n + $np) > 0
+            ? "$n identité(s) et $np photo(s) publiées dans l'annuaire. Effet à la prochaine ouverture de session."
+            : "Aucun compte à mettre à jour (renseignez d'abord nom et prénom).", ($n + $np) > 0 ? 'ok' : 'err'];
     }
 
     // ── Actions en masse sur une sélection ──────────────────────────────────

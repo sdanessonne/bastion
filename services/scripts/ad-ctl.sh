@@ -20,6 +20,36 @@ case "$cat" in
       create)      exec "$ST" user create "$a" "$b" ;;
       delete)      exec "$ST" user delete "$a" ;;
       setpassword) exec "$ST" user setpassword "$a" --newpassword="$b" ;;
+      photo)
+        # Photo de l'agent dans l'annuaire : $a=identifiant  $b=fichier image (ou "-" pour retirer).
+        # L'attribut « thumbnailPhoto » est celui que lisent Outlook, Teams et les annuaires ;
+        # il est plafonné à 100 Ko par convention Active Directory (on refuse au-delà plutôt que
+        # d'écrire une valeur que les clients ignoreraient).
+        [ -n "$a" ] || { echo "ERROR: identifiant requis" >&2; exit 2; }
+        python3 - "$a" "$b" <<'PY'
+import sys, os, ldb
+from samba.samdb import SamDB
+from samba.auth import system_session
+from samba.param import LoadParm
+login, img = sys.argv[1], sys.argv[2]
+lp = LoadParm(); lp.load_default()
+db = SamDB(url='/var/lib/samba/private/sam.ldb', session_info=system_session(), lp=lp)
+esc = login.replace('\\', '\\5c').replace('(', '\\28').replace(')', '\\29').replace('*', '\\2a')
+res = db.search(expression='(sAMAccountName=%s)' % esc, attrs=['dn'])
+if not res:
+    print('ERROR: compte introuvable', file=sys.stderr); sys.exit(1)
+m = ldb.Message(); m.dn = res[0].dn
+if img in ('-', '') or not os.path.isfile(img):
+    m['thumbnailPhoto'] = ldb.MessageElement([], ldb.FLAG_MOD_REPLACE, 'thumbnailPhoto')
+    db.modify(m); print('photo retiree'); sys.exit(0)
+data = open(img, 'rb').read()
+if len(data) > 100 * 1024:
+    print('ERROR: photo trop lourde (%d Ko, maximum 100 Ko)' % (len(data) // 1024), file=sys.stderr); sys.exit(2)
+m['thumbnailPhoto'] = ldb.MessageElement([data], ldb.FLAG_MOD_REPLACE, 'thumbnailPhoto')
+db.modify(m)
+print('photo publiee (%d Ko)' % (len(data) // 1024))
+PY
+        ;;
       identity)
         # Identité affichée par Windows : $a=identifiant  $b=prénom  $c=nom  $d=service.
         # Sans « displayName », l'écran de session et le menu Démarrer affichent le MATRICULE
