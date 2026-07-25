@@ -577,24 +577,14 @@ $humanUsers = array_values(array_filter($users, fn($u) => !in_array($u, $sys, tr
 function pf_bouton_deplacer(string $type, string $nom, array $ous): string
 {
     if ($nom === '') { return ''; }
-    $opts = '<option value="">— Dossier par défaut (Users) —</option>';
-    foreach ($ous as $o) {
-        $o = trim($o);
-        // « Domain Controllers » est réservé aux contrôleurs : on ne le propose pas.
-        if ($o === '' || stripos($o, 'Domain Controllers') !== false) { continue; }
-        $lbl = preg_replace('/^OU=/i', '', $o);
-        $opts .= '<option value="' . e($o) . '">' . e($lbl) . '</option>';
-    }
-    return '<form method="post" style="display:inline-flex;gap:.25rem;margin-left:.5rem;vertical-align:middle"'
-         . ' onsubmit="return confirm(\'Déplacer « ' . e($nom) . ' » ?\')">'
-         . '<input type="hidden" name="csrf" value="' . e(csrf_token()) . '">'
-         . '<input type="hidden" name="do" value="obj_move">'
-         . '<input type="hidden" name="type" value="' . e($type) . '">'
-         . '<input type="hidden" name="nom" value="' . e($nom) . '">'
-         . '<select name="dest" style="font-size:.72rem;padding:.1rem .25rem;background:var(--bg);'
-         . 'color:var(--text);border:1px solid var(--line);border-radius:5px">' . $opts . '</select>'
-         . '<button class="btn-sm" style="font-size:.7rem;padding:.1rem .4rem" title="Déplacer vers cette unité d\'organisation">↪</button>'
-         . '</form>';
+    // UN SEUL bouton par objet. Le formulaire et son selecteur d'unites d'organisation sont
+    // UNIQUES pour toute la page (#moveForm) et deplaces a cote de l'objet clique. Auparavant
+    // chaque objet portait son propre formulaire AVEC la liste complete des OU : sur un domaine
+    // de quarante groupes, c'etait autant de copies du meme selecteur — d'ou une page
+    // inutilement lourde, payee a chaque affichage.
+    return '<button type="button" class="btn-sm js-move" style="font-size:.7rem;padding:.05rem .35rem;margin-left:.4rem"'
+         . ' data-type="' . e($type) . '" data-nom="' . e($nom) . '"'
+         . ' title="Deplacer vers une unite d\'organisation">↪</button>';
 }
 
 $customGroups = $sysGroups = [];
@@ -997,6 +987,46 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
     <?php endforeach; endif; ?>
   </div>
 </section>
+
+<!-- Formulaire de déplacement UNIQUE pour toute l'arborescence : il est déplacé par le
+     navigateur à côté de l'objet choisi, au lieu d'être recopié sur chacun d'eux. -->
+<form method="post" id="moveForm" hidden style="display:inline-flex;gap:.3rem;align-items:center;margin-left:.5rem">
+  <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+  <input type="hidden" name="do" value="obj_move">
+  <input type="hidden" name="type" id="moveType"><input type="hidden" name="nom" id="moveNom">
+  <span class="muted small" id="moveQui"></span>
+  <select name="dest" id="moveDest" style="font-size:.75rem;padding:.15rem .3rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px">
+    <option value="">— Dossier par défaut (Users) —</option>
+    <?php foreach ($ous as $o): $o = trim($o);
+        if ($o === '' || stripos($o, 'Domain Controllers') !== false) { continue; } ?>
+      <option value="<?= e($o) ?>"><?= e(preg_replace('/^OU=/i', '', $o)) ?></option>
+    <?php endforeach; ?>
+  </select>
+  <button class="btn-sm" style="font-size:.72rem">Déplacer</button>
+  <button type="button" class="btn-sm" style="font-size:.72rem" id="moveCancel">Annuler</button>
+</form>
+<script>
+(function () {
+  var f = document.getElementById('moveForm');
+  if (!f) { return; }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest('.js-move');
+    if (b) {
+      document.getElementById('moveType').value = b.dataset.type;
+      document.getElementById('moveNom').value = b.dataset.nom;
+      document.getElementById('moveQui').textContent = '↪ ' + b.dataset.nom + ' vers :';
+      b.parentNode.insertBefore(f, b.nextSibling);   // le formulaire vient à l'objet
+      f.hidden = false;
+      document.getElementById('moveDest').focus();
+      return;
+    }
+    if (ev.target.id === 'moveCancel') { f.hidden = true; }
+  });
+  f.addEventListener('submit', function (ev) {
+    if (!confirm('Déplacer « ' + document.getElementById('moveNom').value + ' » ?')) { ev.preventDefault(); }
+  });
+})();
+</script>
 
 <!-- 3. DOSSIERS PARTAGÉS -->
 <section class="ad-sec panel">
