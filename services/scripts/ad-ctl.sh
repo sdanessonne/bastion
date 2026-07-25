@@ -20,6 +20,41 @@ case "$cat" in
       create)      exec "$ST" user create "$a" "$b" ;;
       delete)      exec "$ST" user delete "$a" ;;
       setpassword) exec "$ST" user setpassword "$a" --newpassword="$b" ;;
+      identity)
+        # Identité affichée par Windows : $a=identifiant  $b=prénom  $c=nom  $d=service.
+        # Sans « displayName », l'écran de session et le menu Démarrer affichent le MATRICULE
+        # (sAMAccountName) — d'où des postes où l'agent ne voit que « 0110480 ».
+        # « samba-tool user edit » ouvre un éditeur : on passe donc par une modification LDAP.
+        [ -n "$a" ] || { echo "ERROR: identifiant requis" >&2; exit 2; }
+        python3 - "$a" "$b" "$c" "$d" <<'PY'
+import sys, ldb
+from samba.samdb import SamDB
+from samba.auth import system_session
+from samba.param import LoadParm
+login, prenom, nom, service = sys.argv[1], sys.argv[2].strip(), sys.argv[3].strip(), sys.argv[4].strip()
+lp = LoadParm(); lp.load_default()
+db = SamDB(url='/var/lib/samba/private/sam.ldb', session_info=system_session(), lp=lp)
+esc = login.replace('\\', '\\5c').replace('(', '\\28').replace(')', '\\29').replace('*', '\\2a')
+res = db.search(expression='(sAMAccountName=%s)' % esc, attrs=['dn'])
+if not res:
+    print('ERROR: compte introuvable', file=sys.stderr); sys.exit(1)
+dn = res[0].dn
+# Convention retenue : « NOM Prénom », comme dans le reste de la console.
+disp = ' '.join(x for x in (nom.upper(), prenom) if x)
+m = ldb.Message(); m.dn = dn
+def put(attr, val):
+    if val:
+        m[attr] = ldb.MessageElement(val, ldb.FLAG_MOD_REPLACE, attr)
+    else:   # champ vidé côté console → on retire l'attribut plutôt que d'écrire du vide
+        m[attr] = ldb.MessageElement([], ldb.FLAG_MOD_REPLACE, attr)
+put('displayName', disp)
+put('givenName', prenom)
+put('sn', nom)
+put('department', service)
+db.modify(m)
+print('identite mise a jour: %s' % (disp or login))
+PY
+        ;;
       enable)      exec "$ST" user enable "$a" ;;
       disable)     exec "$ST" user disable "$a" ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;

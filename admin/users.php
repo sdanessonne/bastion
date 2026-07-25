@@ -59,6 +59,9 @@ function pf_set_profile(PDO $db, string $u, string $nom, string $prenom, string 
         $db->prepare('INSERT INTO pf_user_profile (username,nom,prenom,service) VALUES (?,?,?,?)
             ON DUPLICATE KEY UPDATE nom=VALUES(nom), prenom=VALUES(prenom), service=VALUES(service)')->execute([$u, $nom, $prenom, $service]);
     }
+    // Report de l'identité dans l'ANNUAIRE : sans « displayName », Windows affiche le matricule
+    // sur l'écran de session et dans le menu Démarrer. L'agent doit voir son nom, pas 0110480.
+    ad('user', 'identity', $u, $prenom, $nom, $service);
 }
 function pf_set_site(PDO $db, array $sites, string $u, int $sid): void {
     if ($sid > 0 && isset($sites[$sid])) {
@@ -188,6 +191,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $flash = ['Compte « ' . $u . ' » supprimé (portail + domaine + droits).', 'ok'];
         audit('users.delete', $u);
+    }
+
+    // ── Rattrapage : reporter dans l'annuaire l'identité de TOUS les comptes ──
+    // Les comptes créés avant que la console ne renseigne « displayName » affichent encore
+    // leur matricule sur les postes. Ce bouton les met tous à jour d'un coup.
+    if ($action === 'sync_identity' && $dcUp) {
+        $n = 0; $adList = ad_lines('user', 'list');
+        foreach ($profiles as $pu => $pr) {
+            if (!in_array($pu, $adList, true)) { continue; }
+            if ($pr['nom'] === '' && $pr['prenom'] === '') { continue; }
+            $r = ad('user', 'identity', $pu, $pr['prenom'], $pr['nom'], $pr['service']);
+            if (stripos($r, 'ERROR') === false) { $n++; }
+        }
+        audit('users.sync_identity', (string) $n);
+        $flash = [$n > 0
+            ? "$n compte(s) mis à jour dans l'annuaire. Les agents verront leur nom à leur prochaine ouverture de session."
+            : "Aucun compte à mettre à jour (renseignez d'abord nom et prénom).", $n > 0 ? 'ok' : 'err'];
     }
 
     // ── Actions en masse sur une sélection ──────────────────────────────────
@@ -427,6 +447,13 @@ $siteOptions = function (int $sel) use ($sites) {
 <section class="panel">
   <div class="panel-head"><h2>Comptes (<?= count($all) ?>)</h2>
     <div style="display:flex;gap:.6rem">
+      <?php if ($dcUp): ?>
+        <form method="post" style="margin:0" title="Reporte nom et prénom dans l'annuaire, pour que les agents voient leur identité sur les postes au lieu de leur matricule">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <input type="hidden" name="action" value="sync_identity">
+          <button class="btn-sm">🪪 Publier les identités sur les postes</button>
+        </form>
+      <?php endif; ?>
       <button type="button" class="btn-sm" id="managesites">🏢 Commissariats</button>
       <button type="button" class="btn" id="newuser">➕ Nouvel utilisateur</button>
     </div>
