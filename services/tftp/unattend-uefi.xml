@@ -106,11 +106,15 @@
         <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
         <ProtectYourPC>3</ProtectYourPC>
       </OOBE>
-      <!-- Bastion : a la 1re ouverture de session, PROPOSER la jonction au domaine. Les identifiants
-           sont saisis INTERACTIVEMENT (Get-Credential) et JAMAIS stockes dans ce fichier servi en
-           anonyme. Une fois le poste joint, la GPO « Bastion - Chiffrement BitLocker » chiffre le
-           disque au demarrage suivant et la cle de recuperation remonte dans la console (Chiffrement
-           des postes). Annuler la fenetre = ne pas joindre. Le realm doit correspondre au domaine. -->
+      <!-- Bastion : a la 1re ouverture de session, PROPOSER le rattachement au domaine. Les
+           identifiants sont saisis A L'ECRAN et ne sont JAMAIS stockes : ni dans ce fichier
+           (servi en anonyme), ni sur la passerelle. On ne met ici qu'un AMORCAGE qui telecharge
+           le script : la commande en une ligne qui figurait avant echouait sans laisser de trace
+           (FirstLogonCommands s'execute sans elevation pour un compte administrateur ordinaire,
+           donc Add-Computer renvoyait « Acces refuse »). Le script, lui, s'auto-eleve, attend le
+           controleur de domaine, recale l'heure et journalise.
+           Une fois le poste joint, la GPO « Bastion - Chiffrement BitLocker » chiffre le disque au
+           demarrage suivant et la cle de recuperation remonte dans la console. -->
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>

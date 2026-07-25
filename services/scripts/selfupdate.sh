@@ -239,6 +239,11 @@ case "${1:-}" in
         # (le fichier de réponse ne contient qu'un amorçage, jamais d'identifiants).
         [ -d /var/www/html/boot ] && [ -f "$REPO_DIR/services/tftp/join-domain.ps1" ] && \
             install -m644 "$REPO_DIR/services/tftp/join-domain.ps1" /var/www/html/boot/join-domain.ps1 2>/dev/null || true
+        # Adapter le script au domaine REEL de cette installation (il est ecrit pour bastion.pn.int).
+        if [ -f /var/www/html/boot/join-domain.ps1 ]; then
+            _rj=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+            [ -n "$_rj" ] && sed -i "s/bastion\.pn\.int/$_rj/gI" /var/www/html/boot/join-domain.ps1 2>/dev/null || true
+        fi
         # Fichiers de réponse Windows : déposés à l'installation PXE, mais ils évoluent avec le
         # produit — sans cette copie, une correction n'atteindrait jamais les postes déjà déployés.
         if [ -d /srv/pxe/images ]; then
