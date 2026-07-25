@@ -37,12 +37,18 @@ def ps1(apps):
         "New-Item -Path $base -Force | Out-Null",
         "$apps = @(",
     ]
-    for a in apps:
+    # La VIRGULE ne suit JAMAIS le dernier élément : « @( …, ) » est une erreur de syntaxe
+    # PowerShell (« Expression manquante après , »), et le script échouait alors à l'ANALYSE —
+    # donc avant la moindre ligne de code, sans installer quoi que ce soit ni écrire de journal.
+    # C'est la raison pour laquelle aucune application ne s'installait.
+    for i, a in enumerate(apps):
         marker = a['marker'].replace("'", "")
         url = a['url'].replace("'", "")
         args = str(a.get('args', '')).replace("'", "''")
         msi = 'true' if a.get('msi') else 'false'
-        lines.append("  @{ marker='%s'; url='%s'; args='%s'; msi=$%s }," % (marker, url, args, msi))
+        virgule = ',' if i < len(apps) - 1 else ''
+        lines.append("  @{ marker='%s'; url='%s'; args='%s'; msi=$%s }%s"
+                     % (marker, url, args, msi, virgule))
     lines += [
         ")",
         "# JOURNAL : sans lui, un echec restait totalement invisible (le script avale ses erreurs",
