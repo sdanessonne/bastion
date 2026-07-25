@@ -147,10 +147,13 @@ PY
     rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
     dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
     [ -n "$a" ] || { echo "ERROR: objet requis" >&2; exit 2; }
+    # Destinations autorisees : une OU, ou le conteneur PAR DEFAUT « CN=Users » (celui ou
+    # Windows range les comptes). On refuse tout DN libre, et notamment ceux qui portent deja
+    # « DC= » : la base du domaine est ajoutee ici, jamais fournie par l'appelant.
     case "$b" in
-      '') dest="$dn" ;;                                  # racine du domaine
+      ''|Users) dest="CN=Users,$dn" ;;
       *DC=*) echo "ERROR: destination invalide" >&2; exit 2 ;;
-      OU=*|CN=*) dest="$b,$dn" ;;
+      OU=*) dest="$b,$dn" ;;
       *) echo "ERROR: destination invalide" >&2; exit 2 ;;
     esac
     case "$sub" in

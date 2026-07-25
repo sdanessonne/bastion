@@ -560,7 +560,7 @@ $humanUsers = array_values(array_filter($users, fn($u) => !in_array($u, $sys, tr
 function pf_bouton_deplacer(string $type, string $nom, array $ous): string
 {
     if ($nom === '') { return ''; }
-    $opts = '<option value="">— Racine du domaine —</option>';
+    $opts = '<option value="">— Dossier par défaut (Users) —</option>';
     foreach ($ous as $o) {
         $o = trim($o);
         // « Domain Controllers » est réservé aux contrôleurs : on ne le propose pas.
