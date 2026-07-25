@@ -189,7 +189,14 @@ $GROUPS = [
       <p><strong>Serveur PXE</strong> : installez un système (Debian, Ubuntu, Windows) sur un poste par le réseau.
       Paramétrez le menu (titre, délai, entrées, protection), prévisualisez-le, changez la bannière. Sur le poste :
       démarrer en <strong>amorçage réseau (PXE)</strong>. Menu protégé par les identifiants administrateur, clavier
-      en <strong>AZERTY</strong>.</p>'],
+      en <strong>AZERTY</strong>.</p>
+      <p><strong>Images master</strong> : le panneau « Images master » liste les images de déploiement
+      (<code>.wim</code>, <code>.iso</code>…) — nom, taille, date de dépôt — et l\'espace restant sur leur volume.
+      Une image se dépose depuis un poste dans le dossier partagé <strong>ImagesRW</strong> ; elle apparaît
+      aussitôt dans la liste. Le bouton « Supprimer » libère la place, après confirmation nominative.</p>
+      <p class="tip">La suppression d\'une image est <strong>définitive</strong> : la passerelle n\'en garde
+      aucune copie. Vérifiez qu\'une sauvegarde existe ailleurs avant de supprimer. Les fichiers de réponse
+      <code>unattend-*.xml</code> sont protégés et n\'apparaissent pas dans la liste.</p>'],
   ],
 
   'Journalisation' => [
