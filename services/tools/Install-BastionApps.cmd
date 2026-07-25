@@ -41,6 +41,16 @@ echo Installation en cours ^(silencieuse, cela peut prendre plusieurs minutes^).
 powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1%"
 
 echo.
+echo ==========================================================
+echo   JOURNAL DE L'INSTALLATION
+echo ==========================================================
+if exist "C:\ProgramData\Bastion\apps.log" (
+  powershell -NoProfile -Command "Get-Content 'C:\ProgramData\Bastion\apps.log' -Tail 40"
+) else (
+  echo   Aucun journal : le script n'a rien pu executer.
+  echo   Verifiez que la passerelle repond ^(ping 192.168.182.1^).
+)
+echo.
 echo === Applications marquees comme installees ===
 reg query "HKLM\Software\Bastion\Apps" 2>nul || echo   ^(aucune pour l'instant^)
 echo.
