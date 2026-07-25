@@ -235,6 +235,10 @@ case "${1:-}" in
         # Preseed d'installation Debian chiffrée (LUKS) — servi sur /boot (port 2080), aucun secret dedans.
         [ -d /var/www/html/boot ] && [ -f "$REPO_DIR/services/tftp/preseed-crypto.cfg" ] && \
             install -m644 "$REPO_DIR/services/tftp/preseed-crypto.cfg" /var/www/html/boot/preseed-crypto.cfg 2>/dev/null || true
+        # Script de rattachement au domaine : le poste le télécharge à sa 1re ouverture de session
+        # (le fichier de réponse ne contient qu'un amorçage, jamais d'identifiants).
+        [ -d /var/www/html/boot ] && [ -f "$REPO_DIR/services/tftp/join-domain.ps1" ] && \
+            install -m644 "$REPO_DIR/services/tftp/join-domain.ps1" /var/www/html/boot/join-domain.ps1 2>/dev/null || true
         find /var/www/admin /var/www/html/portal -type f -exec chmod 644 {} + 2>/dev/null
         find /var/www/admin /var/www/html/portal -type d -exec chmod 755 {} + 2>/dev/null
         chmod 640 /var/www/admin/watchdog.php /var/www/admin/logseal.php 2>/dev/null

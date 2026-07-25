@@ -110,7 +110,7 @@
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=Get-Credential -Message 'Bastion : jonction au domaine BASTION.PN.INT (Annuler pour ne pas joindre)'; if($c){try{Add-Computer -DomainName 'bastion.pn.int' -Credential $c -Force -Restart}catch{$_ | Out-File C:\bastion-jonction-erreur.txt}}"</CommandLine>
+          <CommandLine>cmd /c curl.exe -s --retry 5 --retry-delay 3 -o "%TEMP%\bastion-join.ps1" http://192.168.182.1:2080/boot/join-domain.ps1 &amp;&amp; powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\bastion-join.ps1"</CommandLine>
           <Description>Jonction au domaine Bastion (interactive)</Description>
         </SynchronousCommand>
       </FirstLogonCommands>
