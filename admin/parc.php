@@ -107,6 +107,9 @@ $nbP = count($inv);
 $nbPortables = count(array_filter($inv, fn($r) => (int) $r['type_machine'] === 2));
 $memMoy = $nbP ? round(array_sum(array_column($inv, 'memoire_mo')) / $nbP / 1024, 1) : 0;
 $disqueTendu = count(array_filter($inv, fn($r) => (int) $r['disque_go'] > 0 && (int) $r['libre_go'] < 10));
+// Postes dont l'horloge est trop décalée : au-delà de 5 minutes, l'authentification du domaine
+// est refusée et AUCUNE stratégie ordinateur ne s'applique (ni applications, ni chiffrement).
+$horloge = count(array_filter($inv, fn($r) => $r['horloge_ecart'] !== null && abs((int) $r['horloge_ecart']) > 300));
 ?>
 <div class="parc-kpi">
   <div class="k"><b><?= $nbP ?></b><span>poste(s) inventorié(s)</span></div>
@@ -114,6 +117,7 @@ $disqueTendu = count(array_filter($inv, fn($r) => (int) $r['disque_go'] > 0 && (
   <div class="k"><b><?= $nbPortables ?></b><span>portable(s)</span></div>
   <div class="k"><b><?= $memMoy ?: '—' ?></b><span>Go de mémoire en moyenne</span></div>
   <div class="k"><b style="color:<?= $disqueTendu ? '#f87171' : 'inherit' ?>"><?= $disqueTendu ?></b><span>disque(s) &lt; 10 Go libres</span></div>
+  <div class="k"><b style="color:<?= $horloge ? '#f87171' : 'inherit' ?>"><?= $horloge ?></b><span>horloge(s) décalée(s)</span></div>
 </div>
 
 <section class="panel">
@@ -159,7 +163,10 @@ $disqueTendu = count(array_filter($inv, fn($r) => (int) $r['disque_go'] > 0 && (
                   <br><span class="badge off">disque plein</span><?php endif; ?></td>
               <td class="small mono" style="font-size:.74rem"><?= e($r['ip']) ?: '—' ?>
                 <br><span class="muted"><?= e($r['mac']) ?></span></td>
-              <td class="small"><?= e(substr((string) $r['vu_le'], 0, 16)) ?></td>
+              <td class="small"><?= e(substr((string) $r['vu_le'], 0, 16)) ?>
+                <?php if ($r['horloge_ecart'] !== null && abs((int) $r['horloge_ecart']) > 300): ?>
+                  <br><span class="badge off" title="Au-delà de 5 minutes d'écart, aucune stratégie ordinateur ne s'applique">⏰ horloge décalée</span>
+                <?php endif; ?></td>
               <td class="row-actions">
                 <button type="button" class="btn-sm js-fiche" data-p="<?= e($pn) ?>">Fiche</button>
               </td>
@@ -179,6 +186,15 @@ $disqueTendu = count(array_filter($inv, fn($r) => (int) $r['disque_go'] > 0 && (
                            : ($sb === 0 ? '<span class="badge off">désactivé</span>' : '<span class="muted">inconnu</span>'); ?></dd>
                     <dt>Système installé le</dt><dd><?= $r['os_install'] ? e(date('d/m/Y', strtotime($r['os_install']))) : '—' ?></dd>
                     <dt>Domaine</dt><dd><?= e($r['domaine']) ?: '—' ?></dd>
+                    <dt>Écart d'horloge</dt>
+                    <dd><?php $ec = $r['horloge_ecart'];
+                        if ($ec === null) { echo '<span class="muted">non mesuré</span>'; }
+                        else { $a = abs((int) $ec);
+                            echo $a > 300 ? '<span class="badge off">' . (int) round($a / 60) . ' min — bloque les stratégies</span>'
+                               : ($a > 60 ? '<span class="badge">' . $a . ' s</span>'
+                                          : '<span class="badge on">' . $a . ' s</span>'); } ?></dd>
+                    <dt>Applications</dt>
+                    <dd><?= (int) $r['apps_ok'] ?> installée(s) par Bastion</dd>
                     <dt>Adresse d'origine</dt><dd class="mono" style="font-size:.78rem"><?= e($r['ip_source']) ?: '—' ?>
                       <?php if ($r['ip_source'] && $r['ip'] && $r['ip_source'] !== $r['ip']): ?>
                         <span class="badge" title="L'adresse vue par la passerelle diffère de celle déclarée par le poste">≠ déclarée</span>
@@ -191,6 +207,10 @@ $disqueTendu = count(array_filter($inv, fn($r) => (int) $r['disque_go'] > 0 && (
                   </form>
                 </div>
                 <div>
+                  <?php if (trim((string) $r['apps_log']) !== ''): ?>
+                    <h4 style="margin:.2rem 0 .6rem">Journal du déploiement d'applications</h4>
+                    <pre class="apps" style="white-space:pre-wrap;font-size:.74rem;margin:0 0 .9rem"><?= e($r['apps_log']) ?></pre>
+                  <?php endif; ?>
                   <?php $apps = json_decode((string) $r['logiciels'], true) ?: []; ?>
                   <h4 style="margin:.2rem 0 .6rem">Logiciels installés (<?= count($apps) ?>)</h4>
                   <?php if (!$apps): ?><p class="muted small">Aucun logiciel remonté.</p>
