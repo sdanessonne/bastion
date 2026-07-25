@@ -11,9 +11,45 @@ if (!empty($_SESSION['admin'])) { header('Location: /index.php'); exit; }
 $error = '';
 $stage = 'password';   // 'password' | 'totp'
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    csrf_check();
+// ── Avertissement affiché avant authentification ────────────────────────────
+// Texte MODIFIABLE depuis « Sécurité & conformité » : la formulation d'un avertissement
+// légal relève du service, pas du logiciel. On ne fournit qu'un défaut raisonnable.
+// La lecture est encapsulée : cette page doit s'afficher même si la base est indisponible,
+// sinon une panne de MariaDB interdirait de se connecter pour la réparer.
+$avTitre = ''; $avTexte = ''; $avActif = true;
+try {
+    foreach (pf_db()->query("SELECT k,v FROM pf_settings
+                             WHERE k IN ('login_notice_titre','login_notice','login_notice_on')") as $r) {
+        if ($r['k'] === 'login_notice_titre') { $avTitre = (string) $r['v']; }
+        if ($r['k'] === 'login_notice')       { $avTexte = (string) $r['v']; }
+        if ($r['k'] === 'login_notice_on')    { $avActif = $r['v'] !== '0'; }
+    }
+} catch (Throwable $e) { /* base indisponible : on affichera le texte par défaut */ }
+if ($avTexte === '') {
+    $avTitre = $avTitre !== '' ? $avTitre : 'Accès réservé';
+    $avTexte = "Ce système est réservé aux personnels habilités et à un usage exclusivement "
+             . "professionnel. Les connexions et les opérations effectuées sont enregistrées. "
+             . "L'accès ou le maintien frauduleux dans un système de traitement automatisé de "
+             . "données est réprimé par les articles 323-1 et suivants du code pénal.";
+}
 
+// Jeton anti-CSRF contrôlé SUR PLACE, et non par csrf_check(), qui répond par un
+// « Requête invalide (CSRF). » nu : page blanche, sans logo, sans lien, sans formulaire.
+// Aucune page n'est plus exposée à ce cas que celle-ci — la session expire au bout de
+// 24 minutes et une page de connexion reste souvent ouverte pendant une intervention.
+// L'agent revenait, saisissait son mot de passe, et tombait sur un cul-de-sac.
+// Ici on ré-affiche simplement le formulaire, avec un jeton frais et une explication.
+// csrf_check() reste inchangée pour le reste de la console, où l'arrêt brutal est
+// acceptable : l'utilisateur y est déjà authentifié et sait revenir en arrière.
+$jetonOk = $_SERVER['REQUEST_METHOD'] !== 'POST'
+        || hash_equals((string) ($_SESSION['csrf'] ?? '_'), (string) ($_POST['csrf'] ?? ''));
+if (!$jetonOk) {
+    $stage = !empty($_SESSION['pending_admin']) ? 'totp' : 'password';
+    $error = 'Cette page est restée ouverte trop longtemps et la session a expiré. '
+           . 'Recommencez la saisie : aucune tentative n\'a été décomptée.';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $jetonOk) {
     $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
 
     // ── Étape 2 : vérification du code 2FA ──
@@ -100,9 +136,24 @@ if ($stage === 'password' && !empty($_SESSION['pending_admin']) && $_SERVER['REQ
   <link rel="stylesheet" href="/assets/admin.css">
   <style>
     /* Fond animé + carte moderne « glass » de la page de connexion */
-    .login-body{position:relative;overflow:hidden;
+    /* PAS de « overflow:hidden » ici. Quand <html> ne fixe pas son propre débordement, la
+       valeur du <body> est propagée à la fenêtre : la page perdait TOUTE possibilité de
+       défilement — ni barre, ni molette, ni Page-Bas. À 200 % de zoom (un agent malvoyant),
+       la carte dépasse la hauteur visible et le bouton « Se connecter » devenait
+       littéralement inatteignable. Rien ne débordait de toute façon : le canevas et les
+       halos sont en « position:fixed », et une boîte fixe ne crée jamais de défilement.
+       Le remplissage donne l'air qui manquait sous 400 px de large, où la carte collait
+       aux deux bords ; « safe » évite qu'une carte plus haute que la fenêtre ne se fasse
+       rogner par le haut, ce qui masquerait le logo et le titre. */
+    .login-body{position:relative;min-height:100vh;
+      place-items:safe center;padding:clamp(1rem,4vh,2.5rem) clamp(1rem,4vw,2rem);
       background:linear-gradient(-45deg,#0b1120,#0e1e3a,#122a4d,#0b1120);background-size:400% 400%;
       animation:loginGrad 18s ease infinite}
+    /* Edge et Chrome ajoutent LEUR bouton de révélation dans un champ de mot de passe
+       rempli : il se logeait exactement dans le retrait réservé au nôtre, d'où deux yeux
+       superposés. Le nôtre reste seul — c'est lui qui est étiqueté pour les lecteurs
+       d'écran (aria-pressed, aria-label). */
+    .champ-mdp input::-ms-reveal,.champ-mdp input::-ms-clear{display:none}
     @keyframes loginGrad{0%{background-position:0 50%}50%{background-position:100% 50%}100%{background-position:0 50%}}
     #bgnet{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.55}
     .orb{position:fixed;border-radius:50%;filter:blur(70px);z-index:0;opacity:.5;animation:orbFloat 22s ease-in-out infinite}
@@ -156,6 +207,15 @@ if ($stage === 'password' && !empty($_SESSION['pending_admin']) && $_SERVER['REQ
     /* Envoi en cours : la limitation de tentatives côté serveur peut rendre la réponse
        lente ; sans retour, l'agent reclique et déclenche une seconde tentative. */
     #btnLogin[aria-busy="true"]{opacity:.7;cursor:progress}
+    /* Avertissement : présent et lisible, mais visuellement en retrait du formulaire.
+       Un encart criard sur une page vue vingt fois par jour cesse d'être lu au bout
+       d'une semaine — c'est le sort de tous les bandeaux d'alerte permanents. */
+    .avertissement{margin:1.4rem 0 0;padding:.8rem .9rem;border-radius:10px;
+      background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.28);
+      border-left:3px solid rgba(251,191,36,.75)}
+    .avertissement strong{display:block;font-size:.78rem;color:#fcd34d;
+      letter-spacing:.04em;text-transform:uppercase;margin-bottom:.3rem}
+    .avertissement p{margin:0;font-size:.76rem;line-height:1.5;color:var(--muted)}
     @media(prefers-reduced-motion:reduce){.login-body,.orb,.brand-center .logo{animation:none}#bgnet{display:none}}
   </style>
 </head>
@@ -216,6 +276,15 @@ if ($stage === 'password' && !empty($_SESSION['pending_admin']) && $_SERVER['REQ
 
         <button type="submit" id="btnLogin">Se connecter</button>
       </form>
+    <?php endif; ?>
+    <?php if ($avActif && $avTexte !== ''): ?>
+      <?php // Placé APRÈS le formulaire : un agent qui se connecte vingt fois par jour ne doit
+            // pas avoir à le franchir du regard pour atteindre le champ. Il reste lu par qui
+            // arrive sur cette page sans y avoir affaire, ce qui est le but d'un avertissement. ?>
+      <section class="avertissement" aria-label="Avertissement">
+        <?php if ($avTitre !== ''): ?><strong><?= e($avTitre) ?></strong><?php endif; ?>
+        <p><?= nl2br(e($avTexte)) ?></p>
+      </section>
     <?php endif; ?>
     <div class="login-tag">🛡️ Contrôle d'accès réseau sécurisé</div>
   </main>

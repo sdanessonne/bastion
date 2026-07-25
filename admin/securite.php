@@ -30,7 +30,28 @@ $anoFlash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $ado = $_POST['do'] ?? '';
-    if ($ado === 'anomaly_ack') {
+    if ($ado === 'notice_save') {
+        // Avertissement de la page de connexion. Modifiable ici parce que la formulation
+        // d'un texte à portée juridique relève du service et de sa hiérarchie, pas du
+        // logiciel : figer une rédaction dans le code obligerait à une mise à jour pour
+        // la moindre correction, et personne n'oserait y toucher.
+        $ttl = trim((string) ($_POST['notice_titre'] ?? ''));
+        $txt = trim((string) ($_POST['notice_texte'] ?? ''));
+        // Bornes larges : on protège la mise en page, on ne censure pas le rédacteur.
+        $ttl = mb_substr($ttl, 0, 80);
+        $txt = mb_substr($txt, 0, 1500);
+        $on  = empty($_POST['notice_off']) ? '1' : '0';
+        try {
+            $up = $db->prepare('INSERT INTO pf_settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)');
+            $up->execute(['login_notice_titre', $ttl]);
+            $up->execute(['login_notice', $txt]);
+            $up->execute(['login_notice_on', $on]);
+            audit('securite.notice_save', ($on === '1' ? 'actif' : 'masqué') . ', ' . mb_strlen($txt) . ' signes');
+            $anoFlash = ["Avertissement enregistré. Il s'affiche dès le prochain chargement de la page de connexion.", 'ok'];
+        } catch (Throwable $e) {
+            $anoFlash = ['Enregistrement impossible.', 'err'];
+        }
+    } elseif ($ado === 'anomaly_ack') {
         try { $db->prepare('UPDATE pf_anomaly SET acknowledged=1, ack_by=?, ack_at=NOW() WHERE id=?')
                  ->execute([(string) ($_SESSION['admin'] ?? ''), (int) ($_POST['id'] ?? 0)]); } catch (Throwable $e) {}
         audit('securite.anomaly_ack', 'anomalie #' . (int) ($_POST['id'] ?? 0));
@@ -243,6 +264,63 @@ pf_header('Santé & conformité sécurité', 'securite.php');
         </div>
       <?php endforeach; ?>
     </div>
+  </div>
+</section>
+
+<!-- Avertissement de la page de connexion -->
+<?php
+$nTtl = ''; $nTxt = ''; $nOn = true;
+try {
+    foreach ($db->query("SELECT k,v FROM pf_settings
+                         WHERE k IN ('login_notice_titre','login_notice','login_notice_on')") as $r) {
+        if ($r['k'] === 'login_notice_titre') { $nTtl = (string) $r['v']; }
+        if ($r['k'] === 'login_notice')       { $nTxt = (string) $r['v']; }
+        if ($r['k'] === 'login_notice_on')    { $nOn  = $r['v'] !== '0'; }
+    }
+} catch (Throwable $e) {}
+// Même défaut que login.php : ce qui s'affiche tant que rien n'a été saisi.
+$nDefTtl = 'Accès réservé';
+$nDefTxt = "Ce système est réservé aux personnels habilités et à un usage exclusivement "
+         . "professionnel. Les connexions et les opérations effectuées sont enregistrées. "
+         . "L'accès ou le maintien frauduleux dans un système de traitement automatisé de "
+         . "données est réprimé par les articles 323-1 et suivants du code pénal.";
+?>
+<section class="panel" id="avertissement">
+  <div class="panel-head"><h2>⚖️ Avertissement de la page de connexion</h2>
+    <?php if (!$nOn): ?><span class="badge off">masqué</span><?php endif; ?>
+  </div>
+  <div style="padding:1rem 1.2rem">
+    <p class="muted small" style="margin-top:0">
+      Texte affiché <strong>avant toute authentification</strong>, sous le formulaire de connexion.
+      Il informe qui arrive sur cette page des règles d'accès et de la traçabilité des opérations.
+    </p>
+    <p class="muted small" style="margin:.5rem 0 1rem;padding:.6rem .8rem;border-radius:8px;
+       background:rgba(251,191,36,.07);border-left:3px solid rgba(251,191,36,.7)">
+      <strong>La rédaction vous appartient.</strong> Le texte proposé par défaut est une base
+      courante, pas un modèle officiel : faites-le valider par votre hiérarchie et, si le
+      traitement le justifie, par votre délégué à la protection des données. Ne laissez pas
+      un avertissement annoncer une surveillance que la passerelle ne pratique pas.
+    </p>
+    <form method="post">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <input type="hidden" name="do" value="notice_save">
+      <div class="stack" style="max-width:760px">
+        <label>Titre <span class="muted small">(facultatif — laisser vide pour n'afficher que le texte)</span>
+          <input type="text" name="notice_titre" maxlength="80"
+                 value="<?= e($nTtl) ?>" placeholder="<?= e($nDefTtl) ?>"></label>
+        <label>Texte de l'avertissement
+          <textarea name="notice_texte" rows="5" maxlength="1500"
+                    placeholder="<?= e($nDefTxt) ?>"><?= e($nTxt) ?></textarea></label>
+        <p class="muted small" style="margin:-.4rem 0 0">
+          Laisser vide rétablit le texte par défaut. Les retours à la ligne sont conservés.
+        </p>
+        <label style="display:flex;gap:.5rem;align-items:center">
+          <input type="checkbox" name="notice_off" value="1"<?= $nOn ? '' : ' checked' ?>>
+          <span>Ne pas afficher d'avertissement sur la page de connexion</span></label>
+        <div><button class="btn">💾 Enregistrer</button>
+          <a class="btn ghost" href="/login.php" target="_blank" rel="noopener">👁 Voir la page</a></div>
+      </div>
+    </form>
   </div>
 </section>
 

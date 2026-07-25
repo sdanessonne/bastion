@@ -1,5 +1,13 @@
 /* Bastion — console d'administration */
 :root{
+  /* Sans cette déclaration, le navigateur croit afficher une page CLAIRE : la palette
+     sombre n'existe que dans nos variables, il n'en sait rien. Il rend alors SES propres
+     éléments en thème clair — barres de défilement, listes déroulantes, sélecteurs de
+     date — et surtout deux effets gênants sur la page de connexion : il ajoute son
+     PROPRE bouton de révélation dans les champs de mot de passe (en doublon du nôtre),
+     et il repeint en clair le fond d'un champ rempli automatiquement, rendant le texte
+     illisible sur la carte sombre. Une seule ligne corrige tout cela, partout. */
+  color-scheme:dark;
   --bg:#0b1120; --panel:#151f32; --panel2:#1c2942; --line:#28374f;
   --text:#e6edf6; --muted:#8ea2bd; --accent:#38bdf8; --accent2:#0ea5e9;
   --ok:#22c55e; --danger:#f87171; --warn:#fbbf24;
