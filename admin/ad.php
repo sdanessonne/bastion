@@ -896,9 +896,10 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
         d'auto-découverte <code>_vlmcs</code> : <strong>Windows et Office s'activent seuls</strong> contre le KMS Bastion
         dès qu'un poste est sur le domaine. Garde-fou : les postes déjà activés (OEM/numérique) ne sont pas touchés.</div>
       </div>
-      <?php if ($kmsGpo): ?><span class="badge on">✓ Activé</span>
-      <?php else: ?>
-      <form method="post" onsubmit="return confirm('Activer automatiquement Windows/Office sur tous les postes du domaine (KMS) ?')">
+      <?php if ($kmsGpo): ?><span class="badge on" style="align-self:flex-start">✓ Activé</span><?php endif; ?>
+      <?php /* Le formulaire reste accessible MÊME une fois la GPO déployée : sans cela, l'option
+                de montée d'édition serait inatteignable sur un domaine déjà activé. */ ?>
+      <form method="post" onsubmit="return confirm('<?= $kmsGpo ? 'Redéployer' : 'Activer' ?> l\'activation Windows/Office sur tous les postes du domaine (KMS) ?')">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="kms_auto">
         <label style="display:block;margin:.4rem 0;font-size:.85rem">
           <input type="checkbox" name="monter" value="1">
