@@ -397,6 +397,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = ad('gpo', 'drives', $tmp);
             @unlink($tmp);
             break;
+        case 'photo_deploy':
+            // Photo de l'agent en image de compte Windows, déployée par stratégie.
+            // Script de DÉMARRAGE et non d'ouverture de session : poser l'image demande les
+            // droits administrateur, et surtout l'écran de connexion affiche la vignette
+            // AVANT la session — posée pendant la session, elle n'apparaîtrait qu'à la
+            // suivante. Voir l'en-tête de services/scripts/gpo-photo.py.
+            $out = ad('gpo', 'photo', '192.168.182.1');
+            if (strpos($out, 'photo deployee') !== false) {
+                $out = "Photo de l'agent déployée par stratégie. Les postes la poseront au "
+                     . "prochain démarrage, et l'écran de connexion l'affichera dès celui-ci.";
+            }
+            break;
         case 'logon_deploy':
             // Écran de connexion : image de fond (facultative) + titre/message + masquages.
             $cap  = trim((string) ($_POST['caption'] ?? ''));
@@ -1343,6 +1355,27 @@ $lgHas = fn(string $l) => strpos($lgFlags, $l) !== false;
         <div><button class="btn">🚀 Déployer sur les postes</button></div>
       </div>
     </form>
+    <?php $phGpo = in_array("Bastion — Photo de l'agent", array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
+    <div style="margin-top:1.3rem;padding-top:1.1rem;border-top:1px solid var(--line)">
+      <h3 style="margin:0 0 .4rem;font-size:1rem">👤 Photo de l'agent sur l'écran de connexion
+        <?php if ($phGpo): ?><span class="badge on">✓ GPO déployée</span><?php endif; ?></h3>
+      <p class="lead" style="margin:.3rem 0 .7rem">Pose la photo de chaque fonctionnaire comme
+      <strong>image de compte Windows</strong> : écran de connexion, menu Démarrer, Paramètres&nbsp;&gt;&nbsp;Comptes.
+      La photo vient de la fiche de l'agent dans <a href="users.php">Utilisateurs&nbsp;&amp;&nbsp;droits</a>.</p>
+      <form method="post" style="display:inline">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="photo_deploy">
+        <button class="btn"><?= $phGpo ? '🔄 Actualiser la stratégie' : '🚀 Déployer sur les postes' ?></button>
+      </form>
+      <p class="ad-help" style="margin:.8rem 0 0">
+        Windows ne lit <strong>jamais</strong> la photo de l'annuaire pour l'image de compte : il faut
+        l'écrire sur le poste, ce qui exige les droits administrateur. La stratégie utilise donc un
+        script de <strong>démarrage</strong>, exécuté en tant que SYSTEM. C'est aussi ce qui permet à
+        l'écran de connexion d'être correct <strong>dès ce démarrage</strong> — une image posée pendant
+        la session n'apparaîtrait qu'à la session suivante. Un changement de photo dans la console est
+        repris à l'ouverture de session suivante, sans redémarrage.
+      </p>
+    </div>
+
     <p class="ad-help" style="margin:.8rem 0 0">
       Le <strong>message</strong> et les <strong>masquages</strong> fonctionnent sur toutes les éditions de Windows.
       L'<strong>image de fond</strong> n'est appliquée nativement que par les éditions <strong>Entreprise</strong>

@@ -67,6 +67,11 @@ def controler(chemin, etiquette):
         if not brut.startswith(BOM_UTF8) and not ascii_pur:
             defauts.append('%s : .ps1 accentue SANS marque UTF-8 -> lu en CP1252 par '
                            'PowerShell 5.1' % etiquette)
+        # DOUBLE marque : PowerShell n'en consomme qu'une ; la seconde devient un caractere
+        # invisible en tete de script. Piege classique d'un fichier relu sans « utf-8-sig »
+        # puis reecrit -- l'outil de correction fabrique alors le defaut qu'il corrige.
+        if brut.startswith(BOM_UTF8 + BOM_UTF8):
+            defauts.append('%s : DEUX marques UTF-8 -> caractere parasite en tete' % etiquette)
     elif ext == '.cmd':
         if brut.startswith(BOM_UTF8):
             defauts.append('%s : .cmd AVEC marque UTF-8 -> premiere commande illisible' % etiquette)

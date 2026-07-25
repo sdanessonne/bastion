@@ -1,4 +1,4 @@
-﻿﻿# Bastion - photo-tile.ps1
+﻿# Bastion - photo-tile.ps1
 # (c) 2026 Mickael MONESTIER (Mle 110.480). Voir LICENCE.txt.
 #
 # Pose la photo de l'agent comme IMAGE DE COMPTE Windows (ecran de connexion, menu Demarrer,

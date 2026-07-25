@@ -1,4 +1,4 @@
-﻿﻿# Bastion - Bastion-Diag.ps1
+﻿# Bastion - Bastion-Diag.ps1
 # (c) 2026 Mickael MONESTIER (Mle 110.480). Voir LICENCE.txt.
 #
 # A COLLER DANS UNE FENETRE POWERSHELL EN ADMINISTRATEUR, sur le poste a diagnostiquer.
@@ -67,7 +67,13 @@ schtasks /query /tn "Bastion - Photo de l'agent" /v /fo LIST 2>&1 |
     Select-String 'Nom de la tache|TaskName|Statut|Status|Derniere|Last Run|Dernier resultat|Last Result'
 
 Write-Host "--- Script pose sur le poste ---" -ForegroundColor Yellow
-$ps = Join-Path $dir 'photo-tile.ps1'
+# Deux origines possibles : la STRATEGIE (bastion-photo.ps1, depose au demarrage) ou
+# l'outil manuel de depannage (photo-tile.ps1). On cherche celui de la strategie en
+# premier : c'est desormais le mecanisme normal.
+$ps = Join-Path $dir 'bastion-photo.ps1'
+$origine = 'strategie de groupe'
+if (-not (Test-Path $ps)) { $ps = Join-Path $dir 'photo-tile.ps1'; $origine = 'outil manuel' }
+Write-Host ("  origine : " + $origine)
 if (Test-Path $ps) {
     $o = [IO.File]::ReadAllBytes($ps)
     $bom = ($o.Length -ge 3 -and $o[0] -eq 0xEF -and $o[1] -eq 0xBB -and $o[2] -eq 0xBF)
@@ -77,7 +83,12 @@ if (Test-Path $ps) {
     [void][Management.Automation.Language.Parser]::ParseFile($ps, [ref]$null, [ref]$err)
     if ($err -and $err.Count) { Write-Host ("  ANALYSE KO : " + $err[0].Message) -ForegroundColor Red }
     else { Write-Host "  Analyse PowerShell : OK" -ForegroundColor Green }
-} else { Write-Host "  ABSENT - lancez Install-BastionPhoto.cmd" -ForegroundColor Red }
+} else {
+    Write-Host "  AUCUN script photo sur ce poste." -ForegroundColor Red
+    Write-Host "  -> soit la strategie « Bastion - Photo de l'agent » n'est pas encore descendue" -ForegroundColor Red
+    Write-Host "     (elle s'applique au DEMARRAGE : redemarrez, ou gpupdate /target:computer /force)," -ForegroundColor Red
+    Write-Host "  -> soit ce poste est hors domaine : lancez alors Install-BastionPhoto.cmd." -ForegroundColor Red
+}
 
 Write-Host "--- Journal ---" -ForegroundColor Yellow
 if (Test-Path "$dir\photo.log") { Get-Content "$dir\photo.log" -Tail 15 }

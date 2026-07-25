@@ -365,6 +365,32 @@ PY
         "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn"           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid inventaire deploye"
         ;;
+      photo)
+        # GPO « Bastion — Photo de l'agent » : script de DÉMARRAGE (SYSTEM) qui pose la photo
+        # de chaque agent comme image de compte Windows. Script de démarrage et non
+        # d'ouverture de session pour DEUX raisons : il faut les droits administrateur pour
+        # écrire dans HKLM et AccountPictures, et surtout l'écran de connexion affiche la
+        # vignette AVANT la session — une image posée pendant la session n'apparaîtrait qu'à
+        # la suivante. Voir l'en-tête de gpo-photo.py.
+        name="Bastion — Photo de l'agent"
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
+        # Jeton POSTE : le même que l'inventaire (pf_settings.inventory_token). Il n'ouvre que
+        # les deux actions poste.* de l'API, jamais la console.
+        tok=$(mysql -N -B -e "SELECT v FROM radius.pf_settings WHERE k='inventory_token'" 2>/dev/null)
+        [ -n "$tok" ] || { echo "ERROR: jeton poste absent (deployez d'abord l'inventaire)" >&2; exit 1; }
+        python3 /usr/local/sbin/proxyfibre-gpo-photo "$guid" "${a:-192.168.182.1}" "$tok" >/dev/null 2>&1 \
+          || { echo "ERROR: generation du script photo echouee ($guid)" >&2; exit 1; }
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
+          || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
+        echo "$guid photo deployee"
+        ;;
       wmi)
         # Filtre WMI : restreindre une stratégie aux postes qui remplissent une condition.
         #   $a = list | set | clear     $b = {GUID de la GPO}     $c = clé de filtre

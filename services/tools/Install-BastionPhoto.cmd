@@ -6,16 +6,24 @@ REM
 REM  Fait apparaitre la PHOTO DE L'AGENT sur l'ecran de connexion, dans le
 REM  menu Demarrer et dans Parametres > Comptes.
 REM
-REM  Pourquoi un outil et non une strategie : Windows 11 ne lit pas la photo
-REM  de l'annuaire pour l'image de compte. Il faut deposer les fichiers dans
-REM  C:\Users\Public\AccountPictures et ecrire dans la base de registre, ce
-REM  qui exige des droits ADMINISTRATEUR. Un script de session ordinaire
-REM  n'en a pas ; un script de demarrage, lui, ne s'execute qu'au boot et
-REM  echoue si l'horloge du poste est decalee. On installe donc une TACHE
-REM  PLANIFIEE, executee en tant que SYSTEME a chaque ouverture de session
-REM  et independante du domaine.
+REM  CET OUTIL EST UN DEPANNAGE, PLUS LE MECANISME NORMAL.
+REM  Le deploiement se fait desormais par la STRATEGIE " Bastion - Photo de
+REM  l'agent " (console > Active Directory > Ecran de connexion des postes).
+REM  Cette strategie est meilleure sur un point decisif : son script tourne au
+REM  DEMARRAGE, donc AVANT toute session -- l'ecran de connexion affiche la
+REM  vignette des ce demarrage. L'outil ci-dessous, lui, n'installe qu'une
+REM  tache " a l'ouverture de session " : la photo n'apparait qu'a la session
+REM  SUIVANTE. Voir services/scripts/gpo-photo.py.
 REM
-REM  A executer UNE FOIS par poste, en tant qu'ADMINISTRATEUR.
+REM  A n'utiliser que pour : un poste hors domaine, un poste ou la strategie
+REM  n'est pas encore descendue, ou une verification immediate.
+REM
+REM  Rappel technique : Windows 11 ne lit PAS la photo de l'annuaire pour
+REM  l'image de compte. Il faut deposer les fichiers dans
+REM  C:\Users\Public\AccountPictures et ecrire dans HKLM, ce qui exige des
+REM  droits ADMINISTRATEUR -- d'ou une tache executee en tant que SYSTEME.
+REM
+REM  A executer en tant qu'ADMINISTRATEUR.
 REM ====================================================================
 setlocal
 net session >nul 2>&1 || (echo [ERREUR] Relancez ce script en tant qu'Administrateur. & pause & exit /b 1)

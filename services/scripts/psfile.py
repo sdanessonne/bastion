@@ -70,8 +70,14 @@ def en_ascii(texte):
 
 
 def ecrire_ps1(chemin, texte, crlf=True):
-    """Écrit un script PowerShell : marque d'ordre d'octets UTF-8 + caractères sûrs."""
-    texte = assainir(texte)
+    """Écrit un script PowerShell : marque d'ordre d'octets UTF-8 + caractères sûrs.
+
+    IDEMPOTENT : réécrire un fichier déjà traité ne doit RIEN changer. Si le texte reçu
+    commence déjà par U+FEFF (cas d'un fichier relu sans « utf-8-sig »), on le retire avant
+    d'ajouter la marque — sinon le fichier en porterait DEUX, et la seconde, que PowerShell
+    ne consomme plus comme marque, deviendrait un caractère invisible en tête de script.
+    """
+    texte = assainir(texte).lstrip('﻿')
     if crlf:
         texte = texte.replace('\r\n', '\n').replace('\n', '\r\n')
     with open(chemin, 'wb') as w:
@@ -82,7 +88,7 @@ def ecrire_ps1(chemin, texte, crlf=True):
 
 def ecrire_cmd(chemin, texte, crlf=True):
     """Écrit un script cmd : ASCII pur, SANS marque d'ordre d'octets."""
-    texte = en_ascii(texte)
+    texte = en_ascii(texte.lstrip('﻿'))
     if crlf:
         texte = texte.replace('\r\n', '\n').replace('\n', '\r\n')
     with open(chemin, 'wb') as w:

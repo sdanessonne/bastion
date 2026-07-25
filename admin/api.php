@@ -365,6 +365,22 @@ switch ($action) {
         $u = preg_replace('/[^A-Za-z0-9._@-]/', '', (string) ($_GET['user'] ?? ''));
         if ($u === '') { jout(['error' => 'utilisateur requis'], 400); }
         try {
+            // « v » d'abord : au démarrage d'un poste, la stratégie interroge cette action
+            // une fois PAR PROFIL. Répondre 304 quand rien n'a changé évite de renvoyer
+            // 100 Ko à chaque fois, à un moment où le poste a mieux à faire.
+            $st = $db->prepare('SELECT v FROM pf_user_photo WHERE username=?');
+            $st->execute([$u]);
+            $ver = (string) $st->fetchColumn();
+        } catch (Throwable $e) { $ver = ''; }
+        if ($ver === '') { jout(['error' => 'aucune photo'], 404); }
+        $etag = '"' . $ver . '"';
+        header('ETag: ' . $etag);
+        header('Cache-Control: private, max-age=0, must-revalidate');
+        if (trim((string) ($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
+            http_response_code(304);
+            exit;
+        }
+        try {
             $st = $db->prepare('SELECT photo FROM pf_user_photo WHERE username=?');
             $st->execute([$u]);
             $img = $st->fetchColumn();
