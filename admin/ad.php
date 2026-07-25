@@ -1610,32 +1610,46 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
       <h4 class="gpo-cat-h" style="margin:.9rem 0 .3rem;font-size:.88rem;color:var(--muted)"><?= e($cat) ?> <span style="font-weight:400">(<?= count($items) ?>)</span></h4>
       <div class="gpo-cat">
         <?php foreach ($items as $k => $c): $isDep = in_array('Bastion — ' . $c['title'], $deployedNames, true); ?>
-          <div class="cat-card" data-search="<?= e(strtolower($c['title'] . ' ' . $c['desc'] . ' ' . $cat)) ?>">
+          <?php /* Pas d'attribut « data-search » : il recopiait la description ENTIÈRE de chaque
+                   stratégie, soit un doublon de tout le catalogue dans la page. La recherche lit
+                   désormais le texte déjà présent dans la carte. */ ?>
+          <div class="cat-card">
             <div class="cat-h"><span class="cat-ico"><?= $c['icon'] ?></span><strong><?= e($c['title']) ?></strong></div>
             <span class="cat-scope"><?= $c['scope'] === 'Ordinateur' ? '💻 Ordinateur' : '👤 Utilisateur' ?></span>
             <p class="cat-d"><?= e($c['desc']) ?></p>
             <?php if ($isDep): ?>
               <span class="badge on">✓ Déployée</span>
             <?php else: ?>
-              <form method="post" class="gpo-deploy-form" data-title="<?= e($c['title']) ?>">
-                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_deploy">
-                <input type="hidden" name="tpl" value="<?= e($k) ?>">
-                <button class="btn-sm">⬇ Déployer</button>
-              </form>
+              <button class="btn-sm js-depl" data-tpl="<?= e($k) ?>" data-title="<?= e($c['title']) ?>">⬇ Déployer</button>
             <?php endif; ?>
           </div>
         <?php endforeach; ?>
       </div>
     <?php endforeach; ?>
+    <!-- Formulaire de déploiement UNIQUE : il était auparavant recopié sur chacune des
+         stratégies du catalogue, soit plus de cent copies du même jeton et des mêmes champs. -->
+    <form method="post" id="deplForm" class="gpo-deploy-form" hidden>
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <input type="hidden" name="do" value="gpo_deploy">
+      <input type="hidden" name="tpl" id="deplTpl">
+    </form>
     <script>
     (function(){
+      var f=document.getElementById('deplForm');
+      document.addEventListener('click',function(ev){
+        var b=ev.target.closest('.js-depl'); if(!b||!f) return;
+        f.setAttribute('data-title', b.dataset.title);   // repris par la jauge d'installation
+        document.getElementById('deplTpl').value=b.dataset.tpl;
+        if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); }
+      });
       var q=document.getElementById('gposearch'); if(!q) return;
       q.addEventListener('input',function(){
         var v=this.value.trim().toLowerCase();
         document.querySelectorAll('.gpo-cat-h').forEach(function(h){
           var grid=h.nextElementSibling, shown=0;
           grid.querySelectorAll('.cat-card').forEach(function(card){
-            var ok=!v||(card.getAttribute('data-search')||'').indexOf(v)>=0;
+            // Recherche sur le texte AFFICHÉ : plus besoin de le dupliquer dans un attribut.
+            var ok=!v||(card.textContent||'').toLowerCase().indexOf(v)>=0;
             card.style.display=ok?'':'none'; if(ok) shown++;
           });
           h.style.display=shown?'':'none';
