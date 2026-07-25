@@ -5,6 +5,8 @@ require_once __DIR__ . '/inc/config.php';
 require_once __DIR__ . '/inc/totp.php';
 require_once __DIR__ . '/inc/throttle.php';
 require_once __DIR__ . '/inc/avatar.php';
+require_once __DIR__ . '/inc/audit.php';
+require_once __DIR__ . '/inc/bienvenue.php';
 
 if (!empty($_SESSION['admin'])) { header('Location: /index.php'); exit; }
 
@@ -27,10 +29,29 @@ try {
 } catch (Throwable $e) { /* base indisponible : on affichera le texte par défaut */ }
 if ($avTexte === '') {
     $avTitre = $avTitre !== '' ? $avTitre : 'Accès réservé';
-    $avTexte = "Ce système est réservé aux personnels habilités et à un usage exclusivement "
-             . "professionnel. Les connexions et les opérations effectuées sont enregistrées. "
-             . "L'accès ou le maintien frauduleux dans un système de traitement automatisé de "
-             . "données est réprimé par les articles 323-1 et suivants du code pénal.";
+    // Trois précautions de rédaction, chacune corrige une faute que ce texte contenait :
+    //
+    // « TOUT OU PARTIE » — les mots exacts de l'article 323-1. Les supprimer changeait le
+    //   sens : c'est cette formule qui vise l'utilisateur DÉJÀ légitimement connecté qui
+    //   force une partie à laquelle il n'a pas droit. Or tout le lectorat de cette page
+    //   détient des identifiants valides ; tronqué, l'avertissement se lisait comme ne
+    //   visant que l'intrus extérieur, soit le contresens le plus coûteux possible ici.
+    //
+    // « FONT L'OBJET D'UN JOURNAL » et non « sont enregistrées » — la journalisation
+    //   d'audit ne couvre pas encore toutes les pages de la console. Annoncer une
+    //   traçabilité exhaustive serait une promesse que la base contredirait, sur un texte
+    //   destiné à être opposable.
+    //
+    // « À DES FINS DE SÉCURITÉ ET DE TRAÇABILITÉ » — la finalité doit être indiquée au
+    //   moment où les données sont collectées, c'est-à-dire dès la tentative de connexion.
+    $avTexte = "L'accès à cette console est réservé aux personnels habilités, dans le cadre "
+             . "exclusif de leurs fonctions.\n"
+             . "Les tentatives de connexion, réussies comme échouées, et les actions "
+             . "d'administration font l'objet d'un journal, à des fins de sécurité et de "
+             . "traçabilité.\n"
+             . "L'accès ou le maintien frauduleux dans tout ou partie d'un système de "
+             . "traitement automatisé de données est réprimé par les articles 323-1 et "
+             . "suivants du code pénal.";
 }
 
 // Jeton anti-CSRF contrôlé SUR PLACE, et non par csrf_check(), qui répond par un
@@ -76,6 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $jetonOk) {
                 session_regenerate_id(true);
                 $_SESSION['admin'] = $pu;
                 $_SESSION['avatar_v'] = avatar_version(pf_db(), $pu);   // photo affichée dès l'ouverture
+                audit('login', 'double authentification');
+                bienvenue_preparer(pf_db(), $pu);
                 header('Location: /index.php');
                 exit;
             }
@@ -110,6 +133,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $jetonOk) {
                     session_regenerate_id(true);
                     $_SESSION['admin'] = $u;
                     $_SESSION['avatar_v'] = avatar_version(pf_db(), $u);   // photo affichée dès l'ouverture
+                    // Les ouvertures de session n'étaient tracées NULLE PART dans le journal
+                    // d'audit. C'est la trace la plus élémentaire à tenir sur une console
+                    // d'administration, et c'est aussi la seule qui atteste vraiment qu'une
+                    // session a été OUVERTE : dans pf_login_attempts, une ligne « réussie »
+                    // signifie seulement que le mot de passe était bon, avant l'étape 2FA.
+                    audit('login', 'mot de passe');
+                    bienvenue_preparer(pf_db(), $u);
                     header('Location: /index.php');
                     exit;
                 }

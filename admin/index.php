@@ -4,6 +4,7 @@
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/adcache.php';
+require_once __DIR__ . '/inc/bienvenue.php';
 
 // ── Action : déconnecter un client ───────────────────────────────────────────
 $flash = null;
@@ -60,6 +61,9 @@ $alerts   = sys_alerts();
 
 pf_header('Tableau de bord', 'index.php');
 if (isset($_GET['msg'])) { pf_flash('Client déconnecté.', 'ok'); }
+// Accueil de connexion : rendu UNE FOIS, puis consommé. Il n'apparaît donc pas en
+// revenant au tableau de bord au cours de la même session.
+echo bienvenue_afficher();
 ?>
 <style>
   .alerts{display:grid;gap:.6rem;margin-bottom:1.2rem}

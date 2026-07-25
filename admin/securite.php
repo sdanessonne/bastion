@@ -280,10 +280,16 @@ try {
 } catch (Throwable $e) {}
 // Même défaut que login.php : ce qui s'affiche tant que rien n'a été saisi.
 $nDefTtl = 'Accès réservé';
-$nDefTxt = "Ce système est réservé aux personnels habilités et à un usage exclusivement "
-         . "professionnel. Les connexions et les opérations effectuées sont enregistrées. "
-         . "L'accès ou le maintien frauduleux dans un système de traitement automatisé de "
-         . "données est réprimé par les articles 323-1 et suivants du code pénal.";
+$nDefTxt = "L'accès à cette console est réservé aux personnels habilités, dans le cadre "
+         . "exclusif de leurs fonctions.
+"
+         . "Les tentatives de connexion, réussies comme échouées, et les actions "
+         . "d'administration font l'objet d'un journal, à des fins de sécurité et de "
+         . "traçabilité.
+"
+         . "L'accès ou le maintien frauduleux dans tout ou partie d'un système de "
+         . "traitement automatisé de données est réprimé par les articles 323-1 et "
+         . "suivants du code pénal.";
 ?>
 <section class="panel" id="avertissement">
   <div class="panel-head"><h2>⚖️ Avertissement de la page de connexion</h2>
