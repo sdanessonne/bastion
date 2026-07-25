@@ -336,14 +336,20 @@ SCRIPTS
         # lancent. Sans cette étape ils n'étaient copiés QU'À LA MAIN : une correction
         # poussée sur Git ne parvenait jamais aux postes, et l'ancienne version continuait
         # de tourner (c'est ce qui est arrivé au correctif « w32tm /resync »).
-        COMMUN=$(testparm -s --section-name=Commun --parameter-name=path 2>/dev/null | tr -d '\r')
-        if [ -n "${COMMUN:-}" ] && [ -d "$COMMUN" ] && [ -d "$REPO_DIR/services/tools" ]; then
+        # testparm écrit une bannière sur sa sortie : ne garder que la DERNIÈRE ligne,
+        # sinon la variable contient du texte parasite et le test de répertoire échoue
+        # en silence — l'étape serait sautée sans que personne ne le voie.
+        COMMUN=$(testparm -s --section-name=Commun --parameter-name=path 2>/dev/null | tr -d '\r' | grep '^/' | tail -1)
+        [ -n "${COMMUN:-}" ] || COMMUN=/srv/partage/commun
+        if [ -d "$COMMUN" ] && [ -d "$REPO_DIR/services/tools" ]; then
             n=0
             for t in "$REPO_DIR"/services/tools/*; do
                 [ -f "$t" ] || continue
                 install -m666 "$t" "$COMMUN/$(basename "$t")" && n=$((n+1))
             done
-            echo "  $n outil(s) poste publié(s) sur le partage Commun"
+            echo "  $n outil(s) poste publié(s) sur $COMMUN"
+        else
+            echo "  ATTENTION : partage Commun introuvable ($COMMUN) — outils poste NON publiés"
         fi
         # custombinauth : appelé par OpenNDS à chaque (dé)connexion (quotas + journalisation),
         # hors /usr/local/sbin. Fait partie du code, doit suivre les mises à jour.
