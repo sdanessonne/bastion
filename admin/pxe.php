@@ -3,6 +3,8 @@
 /** Bastion Admin — paramétrage complet du serveur PXE (menu d'installation réseau). */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/audit.php';
+require_once __DIR__ . '/inc/adcache.php';
 $db = pf_db();
 
 // ── Modèle : réglages par défaut (mêmes valeurs que menu.php) ────────────────
@@ -40,7 +42,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $action = $_POST['action'] ?? 'save';
 
-    if ($action === 'upload_banner') {
+    if ($action === 'image_delete') {
+        // Suppression DÉFINITIVE d'une image master. Le nom est revalidé côté script
+        // (aucune traversée de répertoire, extension d'image obligatoire, fichiers de
+        // réponse « unattend-*.xml » protégés) : la console n'est pas le seul garde-fou.
+        $img = trim((string) ($_POST['image'] ?? ''));
+        $out = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-image delete '
+                                        . escapeshellarg($img) . ' 2>&1'));
+        $err = $out === '' || stripos($out, 'ERROR') !== false;
+        audit('pxe.image_delete', $img . ($err ? ' [échec]' : ''));
+        $flash = [$err ? ('Suppression impossible : ' . ($out ?: 'erreur inconnue.'))
+                       : ucfirst($out) . '.', $err ? 'err' : 'ok'];
+    } elseif ($action === 'upload_banner') {
         // Remplace la bannière de fond du menu PXE (PNG conseillé en 1024×768).
         $f = $_FILES['banner'] ?? null;
         if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -102,6 +115,31 @@ foreach ($REQ as $k => $files) {
     $missing[$k] = array_map(fn($f) => str_replace(["$B/", "$I/"], ['', 'iso/'], $f), $miss);
     $ready[$k] = ($k === 'local' || $k === 'shell') ? true : empty($miss);
 }
+// ── Bibliothèque d'images master (/srv/pxe/images) ───────────────────────────
+// Nom du SERVEUR de fichiers : un dossier partagé s'atteint par lui, jamais par le nom de domaine.
+$curDcName = strtolower(trim(pf_cmd_cache('dcfqdn', 3600,
+    "testparm -s --parameter-name='netbios name' 2>/dev/null")) . '.'
+    . trim(pf_cmd_cache('realm', 3600, "testparm -s --parameter-name=realm 2>/dev/null")));
+if (trim($curDcName, '.') === '') { $curDcName = 'dc.bastion.pn.int'; }
+$images = [];
+foreach (explode("\n", (string) shell_exec('sudo /usr/local/sbin/proxyfibre-image list 2>/dev/null')) as $l) {
+    $p = explode("\t", trim($l));
+    if (count($p) >= 3 && $p[0] !== '') {
+        $images[] = ['name' => $p[0], 'size' => (int) $p[1], 'mtime' => (int) $p[2]];
+    }
+}
+usort($images, fn($a, $b) => $b['mtime'] <=> $a['mtime']);
+$imgTotal = $imgAvail = 0;
+$sp = explode("\t", trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-image space 2>/dev/null')));
+if (count($sp) >= 2) { $imgTotal = (int) $sp[0]; $imgAvail = (int) $sp[1]; }
+$imgUsed = array_sum(array_column($images, 'size'));
+/** Taille lisible (Go/Mo/Ko). */
+$fmtSize = function (int $o): string {
+    if ($o >= 1073741824) { return number_format($o / 1073741824, 1, ',', ' ') . ' Go'; }
+    if ($o >= 1048576)    { return number_format($o / 1048576, 0, ',', ' ') . ' Mo'; }
+    return number_format(max(0, $o) / 1024, 0, ',', ' ') . ' Ko';
+};
+
 $banner  = is_file("$B/menu-bg.png");
 $dnsOn   = trim((string) shell_exec('systemctl is-active dnsmasq 2>/dev/null')) === 'active';
 $lanIps  = trim((string) shell_exec("hostname -I 2>/dev/null"));
@@ -308,6 +346,54 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     </div>
   </section>
 </div>
+
+<section class="panel">
+  <div class="panel-head"><h2>🗂️ Images master (<?= count($images) ?>)</h2>
+    <?php if ($imgTotal > 0): $pct = (int) round(100 * ($imgTotal - $imgAvail) / max(1, $imgTotal)); ?>
+      <span class="badge<?= $pct >= 90 ? ' off' : '' ?>" title="Espace du volume qui héberge les images">
+        <?= $fmtSize($imgAvail) ?> libres sur <?= $fmtSize($imgTotal) ?></span>
+    <?php endif; ?>
+  </div>
+  <div style="padding:1.2rem">
+    <p class="muted small" style="margin-top:0">Images de déploiement (<code>.wim</code>, <code>.iso</code>…)
+    capturées depuis un poste de référence, servant à réinstaller un poste à l'identique. Elles se déposent depuis
+    un poste dans le dossier partagé <code>\\<?= e($curDcName) ?>\ImagesRW</code>
+    et se lisent en <code>\\<?= e($curDcName) ?>\Images</code>.</p>
+    <?php if ($imgTotal > 0): $pct = (int) round(100 * ($imgTotal - $imgAvail) / max(1, $imgTotal));
+            $col = $pct >= 90 ? '#f87171' : ($pct >= 75 ? '#eab308' : 'var(--accent2)'); ?>
+      <div style="height:8px;border-radius:4px;background:var(--panel2);overflow:hidden;max-width:420px;margin-bottom:.9rem"
+           title="<?= $pct ?>% du volume utilisé">
+        <div style="height:100%;width:<?= $pct ?>%;background:<?= $col ?>;border-radius:4px"></div></div>
+    <?php endif; ?>
+    <table class="grid-table">
+      <thead><tr><th>Image</th><th style="width:120px">Taille</th><th style="width:170px">Déposée le</th><th style="width:110px"></th></tr></thead>
+      <tbody>
+        <?php if (!$images): ?>
+          <tr><td colspan="4" class="muted center">Aucune image master. Déposez un fichier <code>.wim</code> ou
+            <code>.iso</code> dans le dossier partagé <strong>ImagesRW</strong> : il apparaîtra ici.</td></tr>
+        <?php else: foreach ($images as $im): ?>
+          <tr>
+            <td><strong>🗂️ <?= e($im['name']) ?></strong></td>
+            <td class="mono small"><?= $fmtSize($im['size']) ?></td>
+            <td class="small"><?= $im['mtime'] > 0 ? e(date('d/m/Y H:i', $im['mtime'])) : '—' ?></td>
+            <td class="row-actions">
+              <form method="post" style="display:inline" onsubmit="return confirm('SUPPRIMER DÉFINITIVEMENT l\'image « <?= e($im['name']) ?> » (<?= $fmtSize($im['size']) ?>) ?\n\nCette opération est IRRÉVERSIBLE : l\'image ne pourra plus servir à réinstaller un poste, et il n\'en existe aucune copie sur la passerelle.')">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="image_delete">
+                <input type="hidden" name="image" value="<?= e($im['name']) ?>">
+                <button class="btn-sm btn-danger">Supprimer</button>
+              </form>
+            </td>
+          </tr>
+        <?php endforeach; endif; ?>
+      </tbody>
+    </table>
+    <p class="hint muted small" style="margin:.7rem 0 0">La suppression libère l'espace immédiatement et
+    <strong>ne peut pas être annulée</strong> — vérifiez qu'une copie existe ailleurs si l'image doit être conservée.
+    Les fichiers de réponse <code>unattend-*.xml</code> ne sont pas des images : ils sont protégés et n'apparaissent
+    pas dans cette liste.</p>
+  </div>
+</section>
 
 <section class="panel">
   <div class="panel-head"><h2>📦 État du serveur de démarrage</h2></div>

@@ -425,6 +425,7 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-syspasswd proxyfibre, /
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-power reboot, /usr/local/sbin/proxyfibre-power poweroff
 # Réservations DHCP : seul « apply » (régénère la conf depuis la base + recharge dnsmasq).
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-dhcp apply
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-image list, /usr/local/sbin/proxyfibre-image space, /usr/local/sbin/proxyfibre-image delete *
 # Quarantaine réseau : « apply » (reconstruit la table nft dédiée) et « status ».
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-quarantine apply, /usr/local/sbin/proxyfibre-quarantine status
 # Mesure de la ligne. « _run » n'est PAS listé : lui seul sature réellement la liaison.
