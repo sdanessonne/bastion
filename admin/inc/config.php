@@ -75,10 +75,15 @@ function nds_decode(string $raw): ?array {
     return is_array($d['clients'] ?? null) ? $d['clients'] : [];
 }
 
+/** Purge le cache des clients : à appeler après une action qui change leur état. */
+function nds_clients_flush(): void { @unlink('/dev/shm/pf-nds-all.cache'); }
+
 function nds_clients(): array {
-    // Cache court (8 s) : ndsctl json prend ~1,7 s quand des clients sont connectés.
+    // Cache court : « ndsctl json » prend de 0,65 à 1,7 s selon le nombre de clients connectés,
+    // et il est interrogé par presque toutes les pages — c'était le principal coût d'affichage
+    // de la console. Purgé par nds_clients_flush() après une déconnexion forcée.
     $f = '/dev/shm/pf-nds-all.cache';
-    if (is_file($f) && (time() - filemtime($f)) < 8) {
+    if (is_file($f) && (time() - filemtime($f)) < 30) {
         $d = nds_decode((string) @file_get_contents($f));
         if ($d !== null) { return $d; }
     }

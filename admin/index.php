@@ -3,6 +3,7 @@
 /** Bastion Admin — tableau de bord : résumé + sessions en direct. */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/adcache.php';
 
 // ── Action : déconnecter un client ───────────────────────────────────────────
 $flash = null;
@@ -11,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'deaut
     $mac = (string) ($_POST['mac'] ?? '');
     if (preg_match('/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i', $mac)) {
         shell_exec('sudo /usr/bin/ndsctl deauth ' . escapeshellarg($mac) . ' 2>/dev/null');
+        nds_clients_flush();   // l'etat des clients vient de changer
         $flash = ['Client déconnecté.', 'ok'];
     }
     header('Location: /index.php?msg=deauth'); exit;
@@ -25,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'speed
         : ($r === 'deja-en-cours' ? ['Une mesure est déjà en cours.', 'warn']
            : ['Mesure lancée — la ligne va être saturée une vingtaine de secondes.', 'ok']);
 }
-$wan = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-speedtest state 2>/dev/null'), true) ?: [];
+$wan = json_decode(pf_cmd_cache('speedtest', 120, 'sudo /usr/local/sbin/proxyfibre-speedtest state 2>/dev/null'), true) ?: [];
 
 $clients = nds_clients();
 $authCount = 0; $totalDown = 0;
