@@ -85,6 +85,12 @@ echo   En cours, cela peut prendre 10 a 20 minutes...
 Dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase >> "%LOG%" 2>&1
 if errorlevel 1 (echo   ECHEC - voir %LOG%) else (echo   Termine.)
 echo [1] magasin de composants : code %errorlevel% >> "%LOG%"
+REM  Ce nettoyage est une OPERATION DE MAINTENANCE : il occupe le stockage
+REM  reserve de Windows jusqu'au redemarrage. Lancer sysprep dans la foulee
+REM  echoue avec " Audit mode cannot be turned on if reserved storage is in
+REM  use " (0x800F0975), un message qui ne nomme jamais la vraie cause.
+REM  On retient donc qu'un redemarrage s'impose avant de generaliser.
+set MAINTENANCE=1
 
 :etape2
 REM -- 2) Cache de Windows Update ------------------------------------------
@@ -251,6 +257,30 @@ echo.
 echo   ATTENTION : apres generalisation, ne rouvrez PAS de session Windows sur
 echo   ce poste - cela annulerait la preparation. Passez directement au PXE.
 echo.
+REM  Si le magasin de composants vient d'etre nettoye, generaliser MAINTENANT
+REM  echouerait a coup sur : le stockage reserve est encore occupe par cette
+REM  operation de maintenance. On l'annonce au lieu de laisser l'operateur
+REM  decouvrir un " Sysprep n'a pas pu valider votre installation " opaque.
+if not defined MAINTENANCE goto sysprep_demande
+echo   =====================================================================
+echo     REDEMARRAGE D'ABORD - sysprep echouerait maintenant
+echo   =====================================================================
+echo.
+echo   Le nettoyage du magasin de composants qui vient d'avoir lieu est une
+echo   operation de maintenance : Windows garde son stockage reserve occupe
+echo   jusqu'au prochain redemarrage. sysprep refuserait de generaliser, avec
+echo   un message qui ne dit pas pourquoi ^(code 0x800F0975^).
+echo.
+echo   1. Redemarrez ce poste.
+echo   2. NE lancez aucune mise a jour Windows.
+echo   3. Relancez cet outil : il proposera directement la generalisation.
+echo.
+set RB=
+set /p RB=  Redemarrer maintenant ? Tapez OUI :
+if /i "%RB%"=="OUI" shutdown /r /t 5 /c "Bastion - preparation du poste de reference"
+goto fin
+
+:sysprep_demande
 set SP=
 set /p SP=  Lancer sysprep maintenant ? Tapez OUI (ou Entree pour le faire plus tard) :
 if /i not "%SP%"=="OUI" goto fin
@@ -296,7 +326,87 @@ echo.
 echo   --- Applications qui bloquent la generalisation ---
 powershell -NoProfile -Command "$p = Select-String -Path '%SPLOG%' -Pattern 'Package (\S+) was installed for a user, but not provisioned' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique; if ($p) { $p | ForEach-Object { '     ' + $_ }; $p | Set-Content -Encoding ASCII 'C:\bastion-sysprep-paquets.txt' } else { '     (aucune application nommee dans le journal)' }"
 
-if not exist "C:\bastion-sysprep-paquets.txt" goto diag_autre
+if not exist "C:\bastion-sysprep-paquets.txt" goto diag_reserve
+goto diag_appx
+
+REM ====================================================================
+REM  CAUSE : STOCKAGE RESERVE  (hr = 0x800F0975)
+REM
+REM  " Audit mode cannot be turned on if reserved storage is in use. "
+REM  Windows 10/11 met de cote plusieurs gigaoctets pour ses mises a jour.
+REM  Tant qu'une operation de maintenance s'en sert, sysprep refuse de
+REM  generaliser -- et le message ne nomme jamais le coupable.
+REM
+REM  A SAVOIR : le nettoyage du magasin de composants (/ResetBase, etape 1
+REM  de cet outil) EST une operation de maintenance. Il laisse le stockage
+REM  reserve occupe jusqu'au redemarrage suivant. Enchainer nettoyage puis
+REM  sysprep sans redemarrer mene donc tout droit a cette erreur.
+REM
+REM  Desactiver le stockage reserve est sans danger sur un modele, et libere
+REM  au passage plusieurs gigaoctets -- donc autant de temps gagne a chaque
+REM  restauration.
+REM ====================================================================
+:diag_reserve
+powershell -NoProfile -Command "if (Select-String -Path '%SPLOG%' -Pattern '0x800F0975|reserved storage' -Quiet) { exit 1 } else { exit 0 }"
+if not errorlevel 1 goto diag_autre
+
+echo.
+echo   =====================================================================
+echo     CAUSE IDENTIFIEE : le STOCKAGE RESERVE est en cours d'utilisation
+echo   =====================================================================
+echo.
+echo   Windows met plusieurs gigaoctets de cote pour ses mises a jour. Tant
+echo   qu'une operation de maintenance s'en sert, sysprep refuse de generaliser.
+echo.
+echo   TRES PROBABLEMENT LA SUITE DU NETTOYAGE : l'etape [1/9] de cet outil
+echo   ^(magasin de composants^) est une operation de maintenance. Elle occupe
+echo   le stockage reserve jusqu'au REDEMARRAGE suivant.
+echo.
+echo   Etat actuel :
+powershell -NoProfile -Command "try { '     ' + (Get-WindowsReservedStorageState).ReservedStorageState } catch { '     (etat indisponible sur cette version de Windows)' }"
+echo.
+echo   Desactiver le stockage reserve est sans danger sur un poste MODELE, et
+echo   libere plusieurs gigaoctets -- donc du temps gagne a chaque restauration.
+echo.
+set RES=
+set /p RES=  Desactiver le stockage reserve ? Tapez OUI :
+if /i not "%RES%"=="OUI" goto diag_reserve_manuel
+
+echo.
+echo   Desactivation...
+powershell -NoProfile -Command "try { Set-WindowsReservedStorageState -State Disabled -ErrorAction Stop; '     Desactive.' } catch { '     Refus : ' + $_.Exception.Message }"
+REM  Repli si l'applet n'existe pas ou echoue : DISM sait le faire aussi.
+Dism /Online /Set-ReservedStorageState /State:Disabled >nul 2>&1
+echo   Etat apres operation :
+powershell -NoProfile -Command "try { '     ' + (Get-WindowsReservedStorageState).ReservedStorageState } catch { '     (indisponible)' }"
+
+echo.
+echo   =====================================================================
+echo     REDEMARRAGE NECESSAIRE
+echo   =====================================================================
+echo.
+echo   Le stockage reserve n'est reellement libere qu'apres un redemarrage,
+echo   et l'operation de maintenance en cours doit se terminer. Relancer
+echo   sysprep maintenant echouerait a l'identique.
+echo.
+echo   1. Redemarrez ce poste.
+echo   2. NE lancez aucune mise a jour Windows.
+echo   3. Relancez : Preparer-PosteReference.cmd diag
+echo      ^(ou directement sysprep /generalize /oobe /shutdown^)
+echo.
+set RB=
+set /p RB=  Redemarrer maintenant ? Tapez OUI :
+if /i "%RB%"=="OUI" shutdown /r /t 5 /c "Bastion - liberation du stockage reserve"
+goto fin
+
+:diag_reserve_manuel
+echo.
+echo   Desactivation non effectuee. Pour le faire vous-meme :
+echo     Set-WindowsReservedStorageState -State Disabled
+echo   puis REDEMARRER avant de relancer sysprep.
+goto fin
+
+:diag_appx
 
 echo.
 echo   Ces applications du Store sont installees pour un compte mais pas
