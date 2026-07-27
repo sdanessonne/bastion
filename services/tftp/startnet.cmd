@@ -54,25 +54,25 @@ rem MISE EN PAGE : la console WinPE fait 80 colonnes sur 25 lignes. Ce menu occu
 rem 24 lignes sur 75 colonnes - toute ligne ajoutee ferait defiler le logo hors de
 rem l'ecran, toute ligne de plus de 80 caracteres serait repliee. Verifie au rendu.
 echo.
-echo    =================================================================
-echo                                           
-echo                          Deploiement Windows      
-echo                          par le reseau            
-echo    =================================================================
+echo    ╔═════════════════════════════════════════════════════════════════╗
+echo    ║   █▀▀▄ █▀▀█ █▀▀ ▀▀█▀▀ ▀█▀ █▀▀█ █▄ █                             ║
+echo    ║   █▀▀▄ █▄▄█ ▀▀█   █    █  █  █ █ ▀█    Deploiement Windows      ║
+echo    ║   ▀▀▀  ▀  ▀ ▀▀▀   ▀   ▀▀▀ ▀▀▀▀ ▀  ▀    par le reseau            ║
+echo    ╚═════════════════════════════════════════════════════════════════╝
 echo.
-echo      ------------------------------------------------------------
-echo       1   Installer Windows 11 Pro                               
-echo           Automatise de bout en bout - le disque 0 sera EFFACE   
-echo      ------------------------------------------------------------
-echo       2   Deployer l'image master                                
-echo           Restauration rapide depuis la bibliotheque             
-echo      ------------------------------------------------------------
-echo       3   Capturer ce poste                                      
-echo           Cree l'image master - exige un poste sysprepe          
-echo      ------------------------------------------------------------
-echo       4   Invite de commandes                                    
-echo           Diagnostic reseau et disque                            
-echo      ------------------------------------------------------------
+echo      ┌───┬─────────────────────────────────────────────────────────┐
+echo      │ 1 │  Installer Windows 11 Pro                               │
+echo      │   │  Automatise de bout en bout - le disque 0 sera EFFACE   │
+echo      ├───┼─────────────────────────────────────────────────────────┤
+echo      │ 2 │  Deployer l'image master                                │
+echo      │   │  Restauration rapide depuis la bibliotheque             │
+echo      ├───┼─────────────────────────────────────────────────────────┤
+echo      │ 3 │  Capturer ce poste                                      │
+echo      │   │  Cree l'image master - exige un poste sysprepe          │
+echo      ├───┼─────────────────────────────────────────────────────────┤
+echo      │ 4 │  Invite de commandes                                    │
+echo      │   │  Diagnostic reseau et disque                            │
+echo      └───┴─────────────────────────────────────────────────────────┘
 echo.
 rem Le separateur est le semi-graphique  (CP437 0xB3), PAS la barre verticale ASCII
 rem " | " qui serait interpretee par cmd comme un TUBE.
@@ -392,11 +392,40 @@ echo   CONTREPARTIE : les mises a jour deja installees ne pourront plus etre
 echo   desinstallees sur les postes deployes. C'est l'usage normal pour une
 echo   image master, mais c'est irreversible : a vous de decider.
 echo.
+rem ============================================================================
+rem  REPERTOIRE DE TRAVAIL DE DISM - la cause de l'echec du 28/07.
+rem
+rem  Par defaut DISM travaille dans X:\Windows\Temp, c'est-a-dire sur le disque
+rem  EN MEMOIRE VIVE de WinPE, qui ne fait que quelques dizaines de megaoctets.
+rem  DISM le signale lui-meme : " La taille du repertoire de travail peut etre
+rem  insuffisante [...] La taille recommandee est d'au moins 1024 MB ", puis la
+rem  capture echoue - DEUX FOIS DE SUITE EXACTEMENT A 31 %%, avec
+rem  " Erreur : 6 - Descripteur non valide ".
+rem
+rem  Un echec qui se reproduit au MEME pourcentage n'est pas une coupure reseau :
+rem  c'est une ressource qui manque toujours au meme endroit.
+rem
+rem  On lui donne donc un vrai dossier, sur le disque du poste. Il est AJOUTE A LA
+rem  LISTE D'EXCLUSION plus bas : sans cela DISM capturerait son propre repertoire
+rem  de travail, en train de grossir, a l'interieur de l'image.
+rem ============================================================================
+set SCRATCH=%SRC%\BastionScratch
+if exist "%SCRATCH%" rd /s /q "%SCRATCH%" >nul 2>&1
+md "%SCRATCH%" >nul 2>&1
+if not exist "%SCRATCH%" goto scratch_repli
+echo  Repertoire de travail : %SCRATCH%
+goto scratch_ok
+:scratch_repli
+echo  AVERTISSEMENT : repertoire de travail impossible sur %SRC%
+echo  La capture utilisera X: et risque d echouer faute de place.
+set SCRATCH=X:\Windows\Temp
+:scratch_ok
+
 set NET=
 set /p NET=  Nettoyer le magasin de composants ? ^(OUI / non^) :
 if /i "%NET%"=="OUI" (
   echo   Nettoyage hors ligne en cours, patientez...
-  Dism /Image:%SRC%\ /Cleanup-Image /StartComponentCleanup /ResetBase
+  Dism /Image:%SRC%\ /Cleanup-Image /StartComponentCleanup /ResetBase /ScratchDir:"%SCRATCH%"
   if errorlevel 1 echo   AVERTISSEMENT : le nettoyage a echoue, la capture continue.
 ) else (
   echo   Nettoyage ignore.
@@ -409,6 +438,9 @@ rem elements sont recrees par Windows au premier demarrage.
 echo.
 echo  [2/3] Exclusions
 > X:\wimscript.ini echo [ExclusionList]
+rem  Le repertoire de travail de DISM, EN PREMIER : il grossit pendant la capture,
+rem  et sans cette exclusion DISM se capturerait lui-meme en train de travailler.
+>>X:\wimscript.ini echo \BastionScratch
 >>X:\wimscript.ini echo \pagefile.sys
 >>X:\wimscript.ini echo \hiberfil.sys
 >>X:\wimscript.ini echo \swapfile.sys
@@ -467,7 +499,7 @@ rem  Le fichier n'est transfere qu'une fois et le reseau n'est pas le facteur
 rem  limitant ^(3 min sur 1 Gb/s^). La decompression, elle, est refaite sur
 rem  CHAQUE poste, a chaque restauration, et c'est elle qui prend le temps.
 rem  On optimise donc ce qui est repete, pas ce qui est unique.
-Dism /Capture-Image /ImageFile:%NEW% /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini
+Dism /Capture-Image /ImageFile:%NEW% /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini /ScratchDir:"%SCRATCH%"
 if not errorlevel 1 goto capture_valider
 
 echo.
@@ -499,6 +531,9 @@ if errorlevel 1 (
   goto pause_menu
 )
 echo   Image lisible.
+rem  Menage : le repertoire de travail ne doit pas rester sur le poste de reference,
+rem  il fausserait la mesure d'espace d'une prochaine preparation.
+if exist "%SCRATCH%" rd /s /q "%SCRATCH%" >nul 2>&1
 
 echo  Mise en service...
 if exist \\%GW%\ImagesRW\master.wim del /f /q \\%GW%\ImagesRW\master.wim
