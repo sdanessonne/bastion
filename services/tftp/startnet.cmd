@@ -439,28 +439,23 @@ rem Ne pas gaspiller de temps processeur a recompresser ce qui l'est deja.
 >>X:\wimscript.ini echo \Windows\inf\*.pnf
 echo   Liste d exclusion ecrite.
 
-rem  L'image existante est supprimee AVANT la capture, et non conservee en secours :
-rem  la bibliotheque n'a pas la place de contenir les deux (mesure du 26/07 : 12,8 Go
-rem  libres pour une image de 18 Go). C'est un compromis assume, mais il a une
-rem  consequence qu'il faut connaitre.
-rem  Ecrit SANS bloc entre parentheses : ce script n'active pas l'expansion differee,
-rem  et « %VAR% » lu dans un bloc vaut ce qu'il valait AVANT le bloc -- la reponse au
-rem  « set /p » serait donc ignoree. On passe par une etiquette, comme ailleurs ici.
-if not exist \\%GW%\ImagesRW\master.wim goto capture_lancer
-echo.
-echo   ATTENTION : l image master actuelle va etre SUPPRIMEE maintenant, avant
-echo   la capture -- la bibliotheque n a pas la place de garder les deux.
-echo   Si la capture echoue ensuite ^(coupure reseau, disque plein, erreur^),
-echo   il n y aura PLUS AUCUNE image master jusqu a la prochaine capture reussie.
-echo.
-echo   Ne poursuivez que si vous pouvez relancer une capture en cas d echec.
-echo.
-set SUP=
-set /p SUP=  Supprimer l image actuelle et poursuivre ? Tapez OUI :
-if /i not "%SUP%"=="OUI" goto pause_menu
-del /f /q \\%GW%\ImagesRW\master.wim
-
+rem ============================================================================
+rem  L'image en service n'est PLUS supprimee avant la capture.
+rem
+rem  Elle l'etait, et le 28/07 la capture a echoue a 31 % -- « erreur 6,
+rem  descripteur non valide ». Le parc s'est retrouve SANS AUCUNE image master.
+rem
+rem  On capture desormais sous un nom PROVISOIRE, on verifie que le resultat est
+rem  lisible, et l'image en service n'est remplacee qu'apres. Une capture
+rem  interrompue ne coute plus que du temps.
+rem
+rem  Cela suppose que les deux images tiennent le temps de la capture. Si la
+rem  place manque, DISM echoue et l'ancienne est toujours la : on perd une
+rem  capture, pas le parc. C'est le bon sens de l'echec.
+rem ============================================================================
 :capture_lancer
+set NEW=\\%GW%\ImagesRW\master.new.wim
+if exist %NEW% del /f /q %NEW%
 echo.
 echo  [3/3] Capture en cours...
 rem  /Compress:FAST et non MAX. Ce choix est CONTRE-INTUITIF, il merite d'etre
@@ -472,15 +467,51 @@ rem  Le fichier n'est transfere qu'une fois et le reseau n'est pas le facteur
 rem  limitant ^(3 min sur 1 Gb/s^). La decompression, elle, est refaite sur
 rem  CHAQUE poste, a chaque restauration, et c'est elle qui prend le temps.
 rem  On optimise donc ce qui est repete, pas ce qui est unique.
-Dism /Capture-Image /ImageFile:\\%GW%\ImagesRW\master.wim /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini
+Dism /Capture-Image /ImageFile:%NEW% /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini
+if not errorlevel 1 goto capture_valider
+
+echo.
+echo  ERREUR : la capture a echoue.
+if exist %NEW% del /f /q %NEW%
+echo   Le fichier partiel a ete supprime.
+if exist \\%GW%\ImagesRW\master.wim echo   L image master precedente est INTACTE : le parc reste deployable.
+echo.
+echo   Erreur 6 ^(descripteur non valide^) : la session vers le partage a ete
+echo   coupee pendant l ecriture. La cause connue -- une temporisation Samba
+echo   trop courte -- a ete corrigee le 28/07. Si cela se reproduit, verifiez
+echo   le reseau du poste, puis relancez : rien n a ete perdu.
+echo.
+echo   Manque de place : supprimez l ancienne image depuis la console
+echo   ^(Postes ^> Images^) et relancez la capture.
+goto pause_menu
+
+:capture_valider
+rem  On VERIFIE avant de remplacer. Une image illisible se detecte ici, sur le
+rem  poste de reference, et non le jour ou un poste en a besoin -- le menu de
+rem  deploiement, lui, ne teste que l'EXISTENCE du fichier.
+echo.
+echo  Verification de l image capturee...
+Dism /Get-ImageInfo /ImageFile:%NEW% /Index:1 >nul
 if errorlevel 1 (
-  echo  ERREUR : la capture a echoue.
+  echo  ERREUR : l image capturee est illisible, elle est ecartee.
+  del /f /q %NEW%
+  if exist \\%GW%\ImagesRW\master.wim echo   L image master precedente est INTACTE.
+  goto pause_menu
+)
+echo   Image lisible.
+
+echo  Mise en service...
+if exist \\%GW%\ImagesRW\master.wim del /f /q \\%GW%\ImagesRW\master.wim
+move /y %NEW% \\%GW%\ImagesRW\master.wim >nul
+if errorlevel 1 (
+  echo  ERREUR : le renommage a echoue. L image est disponible sous
+  echo    master.new.wim -- renommez-la a la main en master.wim.
   goto pause_menu
 )
 echo.
 echo   =====================================================
-echo     CAPTURE TERMINEE. L image est disponible pour le
-echo     deploiement (option [2]) sur les autres postes.
+echo     CAPTURE TERMINEE ET VERIFIEE. L image est disponible
+echo     pour le deploiement (option [2]) sur les autres postes.
 echo   =====================================================
 goto pause_menu
 

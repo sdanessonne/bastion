@@ -154,10 +154,30 @@ grep -q 'map to guest' /etc/samba/smb.conf || \
 # n'est envoyé). Or Windows réutilise le MÊME port source après redémarrage → le serveur
 # voit un SYN sur une connexion « déjà établie » et répond ACK au lieu de SYN-ACK → le
 # client échoue avec « erreur système 53 : chemin réseau introuvable ».
-# keepalive : sonde le client toutes les 30 s et ferme les sessions mortes.
-# deadtime  : ferme au bout de 2 min les connexions inactives sans fichier ouvert.
+# keepalive : sonde le client toutes les 30 s et ferme les sessions mortes. C'est LUI
+#             qui règle réellement le problème ci-dessus : un poste redémarré ne répond
+#             plus aux sondes et sa session est fermée en moins d'une minute et demie.
+#
+# deadtime  : ferme les connexions inactives. Exprimé en MINUTES.
+#
+#   ── Pourquoi 30 et non 2 ──────────────────────────────────────────────────
+#   La valeur 2 a été retenue au départ, en s'appuyant sur la documentation : le
+#   délai « ne s'applique qu'aux connexions sans fichier ouvert ». En pratique elle
+#   a FAIT ÉCHOUER LA CAPTURE D'IMAGE MASTER, à 31 % — « erreur 6, descripteur non
+#   valide ». Une capture DISM dure 30 à 60 minutes et comporte de longues phases
+#   d'analyse du disque source pendant lesquelles plus aucun fichier n'est ouvert
+#   côté serveur : la session était fermée sous les pieds de DISM, qui écrivait
+#   ensuite sur un descripteur mort.
+#
+#   30 minutes laisse passer n'importe quelle phase de capture tout en fermant les
+#   sessions réellement abandonnées. Le vrai filet contre les postes disparus reste
+#   keepalive, qui n'attend pas l'inactivité pour agir.
 grep -q 'keepalive' /etc/samba/smb.conf || \
-  sed -i '/\[global\]/a\	keepalive = 30\n\tdeadtime = 2' /etc/samba/smb.conf
+  sed -i '/\[global\]/a\	keepalive = 30\n\tdeadtime = 30' /etc/samba/smb.conf
+# Passerelles déjà installées : corriger la valeur trop courte posée par les versions
+# précédentes. Sans cela, une mise à jour du dépôt ne suffirait pas — smb.conf n'est
+# pas réécrit, il est modifié en place.
+sed -i 's/^\(\s*\)deadtime\s*=\s*[0-9]\+/\1deadtime = 30/' /etc/samba/smb.conf
 
 echo "[AD] resolv.conf → dnsmasq (résout ${REALM} + externe), persistant…"
 chattr -i /etc/resolv.conf 2>/dev/null || true
