@@ -30,6 +30,12 @@ title Bastion - Preparation du poste de reference
 
 net session >nul 2>&1 || (echo [ERREUR] Relancez ce script en tant qu'Administrateur. & pause & exit /b 1)
 
+REM  " Preparer-PosteReference.cmd diag " : aller DIRECTEMENT au diagnostic de
+REM  sysprep, sans refaire les neuf etapes de nettoyage. C'est le cas apres un
+REM  echec de generalisation : le poste est deja propre, seule la cause manque.
+set "SPLOG=%SystemRoot%\System32\Sysprep\Panther\setupact.log"
+if /i "%~1"=="diag" goto diagnostic
+
 set "LOG=C:\bastion-preparation.txt"
 echo Bastion - preparation du poste de reference > "%LOG%"
 echo Date : %DATE% %TIME% >> "%LOG%"
@@ -252,14 +258,110 @@ if /i not "%SP%"=="OUI" goto fin
 echo.
 echo   Generalisation en cours, le poste va s'eteindre...
 "%SystemRoot%\System32\Sysprep\sysprep.exe" /generalize /oobe /shutdown
-if errorlevel 1 (
-  echo.
-  echo   [ERREUR] sysprep a echoue. La cause exacte est dans :
-  echo     %SystemRoot%\System32\Sysprep\Panther\setupact.log
-  echo   Cause la plus frequente : une application du Store installee pour un
-  echo   utilisateur mais pas provisionnee pour tous.
-  pause
+if not errorlevel 1 goto fin
+
+REM ====================================================================
+REM  SYSPREP A ECHOUE - on LIT le journal au lieu d'y renvoyer.
+REM
+REM  " Sysprep n'a pas pu valider votre installation de Windows " ne dit
+REM  rien par lui-meme : la cause est enfouie dans setupact.log, un fichier
+REM  de plusieurs milliers de lignes. Renvoyer l'operateur dedans, c'est le
+REM  laisser sans reponse. On extrait donc la cause, et on la traite.
+REM ====================================================================
+:diagnostic
+echo.
+echo   =====================================================================
+echo     SYSPREP A ECHOUE - recherche de la cause
+echo   =====================================================================
+echo.
+set "SPLOG=%SystemRoot%\System32\Sysprep\Panther\setupact.log"
+if not exist "%SPLOG%" (
+  echo   Journal introuvable : %SPLOG%
+  goto fin
 )
+
+REM  Les commandes PowerShell ci-dessous tiennent sur UNE ligne, et leurs tubes
+REM  s'ecrivent " | " et non " ^| ". La distinction n'est pas cosmetique :
+REM    - dans un " for /f ('...') ", cmd analyse la commande, " | " doit etre echappe ;
+REM    - en appel direct, le tube est ENTRE GUILLEMETS, donc cmd n'y touche pas et
+REM      un " ^| " serait transmis tel quel a PowerShell, qui refuserait la syntaxe.
+echo   --- Dernieres erreurs du journal ---
+powershell -NoProfile -Command "Select-String -Path '%SPLOG%' -Pattern 'SYSPRP' | Where-Object { $_.Line -match 'error|failed|not provisioned' } | Select-Object -Last 8 | ForEach-Object { '     ' + ($_.Line -replace '.*SYSPRP ','') }"
+
+REM  Le cas archi-dominant : un paquet du Store installe pour UN utilisateur
+REM  mais pas provisionne pour tous. sysprep refuse, parce qu'il ne saurait pas
+REM  quoi en faire sur les postes deployes. Le journal nomme le paquet ; on le
+REM  recupere pour pouvoir agir dessus.
+echo.
+echo   --- Applications qui bloquent la generalisation ---
+powershell -NoProfile -Command "$p = Select-String -Path '%SPLOG%' -Pattern 'Package (\S+) was installed for a user, but not provisioned' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique; if ($p) { $p | ForEach-Object { '     ' + $_ }; $p | Set-Content -Encoding ASCII 'C:\bastion-sysprep-paquets.txt' } else { '     (aucune application nommee dans le journal)' }"
+
+if not exist "C:\bastion-sysprep-paquets.txt" goto diag_autre
+
+echo.
+echo   Ces applications du Store sont installees pour un compte mais pas
+echo   provisionnees pour tous les utilisateurs. sysprep refuse de continuer
+echo   tant qu'elles sont dans cet etat.
+echo.
+echo   Les RETIRER est la pratique courante pour une image master : elles
+echo   seront de toute facon reinstallees par Windows pour chaque nouvel
+echo   agent qui ouvre une session.
+echo.
+set RET=
+set /p RET=  Retirer ces applications et relancer sysprep ? Tapez OUI :
+if /i not "%RET%"=="OUI" goto diag_manuel
+
+echo.
+echo   Retrait en cours...
+REM  Le journal nomme le paquet COMPLET (Nom_Version_Architecture__Editeur) ; les
+REM  applets Appx attendent le nom court. On coupe donc au premier " _ ".
+powershell -NoProfile -Command "foreach ($n in Get-Content 'C:\bastion-sysprep-paquets.txt') { $court = ($n -split '_')[0]; '     ' + $court; Get-AppxPackage -AllUsers -Name $court -ErrorAction SilentlyContinue | ForEach-Object { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction SilentlyContinue }; Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $court } | ForEach-Object { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null } }"
+del /f /q "C:\bastion-sysprep-paquets.txt" >nul 2>&1
+
+REM  IMPORTANT : apres un echec, sysprep laisse un indicateur dans la base de
+REM  registre qui l'empeche de repartir. Sans cette remise a zero, la seconde
+REM  tentative echoue avec le MEME message, et l'on croit que le retrait des
+REM  applications n'a servi a rien.
+echo.
+echo   Remise a zero de l etat de generalisation...
+reg add "HKLM\SYSTEM\Setup\Status\SysprepStatus" /v GeneralizationState /t REG_DWORD /d 7 /f >nul 2>&1
+reg add "HKLM\SYSTEM\Setup\Status\SysprepStatus" /v CleanupState        /t REG_DWORD /d 2 /f >nul 2>&1
+REM  Le journal est renomme : sinon la prochaine analyse relirait les erreurs
+REM  de la tentative precedente et accuserait des applications deja retirees.
+if exist "%SPLOG%" move /y "%SPLOG%" "%SPLOG%.precedent" >nul 2>&1
+
+echo.
+echo   Nouvelle tentative de generalisation...
+"%SystemRoot%\System32\Sysprep\sysprep.exe" /generalize /oobe /shutdown
+if not errorlevel 1 goto fin
+echo.
+echo   [ERREUR] Nouvel echec. Le journal a ete relu ci-dessous.
+goto diag_autre
+
+:diag_manuel
+echo.
+echo   Retrait non effectue. Pour le faire vous-meme, pour chaque application :
+echo     Get-AppxPackage -AllUsers ^<nom^> ^| Remove-AppxPackage -AllUsers
+echo   Liste conservee dans C:\bastion-sysprep-paquets.txt
+goto fin
+
+:diag_autre
+echo.
+echo   --- Autres causes frequentes a verifier ---
+echo.
+echo   * Nombre de generalisations epuise. Windows n'en autorise qu'un nombre
+echo     limite sur une meme installation. Le journal parle alors de " rearm ".
+echo     Aucun contournement : il faut repartir d'une installation neuve.
+echo.
+echo   * Poste mis a niveau depuis une version anterieure de Windows.
+echo     sysprep refuse la generalisation d'une installation issue d'une mise
+echo     a niveau. Seule une installation propre convient pour un modele.
+echo.
+echo   * Un redemarrage etait en attente. Redemarrez, puis relancez ce script.
+echo.
+echo   Journal complet : %SPLOG%
+echo.
+pause
 goto fin
 
 :fin
