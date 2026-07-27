@@ -277,6 +277,31 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <?php else: ?><p class="muted small" style="margin-bottom:.6rem">Aucun jeton par station pour l'instant. Créez-en un ci-dessus.</p><?php endif; ?>
 
       <!-- Références secondaires, repliées pour ne pas encombrer -->
+      <?php // Le logiciel lui-même manquait à l'appel : la console expliquait comment
+            // CONFIGURER une station sans jamais dire où trouver le programme. ?>
+      <details class="av-fold" open>
+        <summary>Où récupérer le logiciel</summary>
+        <div class="fold-body">
+          <p class="muted small" style="margin:.3rem 0 .5rem">
+            L'application de station blanche est déposée sur le partage commun :
+          </p>
+          <p style="margin:.2rem 0 .6rem">
+            <code>\\dc.bastion.pn.int\Commun\BastionStationBlanche.exe</code>
+          </p>
+          <p class="muted small" style="margin:0">
+            Exécutable <strong>autonome</strong> : rien à installer, aucun runtime, aucun droit
+            d'administration pour le lancer. Copiez-le sur le poste et démarrez-le. Il analyse
+            avec <strong>Windows Defender</strong>, présent sur tout poste Windows, et peut
+            utiliser <strong>ClamAV</strong> en second avis avec la base virale de cette
+            passerelle — donc sans accès Internet sur la station.
+          </p>
+          <p class="muted small" style="margin:.5rem 0 0">
+            Au premier lancement il écrit un <code>station.json</code> vierge à côté de lui :
+            reportez-y le jeton créé ci-dessus.
+          </p>
+        </div>
+      </details>
+
       <details class="av-fold">
         <summary>Configuration d'un poste — <code>station.json</code></summary>
         <div class="fold-body">

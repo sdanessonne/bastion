@@ -35,6 +35,27 @@ Produit un `.exe` **autonome** (~68 Mo) : aucun runtime .NET à installer sur le
 Une station blanche est souvent isolée, sans droits d'installation ni accès Internet ;
 elle doit démarrer sur un simple copier-coller.
 
+## Publier sur le partage
+
+L'exécutable **n'est pas versionné** — 68 Mo n'ont rien à faire dans un dépôt Git, et
+`selfupdate` ne peut donc pas le déployer comme il déploie `services/tools/`. La mise à
+disposition est une opération délibérée, à refaire après chaque modification du code :
+
+    dotnet publish -c Release -o publish
+    # puis, depuis la passerelle ou par SFTP :
+    install -m666 BastionStationBlanche.exe /srv/partage/commun/
+
+Il apparaît alors dans `\\dc.bastion.pn.int\Commun\`, et la page **Antivirus** de la
+console indique ce chemin aux administrateurs.
+
+**Vérifier l'empreinte après transfert.** Un exécutable tronqué se lance parfois quand
+même, et échoue plus tard de façon incompréhensible :
+
+    sha256sum publish/BastionStationBlanche.exe     # sur le poste de compilation
+    sha256sum /srv/partage/commun/BastionStationBlanche.exe   # sur la passerelle
+
+Les deux doivent être identiques.
+
 ## Éprouver sans interface
 
     BastionStationBlanche.exe --test <dossier>
