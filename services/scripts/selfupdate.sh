@@ -352,6 +352,15 @@ SCRIPTS
         else
             echo "  ATTENTION : partage Commun introuvable ($COMMUN) — outils poste NON publiés"
         fi
+        # MENU DE DÉPLOIEMENT PXE : réinjecté dans boot.wim si son source a changé.
+        # setup-pxe.sh compare une empreinte et ne fait rien quand rien n'a bougé, donc
+        # cet appel est sans effet la plupart du temps. Sans lui, une correction du menu
+        # poussée sur Git restait dans le dépôt : les postes continuaient de démarrer sur
+        # l'ancienne version, sans que rien ne le signale.
+        if [ -f "$REPO_DIR/services/scripts/setup-pxe.sh" ]; then
+            bash "$REPO_DIR/services/scripts/setup-pxe.sh" menu 2>&1 | sed 's/^/  /' || \
+                echo "  ATTENTION : réinjection du menu PXE impossible"
+        fi
         # custombinauth : appelé par OpenNDS à chaque (dé)connexion (quotas + journalisation),
         # hors /usr/local/sbin. Fait partie du code, doit suivre les mises à jour.
         [ -f "$REPO_DIR/services/opennds/custombinauth.sh" ] && install -m755 "$REPO_DIR/services/opennds/custombinauth.sh" /usr/lib/opennds/custombinauth.sh

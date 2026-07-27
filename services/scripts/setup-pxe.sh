@@ -8,6 +8,61 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"        # services/
 REPO_DIR="$(cd "${REPO_DIR}/.." && pwd)"          # racine du repo
+
+# ── Injection du menu dans boot.wim : ISOLEE, car appelee de DEUX endroits ──────
+# 1) lors d'une installation complete, a sa place dans le deroule ci-dessous ;
+# 2) par « setup-pxe.sh menu », que proxyfibre-selfupdate lance apres chaque mise a
+#    jour du depot. Sans ce second appel, une correction du menu poussee sur Git
+#    restait lettre morte : boot.wim gardait l'ancienne version et les postes
+#    demarraient dessus. Rejouer TOUTE l'installation a chaque mise a jour serait
+#    disproportionne et redemarrerait des services en production.
+# La fonction est definie ICI, avant l'aiguillage : bash exige qu'une fonction soit
+# connue au moment de l'appel.
+injecter_menu() {
+    WIMB=/var/www/html/boot/win11/boot.wim
+    STAMP=/srv/pxe/.startnet-injected
+    if [ -f "$WIMB" ] && command -v wimlib-imagex >/dev/null 2>&1; then
+      # Empreinte de CE QUI EST INJECTÉ : toute modification du menu ou de winpeshl.ini
+      # déclenche la ré-injection. (Un simple drapeau « déjà fait » figeait boot.wim sur
+      # une vieille version du script — modifier le menu n'avait alors aucun effet.)
+      SUM="$(cat "${REPO_DIR}/services/tftp/startnet.cmd" "${REPO_DIR}/services/tftp/winpeshl.ini" \
+             | sha256sum | cut -d' ' -f1)"
+      if [ "$SUM" != "$(cat "$STAMP" 2>/dev/null || true)" ]; then
+        echo "[PXE] Injection du menu de déploiement dans boot.wim…"
+        mkdir -p /srv/pxe/backup
+        [ -f /srv/pxe/backup/boot.wim.orig ] || cp "$WIMB" /srv/pxe/backup/boot.wim.orig
+        # Sources non vides, VÉRIFIÉ AVANT de toucher à boot.wim : une redirection « > »
+        # crée le fichier de sortie même quand la commande qui l'alimente échoue. Un
+        # winpeshl.ini vide part sans erreur et le poste démarre alors SANS menu.
+        for f in startnet.cmd winpeshl.ini; do
+          [ -s "${REPO_DIR}/services/tftp/${f}" ] || \
+            { echo "  ABANDON : ${REPO_DIR}/services/tftp/${f} absent ou vide."; exit 1; }
+        done
+        # Le script vient d'un VRAI fichier du dépôt : surtout PAS d'ici-document, qui écrase
+        # les « \\ » du chemin UNC (\\serveur\partage) à travers les couches de quoting.
+        # UTF-8 (dépôt) → CP437 (console WinPE) : sans iconv, les cadres semi-graphiques du
+        # menu sortiraient en mojibake. CRLF obligatoire (batch).
+        sed -e "s|__DNS_IP__|${DNS_IP:-192.168.182.2}|g" -e 's/\r*$/\r/' \
+          "${REPO_DIR}/services/tftp/startnet.cmd" | iconv -f UTF-8 -t CP437 > /tmp/pf-startnet.cmd
+        sed -e 's/\r*$/\r/' "${REPO_DIR}/services/tftp/winpeshl.ini" > /tmp/pf-winpeshl.ini
+        chmod u+w "$WIMB"
+        if printf 'delete --force /Windows/System32/startnet.cmd\nadd /tmp/pf-startnet.cmd /Windows/System32/startnet.cmd\ndelete --force /Windows/System32/winpeshl.ini\nadd /tmp/pf-winpeshl.ini /Windows/System32/winpeshl.ini\n' \
+             | wimlib-imagex update "$WIMB" 2 >/dev/null 2>&1 \
+           && wimlib-imagex info "$WIMB" --boot 2 >/dev/null 2>&1; then
+          printf '%s\n' "$SUM" > "$STAMP"
+          echo "  menu injecté (index 2)."
+        else
+          echo "  ATTENTION : injection échouée — boot.wim laissé inchangé."
+        fi
+        chmod a+rX,u-w "$WIMB"; rm -f /tmp/pf-startnet.cmd /tmp/pf-winpeshl.ini
+      fi
+    fi
+}
+
+if [ "${1:-}" = "menu" ]; then
+    injecter_menu
+    exit 0
+fi
 source "${REPO_DIR}/provisioning/config.env"
 
 NETBOOT_URL="${NETBOOT_URL:-https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/netboot.tar.gz}"
@@ -134,44 +189,7 @@ fi
 #    partage y affiche bien sa 1re page mais « Suivant » reste sans effet (moteur 24H2 non
 #    initialisable). Aucun binaire ne manque dans System32 : ce sont les composants
 #    enregistrés qui manquent → seul l'index 2 permet une installation.
-WIMB=/var/www/html/boot/win11/boot.wim
-STAMP=/srv/pxe/.startnet-injected
-if [ -f "$WIMB" ] && command -v wimlib-imagex >/dev/null 2>&1; then
-  # Empreinte de CE QUI EST INJECTÉ : toute modification du menu ou de winpeshl.ini
-  # déclenche la ré-injection. (Un simple drapeau « déjà fait » figeait boot.wim sur
-  # une vieille version du script — modifier le menu n'avait alors aucun effet.)
-  SUM="$(cat "${REPO_DIR}/services/tftp/startnet.cmd" "${REPO_DIR}/services/tftp/winpeshl.ini" \
-         | sha256sum | cut -d' ' -f1)"
-  if [ "$SUM" != "$(cat "$STAMP" 2>/dev/null || true)" ]; then
-    echo "[PXE] Injection du menu de déploiement dans boot.wim…"
-    mkdir -p /srv/pxe/backup
-    [ -f /srv/pxe/backup/boot.wim.orig ] || cp "$WIMB" /srv/pxe/backup/boot.wim.orig
-    # Sources non vides, VÉRIFIÉ AVANT de toucher à boot.wim : une redirection « > »
-    # crée le fichier de sortie même quand la commande qui l'alimente échoue. Un
-    # winpeshl.ini vide part sans erreur et le poste démarre alors SANS menu.
-    for f in startnet.cmd winpeshl.ini; do
-      [ -s "${REPO_DIR}/services/tftp/${f}" ] || \
-        { echo "  ABANDON : ${REPO_DIR}/services/tftp/${f} absent ou vide."; exit 1; }
-    done
-    # Le script vient d'un VRAI fichier du dépôt : surtout PAS d'ici-document, qui écrase
-    # les « \\ » du chemin UNC (\\serveur\partage) à travers les couches de quoting.
-    # UTF-8 (dépôt) → CP437 (console WinPE) : sans iconv, les cadres semi-graphiques du
-    # menu sortiraient en mojibake. CRLF obligatoire (batch).
-    sed -e "s|__DNS_IP__|${DNS_IP:-192.168.182.2}|g" -e 's/\r*$/\r/' \
-      "${REPO_DIR}/services/tftp/startnet.cmd" | iconv -f UTF-8 -t CP437 > /tmp/pf-startnet.cmd
-    sed -e 's/\r*$/\r/' "${REPO_DIR}/services/tftp/winpeshl.ini" > /tmp/pf-winpeshl.ini
-    chmod u+w "$WIMB"
-    if printf 'delete --force /Windows/System32/startnet.cmd\nadd /tmp/pf-startnet.cmd /Windows/System32/startnet.cmd\ndelete --force /Windows/System32/winpeshl.ini\nadd /tmp/pf-winpeshl.ini /Windows/System32/winpeshl.ini\n' \
-         | wimlib-imagex update "$WIMB" 2 >/dev/null 2>&1 \
-       && wimlib-imagex info "$WIMB" --boot 2 >/dev/null 2>&1; then
-      printf '%s\n' "$SUM" > "$STAMP"
-      echo "  menu injecté (index 2)."
-    else
-      echo "  ATTENTION : injection échouée — boot.wim laissé inchangé."
-    fi
-    chmod a+rX,u-w "$WIMB"; rm -f /tmp/pf-startnet.cmd /tmp/pf-winpeshl.ini
-  fi
-fi
+injecter_menu
 
 echo "[PXE] Config dnsmasq…"
 sed "s|http://__LAN_IP__|http://${LAN_IP}|g" "${REPO_DIR}/services/dnsmasq/pxe.conf" \
