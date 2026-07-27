@@ -13,8 +13,8 @@ Trois règles, chacune correspondant à une panne réellement survenue :
   2. Aucun script ne doit contenir de caractère dont la lecture en CP1252 produit un
      GUILLEMET : « — », « – », « ─ ». Filet de sécurité si la marque venait à sauter.
 
-  3. Un .cmd doit être en ASCII pur et SANS marque (l'interpréteur de commandes la
-     prendrait pour le début de sa première commande).
+  3. Un .cmd ou .bat doit être en ASCII pur et SANS marque (l'interpréteur de
+     commandes la prendrait pour le début de sa première commande).
 
 Deux terrains :
   * le DÉPÔT       — les scripts livrés tels quels (services/tftp, services/tools) ;
@@ -72,7 +72,7 @@ def controler(chemin, etiquette):
         # puis reecrit -- l'outil de correction fabrique alors le defaut qu'il corrige.
         if brut.startswith(BOM_UTF8 + BOM_UTF8):
             defauts.append('%s : DEUX marques UTF-8 -> caractere parasite en tete' % etiquette)
-    elif ext == '.cmd':
+    elif ext in ('.cmd', '.bat'):
         if brut.startswith(BOM_UTF8):
             defauts.append('%s : .cmd AVEC marque UTF-8 -> premiere commande illisible' % etiquette)
         if not ascii_pur:
@@ -93,7 +93,7 @@ def parcourir(racine, etiquette_base):
     for base, dirs, fichiers in os.walk(racine):
         dirs[:] = [d for d in dirs if d not in ('.git', 'node_modules')]
         for f in fichiers:
-            if f.lower().endswith(('.ps1', '.cmd')):
+            if f.lower().endswith(('.ps1', '.cmd', '.bat')):
                 p = os.path.join(base, f)
                 controler(p, etiquette_base + os.path.relpath(p, racine).replace('\\', '/'))
 
