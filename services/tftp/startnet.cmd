@@ -439,7 +439,28 @@ rem Ne pas gaspiller de temps processeur a recompresser ce qui l'est deja.
 >>X:\wimscript.ini echo \Windows\inf\*.pnf
 echo   Liste d exclusion ecrite.
 
-if exist \\%GW%\ImagesRW\master.wim del /f /q \\%GW%\ImagesRW\master.wim
+rem  L'image existante est supprimee AVANT la capture, et non conservee en secours :
+rem  la bibliotheque n'a pas la place de contenir les deux (mesure du 26/07 : 12,8 Go
+rem  libres pour une image de 18 Go). C'est un compromis assume, mais il a une
+rem  consequence qu'il faut connaitre.
+rem  Ecrit SANS bloc entre parentheses : ce script n'active pas l'expansion differee,
+rem  et « %VAR% » lu dans un bloc vaut ce qu'il valait AVANT le bloc -- la reponse au
+rem  « set /p » serait donc ignoree. On passe par une etiquette, comme ailleurs ici.
+if not exist \\%GW%\ImagesRW\master.wim goto capture_lancer
+echo.
+echo   ATTENTION : l image master actuelle va etre SUPPRIMEE maintenant, avant
+echo   la capture -- la bibliotheque n a pas la place de garder les deux.
+echo   Si la capture echoue ensuite ^(coupure reseau, disque plein, erreur^),
+echo   il n y aura PLUS AUCUNE image master jusqu a la prochaine capture reussie.
+echo.
+echo   Ne poursuivez que si vous pouvez relancer une capture en cas d echec.
+echo.
+set SUP=
+set /p SUP=  Supprimer l image actuelle et poursuivre ? Tapez OUI :
+if /i not "%SUP%"=="OUI" goto pause_menu
+del /f /q \\%GW%\ImagesRW\master.wim
+
+:capture_lancer
 echo.
 echo  [3/3] Capture en cours...
 rem  /Compress:FAST et non MAX. Ce choix est CONTRE-INTUITIF, il merite d'etre
