@@ -296,8 +296,17 @@ if errorlevel 1 (
   goto pause_menu
 )
 echo.
-echo  Restauration de l image sur W: ^(plusieurs minutes^)...
-Dism /Apply-Image /ImageFile:\\%GW%\Images\master.wim /Index:1 /ApplyDir:W:\
+echo  Restauration de l image sur W:
+echo.
+echo   La duree depend surtout de la TAILLE DEPLOYEE de l image, pas du reseau :
+echo   le transfert ne represente que quelques minutes, l essentiel du temps
+echo   part en decompression et en ecriture disque. La fiche affichee plus haut
+echo   indique le volume a ecrire.
+echo.
+rem  /ScratchDir : les fichiers temporaires de DISM vont sur le disque LOCAL
+rem  fraichement formate, et non sur le disque virtuel X: de WinPE, qui vit en
+rem  memoire vive et est etroit.
+Dism /Apply-Image /ImageFile:\\%GW%\Images\master.wim /Index:1 /ApplyDir:W:\ /ScratchDir:W:\
 if errorlevel 1 (
   echo  ERREUR : la restauration de l image a echoue.
   goto pause_menu
@@ -359,10 +368,90 @@ if exist \\%GW%\ImagesRW\master.wim echo  NOTE : une image master existe deja, e
 set OK=
 set /p OK=  Lancer la capture ? Tapez OUI :
 if /i not "%OK%"=="OUI" goto menu
+rem ============================================================================
+rem  ALLEGEMENT DE L'IMAGE - c'est ICI que se joue le temps de restauration.
+rem
+rem  Mesure faite sur l'image du 23/07 : 17,8 Go transferes, mais 53,1 Go
+rem  DEPLOYES et 220 957 fichiers. Le transfert reseau ne prend que 3 minutes
+rem  a 1 Gb/s ; tout le reste du temps part en DECOMPRESSION et en ECRITURE
+rem  disque. Autrement dit : la restauration est lente parce que l'image est
+rem  GROSSE, pas parce que le reseau ou le partage sont mal regles.
+rem
+rem  Deux leviers sont appliques ci-dessous, plus un troisieme au moment de
+rem  la compression (voir /Compress plus bas).
+rem ============================================================================
+echo.
+echo  [1/3] Nettoyage du magasin de composants ^(WinSxS^)
+echo.
+echo   Windows conserve toutes les versions remplacees des composants mis a
+echo   jour. Sur cette image, WinSxS pese 159 000 entrees. Le nettoyage les
+echo   supprime et fait souvent gagner PLUSIEURS GIGAOCTETS -- donc autant de
+echo   temps a chaque restauration, sur chaque poste.
+echo.
+echo   CONTREPARTIE : les mises a jour deja installees ne pourront plus etre
+echo   desinstallees sur les postes deployes. C'est l'usage normal pour une
+echo   image master, mais c'est irreversible : a vous de decider.
+echo.
+set NET=
+set /p NET=  Nettoyer le magasin de composants ? ^(OUI / non^) :
+if /i "%NET%"=="OUI" (
+  echo   Nettoyage hors ligne en cours, patientez...
+  Dism /Image:%SRC%\ /Cleanup-Image /StartComponentCleanup /ResetBase
+  if errorlevel 1 echo   AVERTISSEMENT : le nettoyage a echoue, la capture continue.
+) else (
+  echo   Nettoyage ignore.
+)
+
+rem Liste d'exclusion : ce qui n'a AUCUNE raison de voyager dans une image
+rem master. Fichier d'echange, mise en veille prolongee, corbeille, caches de
+rem mise a jour et de livraison, temporaires. Rien d'utile n'est retire : ces
+rem elements sont recrees par Windows au premier demarrage.
+echo.
+echo  [2/3] Exclusions
+> X:\wimscript.ini echo [ExclusionList]
+>>X:\wimscript.ini echo \pagefile.sys
+>>X:\wimscript.ini echo \hiberfil.sys
+>>X:\wimscript.ini echo \swapfile.sys
+>>X:\wimscript.ini echo \System Volume Information
+>>X:\wimscript.ini echo \$Recycle.Bin
+>>X:\wimscript.ini echo \RECYCLER
+>>X:\wimscript.ini echo \Windows\CSC
+>>X:\wimscript.ini echo \Windows\Temp\*
+>>X:\wimscript.ini echo \Windows\SoftwareDistribution\Download\*
+>>X:\wimscript.ini echo \Windows\Prefetch\*
+>>X:\wimscript.ini echo \Windows\Logs\CBS\*
+>>X:\wimscript.ini echo \Windows\MEMORY.DMP
+>>X:\wimscript.ini echo \Windows\Minidump\*
+>>X:\wimscript.ini echo \Windows\ServiceProfiles\NetworkService\AppData\Local\Temp\*
+>>X:\wimscript.ini echo \Users\*\AppData\Local\Temp\*
+>>X:\wimscript.ini echo \Users\*\AppData\Local\Microsoft\Windows\INetCache\*
+>>X:\wimscript.ini echo \Users\*\AppData\Local\Microsoft\Windows\Explorer\thumbcache_*.db
+>>X:\wimscript.ini echo \ProgramData\Microsoft\Windows\DeliveryOptimization\*
+>>X:\wimscript.ini echo \ProgramData\Microsoft\Windows Defender\Scans\*
+>>X:\wimscript.ini echo.
+rem Ne pas gaspiller de temps processeur a recompresser ce qui l'est deja.
+>>X:\wimscript.ini echo [CompressionExclusionList]
+>>X:\wimscript.ini echo *.mp3
+>>X:\wimscript.ini echo *.zip
+>>X:\wimscript.ini echo *.cab
+>>X:\wimscript.ini echo *.wim
+>>X:\wimscript.ini echo *.esd
+>>X:\wimscript.ini echo \Windows\inf\*.pnf
+echo   Liste d exclusion ecrite.
+
 if exist \\%GW%\ImagesRW\master.wim del /f /q \\%GW%\ImagesRW\master.wim
 echo.
-echo  Capture en cours ^(30 a 60 minutes selon la taille^)...
-Dism /Capture-Image /ImageFile:\\%GW%\ImagesRW\master.wim /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:max
+echo  [3/3] Capture en cours...
+rem  /Compress:FAST et non MAX. Ce choix est CONTRE-INTUITIF, il merite d'etre
+rem  explique :
+rem    - MAX  ^(LZX^)    : fichier le plus petit, mais decompression LENTE.
+rem    - FAST ^(XPRESS^) : fichier ~25 %% plus gros, decompression 2 a 3x plus
+rem                       rapide.
+rem  Le fichier n'est transfere qu'une fois et le reseau n'est pas le facteur
+rem  limitant ^(3 min sur 1 Gb/s^). La decompression, elle, est refaite sur
+rem  CHAQUE poste, a chaque restauration, et c'est elle qui prend le temps.
+rem  On optimise donc ce qui est repete, pas ce qui est unique.
+Dism /Capture-Image /ImageFile:\\%GW%\ImagesRW\master.wim /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini
 if errorlevel 1 (
   echo  ERREUR : la capture a echoue.
   goto pause_menu
