@@ -103,6 +103,40 @@ else
   wn "check-scripts.py non déployé — contrôle d'encodage ignoré"
 fi
 
+# ── 5 bis) Scripts ENGENDRÉS par le fabricant d'ISO ──────────────────────────
+# Même piège, autre bout de la chaîne : build-iso.sh peut être parfaitement valide
+# et écrire dans l'image des scripts qui ne s'exécutent pas. C'est arrivé : le
+# script de premier démarrage est mort en UNE SECONDE, et le serveur a démarré sur
+# un écran Debian nu. On contrôle donc ce qui est ÉCRIT, pas seulement l'écrivain.
+h "Fabricant d'ISO (scripts engendrés)"
+BI="$REPO_DIR/provisioning/iso/build-iso.sh"
+if [ -f "$BI" ]; then
+  if sh -n "$BI" 2>/dev/null; then ok "build-iso.sh : syntaxe"; else
+    echo "  KO   build-iso.sh : syntaxe"; fail=$((fail + 1)); fi
+  tmpg=$(mktemp -d)
+  sed -n "/<<'CPEOF'/,/^CPEOF\$/p" "$BI" | sed '1d;$d' > "$tmpg/copier.sh"
+  sed -n "/<<INITEOF/,/^INITEOF\$/p" "$BI" | sed '1d;$d' \
+    | sed 's/\\\$/$/g; s/'"'"'\$DEPOT'"'"'/DEPOT/' > "$tmpg/init.sh"
+  for g in copier.sh init.sh; do
+    if [ ! -s "$tmpg/$g" ]; then
+      echo "  KO   $g : absent de build-iso.sh"; fail=$((fail + 1))
+    elif sh -n "$tmpg/$g" 2>/dev/null; then ok "$g engendré : syntaxe"
+    else echo "  KO   $g engendré : syntaxe"; fail=$((fail + 1)); fi
+  done
+  # Le préréglage : chaque ligne d'un late_command doit porter sa continuation.
+  PS="$REPO_DIR/provisioning/iso/preseed.cfg"
+  if [ -f "$PS" ]; then
+    awk '/^d-i preseed\/late_command/{f=1} f && /^$/{f=0} f' "$PS" | awk 'NF' > "$tmpg/lc"
+    n=$(wc -l < "$tmpg/lc")
+    bad=$(head -n $((n - 1)) "$tmpg/lc" | grep -vc '\\$')
+    if [ "$bad" = 0 ] && [ "$n" -gt 1 ]; then ok "préréglage : late_command continu ($n lignes)"
+    else echo "  KO   préréglage : $bad continuation(s) manquante(s)"; fail=$((fail + 1)); fi
+  fi
+  rm -rf "$tmpg"
+else
+  wn "build-iso.sh introuvable — contrôle du fabricant d'ISO ignoré"
+fi
+
 # ── 6) Contrôles approfondis (mode full uniquement) ──────────────────────────
 if [ "$MODE" != "quick" ]; then
   h "Python (py_compile)"

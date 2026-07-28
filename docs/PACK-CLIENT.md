@@ -10,24 +10,26 @@ manuel — celui-ci est [`documentation-utilisateur.md`](documentation-utilisate
 
 | Support | Contenu | Taille |
 |---|---|---|
-| **Clé A — amorçable** | `bastion-installation.iso` | ~940 Mo |
-| **Clé B — données** *(fournie par le service)* | `win11.iso`, éventuellement `master.wim` et `ubuntu.iso` | 8 à 25 Go |
+| **Clé unique — amorçable** | `bastion-installation.iso` : Debian, le code Bastion, et les médias de déploiement trouvés à la fabrication | 0,9 à 25 Go |
 
-### Pourquoi deux supports, et pas un seul
+Le fabricant embarque dans l'image **tout ce qu'il trouve** : le code de Bastion
+(pris dans le dépôt local, pas cloné depuis Internet) et, s'ils sont présents,
+`win11.iso`, `master.wim` et `ubuntu.iso`. Une image complète pèse environ 9 Go et
+tient sur une clé de 16 Go.
 
-La clé A est écrite en mode brut (`dd`) : elle occupe le support entier, on ne peut
-rien y ajouter. Surtout, **la source d'installation Windows n'a pas à être
-redistribuée** : elle pèse 7,9 Go à elle seule, et le service dispose de son propre
-média sous licence en volume. Bastion ne la fournit pas, il l'utilise.
+> Le code est embarqué et **non cloné**. Le dépôt est privé : un serveur qui vient
+> de s'installer n'a aucune authentification pour y accéder. La première
+> installation réelle l'a montré — le service de déploiement a échoué en une
+> seconde, et le serveur a démarré sur un écran nu.
 
-La clé B est une clé **ordinaire**, formatée en exFAT ou NTFS. Elle peut être
-préparée par le client lui-même.
+Sans média Windows à la fabrication, l'image reste utilisable : le serveur
+s'installe normalement, et l'on ajoute les sources plus tard (voir plus bas).
 
 ---
 
 ## Préparer les supports
 
-### Clé A — le serveur
+### Fabriquer l'image
 
 Sur une machine disposant du dépôt :
 
@@ -55,9 +57,16 @@ sudo dd if=bastion-installation.iso of=/dev/sdX bs=4M status=progress conv=fsync
 > ces valeurs quelque part. Conservez-la comme une clé — coffre ou armoire forte,
 > jamais un partage ouvert.
 
-### Clé B — les sources de déploiement
+### Les sources de déploiement
 
-Une clé USB ordinaire, avec ces fichiers **à la racine** ou dans un dossier `bastion` :
+Le fabricant embarque ce qu'il trouve dans `/srv/pxe/iso` et `/srv/pxe/images`.
+Pour désigner d'autres fichiers, renseignez `MEDIAS` :
+
+```bash
+sudo MEDIAS="/mnt/sources/*.iso /mnt/sources/master.wim" ./build-iso.sh
+```
+
+Les noms attendus :
 
 ```
 win11.iso      source d'installation Windows 11    (option [1] du menu PXE)
@@ -71,13 +80,13 @@ Les noms comptent : ce sont ceux que le serveur cherche.
 
 ## Installer
 
-1. Brancher la **clé A** et la **clé B** sur le serveur.
+1. Brancher la clé sur le serveur.
 2. Démarrer dessus (amorçage BIOS ou UEFI, les deux fonctionnent).
 3. Attendre.
 
 Il n'y a **aucune question**, aucun écran à valider. Le serveur s'installe, chiffre
-son disque, redémarre, se configure, importe les sources de la clé B, puis s'arrête
-sur son écran de connexion.
+son disque, redémarre, se configure, met en place les sources de déploiement, puis
+s'arrête sur son écran de connexion.
 
 Comptez 30 à 45 minutes selon le matériel et le débit Internet — l'installation
 télécharge ses paquets Debian.
@@ -87,9 +96,9 @@ télécharge ses paquets Debian.
 | | |
 |---|---|
 | 1 | Debian s'installe sur un **disque chiffré** (LUKS) |
-| 2 | Premier démarrage : le dépôt Bastion est récupéré |
-| 3 | `deploy.sh` installe et configure portail captif, RADIUS, contrôleur de domaine, DNS, DHCP, console, PXE |
-| 4 | Les fichiers de la clé B sont importés et pris en compte |
+| 2 | Le code Bastion et les médias sont recopiés du support vers le disque, **pendant** l'installation — le support pourrait avoir été retiré ensuite |
+| 3 | Premier démarrage : `/opt/bastion-init/run.sh` prend le relais |
+| 4 | `deploy.sh` installe et configure portail captif, RADIUS, contrôleur de domaine, DNS, DHCP, console, PXE |
 | 5 | Le service d'installation se désactive : il ne tournera plus |
 
 Le journal complet reste dans `/var/log/bastion-install.log`.
@@ -116,10 +125,11 @@ Trois choses à faire tout de suite :
 
 ---
 
-## Si la clé B a été oubliée
+## Si les sources de déploiement manquent
 
 Rien n'est perdu : le serveur fonctionne, seul le déploiement Windows est
-indisponible. Branchez la clé et lancez :
+indisponible. Branchez une clé ordinaire contenant les fichiers ci-dessus, et
+lancez :
 
 ```bash
 sudo proxyfibre-import-media auto
@@ -133,6 +143,34 @@ Pour un dossier précis plutôt qu'une recherche automatique :
 
 ```bash
 sudo proxyfibre-import-media /media/monsupport
+```
+
+---
+
+## Si l'installation semble avoir échoué
+
+Le serveur démarre mais rien ne répond sur `:8443` ? L'écran de connexion le dit :
+un déploiement raté y affiche un encadré `BASTION : le deploiement a ECHOUE`.
+
+Le détail est toujours au même endroit :
+
+```bash
+sudo cat /var/log/bastion-install.log
+```
+
+Chaque étape y est datée, depuis la lecture du support jusqu'à la fin de
+`deploy.sh`. Deux lignes à chercher en premier :
+
+- `[copier.sh] AUCUN support de médias trouvé` — le support n'a pas été lu pendant
+  l'installation. Le serveur est utilisable, mais vide : relancez le déploiement à
+  la main depuis le dépôt.
+- `[init] ECHEC : deploy.sh a echoue` — l'installation des services a buté. Le
+  message d'erreur exact suit immédiatement dans le journal.
+
+Pour reprendre le déploiement après correction :
+
+```bash
+sudo systemctl start bastion-init.service
 ```
 
 ---

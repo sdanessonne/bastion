@@ -209,7 +209,10 @@ for src in "${MEDIAS-/srv/pxe/iso/win11.iso}"; do
     done
 done
 
-if [ "$COMPLET" = 1 ]; then
+# Ces deux scripts sont embarqués DANS TOUS LES CAS, même sans média ni code : ce
+# sont eux qui écrivent le journal d'installation. Les omettre quand il n'y a rien
+# à copier, c'est retirer la trace au moment précis où elle est indispensable.
+if true; then
     # Récupération PENDANT l'installation : le support est encore monté sur /cdrom,
     # et le système cible est accessible sous /target. Au premier démarrage le
     # support pourrait déjà avoir été retiré — on ne compte donc pas dessus.
@@ -218,35 +221,138 @@ if [ "$COMPLET" = 1 ]; then
     cat > "$TRAV/iso/bastion/copier.sh" <<'CPEOF'
 #!/bin/sh
 # Recopie les médias du support d'installation vers le système en cours d'installation.
-# Sans effet — et sans erreur — si le support n'en contient pas.
+#
+# ── POURQUOI CETTE RECHERCHE, ET PAS UN SEUL CHEMIN ─────────────────────────
+# La première version ne regardait qu'à deux endroits, /cdrom et /media. À
+# l'installation réelle, depuis une CLÉ USB, le support n'y était pas : rien n'a
+# été recopié, le script de premier démarrage s'est rabattu sur « git clone », le
+# dépôt est privé, et le service a échoué EN UNE SECONDE. Le serveur a démarré sur
+# un écran Debian nu, sans le moindre indice.
+# On cherche donc partout où l'installateur peut avoir monté le support, puis on
+# monte soi-même les partitions si nécessaire. Et surtout : on ÉCRIT ce qu'on a
+# trouvé, pour qu'un échec se lise au lieu de se deviner.
 set -u
-SRC=/cdrom/bastion
-[ -d "$SRC" ] || SRC=/media/bastion
-[ -d "$SRC" ] || exit 0
+J=/target/var/log/bastion-install.log
+mkdir -p /target/var/log 2>/dev/null
+note() { echo "[copier.sh] $*" >> "$J" 2>/dev/null; echo "[copier.sh] $*"; }
 
-# Le code de Bastion, s'il est embarqué. On le pose AVANT le premier démarrage :
-# le script de démarrage ne tentera alors pas de « git clone », qui échouerait de
-# toute façon sur un dépôt privé.
+SRC=""
+for d in /cdrom /media /media/cdrom /mnt /hd-media /run/media /srv; do
+    if [ -f "$d/bastion/source.tar" ] || [ -f "$d/bastion/win11.iso" ]; then
+        SRC="$d/bastion"; note "support trouvé : $SRC"; break
+    fi
+done
+
+# Rien aux emplacements habituels : on inspecte les systèmes de fichiers déjà montés,
+# puis on tente de monter chaque partition. L'installateur ne monte pas toujours la
+# clé, et c'est précisément ce cas qui a fait échouer la première installation.
+if [ -z "$SRC" ]; then
+    note "pas de support aux emplacements habituels, recherche élargie…"
+    while read -r _dev pt _rest; do
+        case "$pt" in /|/target|/proc|/sys|/dev*) continue ;; esac
+        if [ -f "$pt/bastion/source.tar" ]; then SRC="$pt/bastion"; note "trouvé sur $pt"; break; fi
+    done < /proc/mounts
+fi
+if [ -z "$SRC" ]; then
+    mkdir -p /tmp/bsrch 2>/dev/null
+    for dev in /dev/sd?? /dev/nvme?n?p? /dev/vd??; do
+        [ -b "$dev" ] || continue
+        mount -o ro "$dev" /tmp/bsrch 2>/dev/null || continue
+        if [ -f /tmp/bsrch/bastion/source.tar ]; then
+            SRC=/tmp/bsrch/bastion; note "trouvé en montant $dev"; break
+        fi
+        umount /tmp/bsrch 2>/dev/null
+    done
+fi
+
+if [ -z "$SRC" ]; then
+    note "AUCUN support de médias trouvé. Le code Bastion n'a PAS été déposé."
+    note "Le premier démarrage tentera un « git clone » — impossible sur un dépôt privé."
+    exit 0
+fi
+
+# Le code de Bastion. On le pose AVANT le premier démarrage, pour que le script de
+# démarrage n'ait pas à cloner un dépôt privé auquel il n'a pas accès.
 if [ -f "$SRC/source.tar" ]; then
     mkdir -p /target/home/proxyfibre
-    tar -xf "$SRC/source.tar" -C /target/home/proxyfibre
-    [ -f "$SRC/source.version" ] && cp "$SRC/source.version" /target/home/proxyfibre/proxyFibre/.version-iso
+    if tar -xf "$SRC/source.tar" -C /target/home/proxyfibre; then
+        [ -f "$SRC/source.version" ] && cp "$SRC/source.version" /target/home/proxyfibre/proxyFibre/.version-iso
+        note "code Bastion déposé dans /home/proxyfibre/proxyFibre"
+    else
+        note "ÉCHEC de l'extraction du code Bastion."
+    fi
+else
+    note "pas de source.tar sur le support."
 fi
 
 mkdir -p /target/srv/pxe/iso /target/srv/pxe/images
 for n in win11.iso ubuntu.iso; do
     [ -f "$SRC/$n" ] || continue
-    cp "$SRC/$n" "/target/srv/pxe/iso/$n.part" && mv "/target/srv/pxe/iso/$n.part" "/target/srv/pxe/iso/$n"
+    if cp "$SRC/$n" "/target/srv/pxe/iso/$n.part"; then
+        mv "/target/srv/pxe/iso/$n.part" "/target/srv/pxe/iso/$n"; note "$n recopié"
+    else
+        rm -f "/target/srv/pxe/iso/$n.part"; note "ÉCHEC de la recopie de $n"
+    fi
 done
 if [ -f "$SRC/master.wim" ]; then
-    cp "$SRC/master.wim" /target/srv/pxe/images/master.wim.part \
-      && mv /target/srv/pxe/images/master.wim.part /target/srv/pxe/images/master.wim
+    cp "$SRC/master.wim" /target/srv/pxe/images/master.wim.part       && mv /target/srv/pxe/images/master.wim.part /target/srv/pxe/images/master.wim       && note "master.wim recopié"
 fi
+# Le script de premier démarrage, déposé à sa place définitive.
+if [ -f "$SRC/init.sh" ]; then
+    mkdir -p /target/opt/bastion-init
+    cp "$SRC/init.sh" /target/opt/bastion-init/run.sh && chmod +x /target/opt/bastion-init/run.sh       && note "script de premier démarrage déposé"
+fi
+note "terminé."
 exit 0
 CPEOF
     chmod +x "$TRAV/iso/bastion/copier.sh"
+
+    # ── Script de PREMIER DÉMARRAGE, écrit comme un vrai fichier ────────────
+    # Il était auparavant fabriqué à coups de « printf » dans le préréglage :
+    # illisible, et impossible à faire évoluer sans casser un échappement.
+    # Ici c'est du shell ordinaire, relisible et modifiable.
+    cat > "$TRAV/iso/bastion/init.sh" <<INITEOF
+#!/bin/sh
+# Bastion — déploiement initial, exécuté UNE FOIS au premier démarrage.
+#
+# PAS de « set -e » : la première version en avait un, et le script est mort en
+# UNE SECONDE sur un « git clone » impossible, sans écrire une seule ligne. Le
+# serveur a démarré sur un écran Debian nu. Ici, chaque étape est tracée, et un
+# échec s'affiche sur l'écran de connexion au lieu de rester invisible.
+L=/var/log/bastion-install.log
+R=/home/proxyfibre/proxyFibre
+n() { echo "[init] \$(date '+%H:%M:%S') \$*" >> "\$L"; }
+echouer() {
+    n "ECHEC : \$1"
+    printf '\n  BASTION : le deploiement a ECHOUE.\n  %s\n  Journal : %s\n\n' "\$1" "\$L" > /etc/issue
+    exit 1
+}
+
+n "démarrage du déploiement initial"
+
+if [ ! -d "\$R" ]; then
+    n "code absent du disque — le support ne l'a pas déposé ; tentative de récupération"
+    git clone --depth 1 '$DEPOT' "\$R" >> "\$L" 2>&1 || n "git clone impossible (dépôt privé ?)"
+fi
+[ -d "\$R" ] || echouer "aucun code Bastion n'a pu etre obtenu"
+
+n "code présent (version \$(cat "\$R/.version-iso" 2>/dev/null || echo inconnue))"
+chown -R proxyfibre:proxyfibre "\$R" 2>/dev/null || true
+
+n "lancement de deploy.sh"
+cd "\$R" || echouer "repertoire du code inaccessible"
+if bash provisioning/deploy.sh >> "\$L" 2>&1; then
+    n "deploy.sh terminé"
 else
-    rmdir "$TRAV/iso/bastion" 2>/dev/null || true
+    echouer "deploy.sh a echoue"
+fi
+
+bash "\$R/services/scripts/import-media.sh" auto >> "\$L" 2>&1 || n "import des médias : rien à faire"
+n "déploiement terminé"
+systemctl disable bastion-init.service >/dev/null 2>&1
+exit 0
+INITEOF
+    chmod +x "$TRAV/iso/bastion/init.sh"
 fi
 
 # ── Destination : là où il y a la place ─────────────────────────────────────
