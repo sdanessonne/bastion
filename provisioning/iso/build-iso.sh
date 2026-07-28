@@ -203,9 +203,13 @@ else
 fi
 
 # ── Fabrication ─────────────────────────────────────────────────────────────
-# « -iso-level 3 » et « -udf » sont INDISPENSABLES dès qu'un fichier dépasse 4 Go :
-# l'ISO 9660 de niveau 1 ou 2 ne sait pas les représenter, et le fichier serait
-# tronqué SANS ERREUR. La source Windows en fait près de 8.
+# « -iso-level 3 » est INDISPENSABLE dès qu'un fichier dépasse 4 Go : l'ISO 9660 de
+# niveau 1 ou 2 ne sait pas le représenter, et il serait tronqué SANS ERREUR. La
+# source Windows en fait près de 8. Le niveau 3 le découpe en plusieurs extents, que
+# Linux — donc l'installateur Debian, seul lecteur de cette image — recolle.
+#
+# PAS de « -udf » : l'émulation mkisofs de xorriso ne connaît pas cette option et
+# refuse tout net (« Unsupported option '-udf' »). Elle n'apporterait rien ici.
 echo "→ Fabrication de l'image…"
 cd "$TRAV/iso"
 # Les erreurs de xorriso ne sont PAS avalées : elles l'étaient, et une fabrication
@@ -213,7 +217,7 @@ cd "$TRAV/iso"
 # la moindre explication. On garde la sortie, on ne masque que le bavardage normal.
 JRN="$TRAV/xorriso.log"
 if ! xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
-        -iso-level 3 -udf \
+        -iso-level 3 \
         -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
         -c isolinux/boot.cat -b isolinux/isolinux.bin \
         -no-emul-boot -boot-load-size 4 -boot-info-table \
@@ -222,7 +226,7 @@ if ! xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
     echo "  L'amorçage hybride a échoué, seconde tentative sans lui :"
     grep -iE "FAILURE|SORRY|aborting" "$JRN" | head -5 | sed 's/^/    /'
     if ! xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
-            -iso-level 3 -udf \
+            -iso-level 3 \
             -c isolinux/boot.cat -b isolinux/isolinux.bin \
             -no-emul-boot -boot-load-size 4 -boot-info-table . > "$JRN" 2>&1; then
         echo
