@@ -180,6 +180,26 @@ fi
 #       MEDIAS=" " ./build-iso.sh
 COMPLET=0
 mkdir -p "$TRAV/iso/bastion"
+
+# ── Le code de Bastion, embarqué ────────────────────────────────────────────
+# Le préréglage récupérait le dépôt par « git clone » au premier démarrage. Sur un
+# dépôt PRIVÉ — c'est le cas — cela demande une authentification que le serveur
+# fraîchement installé n'a pas : il se serait installé, puis n'aurait rien déployé,
+# sans que rien ne l'annonce avant la fin.
+# Le code pèse 3 Mo : on l'embarque. Plus de dépendance à GitHub, plus de jeton à
+# glisser dans l'image, et la version livrée est exactement celle qu'on a testée.
+DEPOT_LOCAL=$(cd "$ICI/../.." && pwd)
+if [ -d "$DEPOT_LOCAL/.git" ] && git -C "$DEPOT_LOCAL" rev-parse HEAD >/dev/null 2>&1; then
+    VER=$(git -C "$DEPOT_LOCAL" rev-parse --short HEAD)
+    echo "→ Code Bastion embarqué : version $VER"
+    git -C "$DEPOT_LOCAL" archive --format=tar --prefix=proxyFibre/ HEAD \
+        > "$TRAV/iso/bastion/source.tar"
+    printf '%s\n' "$VER" > "$TRAV/iso/bastion/source.version"
+    COMPLET=1
+else
+    echo "→ ATTENTION : dépôt Git introuvable, le code ne sera PAS embarqué."
+    echo "  Le serveur installé tentera un « git clone » — impossible sur un dépôt privé."
+fi
 for src in "${MEDIAS-/srv/pxe/iso/win11.iso}"; do
     for f in $src; do
         [ -f "$f" ] || continue
@@ -203,6 +223,16 @@ set -u
 SRC=/cdrom/bastion
 [ -d "$SRC" ] || SRC=/media/bastion
 [ -d "$SRC" ] || exit 0
+
+# Le code de Bastion, s'il est embarqué. On le pose AVANT le premier démarrage :
+# le script de démarrage ne tentera alors pas de « git clone », qui échouerait de
+# toute façon sur un dépôt privé.
+if [ -f "$SRC/source.tar" ]; then
+    mkdir -p /target/home/BASTION
+    tar -xf "$SRC/source.tar" -C /target/home/BASTION
+    [ -f "$SRC/source.version" ] && cp "$SRC/source.version" /target/home/BASTION/proxyFibre/.version-iso
+fi
+
 mkdir -p /target/srv/pxe/iso /target/srv/pxe/images
 for n in win11.iso ubuntu.iso; do
     [ -f "$SRC/$n" ] || continue
