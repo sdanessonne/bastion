@@ -84,7 +84,24 @@ if [ -z "$SRC" ]; then
 fi
 [ -f "$SRC" ] || { echo "ERREUR : image introuvable ($SRC)"; exit 1; }
 
-TRAV=$(mktemp -d); trap 'rm -rf "$TRAV"' EXIT
+# ── Répertoire de travail ───────────────────────────────────────────────────
+# PAS /tmp par défaut : fabriquer une image COMPLÈTE demande de la place pour
+# l'arborescence extraite, les médias embarqués et l'image finale — près de 20 Go
+# quand la source Windows est incluse. Sur cette passerelle, / n'a que 8 Go libres
+# alors que /srv/pxe en a 31. On choisit donc le point de montage le plus large,
+# sauf indication contraire par la variable TRAVAIL.
+if [ -z "${TRAVAIL:-}" ]; then
+    TRAVAIL=/tmp
+    for c in /srv/pxe /var/tmp /tmp; do
+        [ -d "$c" ] || continue
+        libre=$(df -B1 --output=avail "$c" 2>/dev/null | tail -1)
+        actuel=$(df -B1 --output=avail "$TRAVAIL" 2>/dev/null | tail -1)
+        [ "${libre:-0}" -gt "${actuel:-0}" ] && TRAVAIL="$c"
+    done
+fi
+mkdir -p "$TRAVAIL"
+echo "→ Répertoire de travail : $TRAVAIL ($(df -h --output=avail "$TRAVAIL" | tail -1 | tr -d ' ') libres)"
+TRAV=$(mktemp -d -p "$TRAVAIL"); trap 'rm -rf "$TRAV"' EXIT
 echo "→ Extraction de l'image…"
 xorriso -osirrox on -indev "$SRC" -extract / "$TRAV/iso" >/dev/null 2>&1
 chmod -R u+w "$TRAV/iso"
@@ -129,18 +146,87 @@ menuentry "Installer Bastion (automatique)" {
 EOF
 fi
 
+# ── Médias embarqués : l'image « complète » ─────────────────────────────────
+# Par défaut Bastion ne fournit QUE son propre logiciel : la source d'installation
+# Windows appartient au service, elle n'a pas à être redistribuée. Mais pour un pack
+# remis clé en main à un commissariat qui dispose de sa licence en volume, tout
+# réunir sur un seul support évite une manipulation et une clé à ne pas oublier.
+#
+# Les fichiers présents sont copiés dans /bastion/ de l'image, et récupérés PENDANT
+# l'installation (voir copier.sh ci-dessous), avant même le premier démarrage.
+COMPLET=0
+mkdir -p "$TRAV/iso/bastion"
+for src in "${MEDIAS:-/srv/pxe/iso/win11.iso /srv/pxe/iso/ubuntu.iso /srv/pxe/images/master.wim}"; do
+    for f in $src; do
+        [ -f "$f" ] || continue
+        echo "→ Média embarqué : $(basename "$f") ($(du -h "$f" | cut -f1))"
+        cp "$f" "$TRAV/iso/bastion/$(basename "$f")"
+        COMPLET=1
+    done
+done
+
+if [ "$COMPLET" = 1 ]; then
+    # Récupération PENDANT l'installation : le support est encore monté sur /cdrom,
+    # et le système cible est accessible sous /target. Au premier démarrage le
+    # support pourrait déjà avoir été retiré — on ne compte donc pas dessus.
+    # Ce script est appelé par le préréglage ; l'écrire ici plutôt que dans le
+    # préréglage évite d'y empiler des guillemets et des échappements fragiles.
+    cat > "$TRAV/iso/bastion/copier.sh" <<'CPEOF'
+#!/bin/sh
+# Recopie les médias du support d'installation vers le système en cours d'installation.
+# Sans effet — et sans erreur — si le support n'en contient pas.
+set -u
+SRC=/cdrom/bastion
+[ -d "$SRC" ] || SRC=/media/bastion
+[ -d "$SRC" ] || exit 0
+mkdir -p /target/srv/pxe/iso /target/srv/pxe/images
+for n in win11.iso ubuntu.iso; do
+    [ -f "$SRC/$n" ] || continue
+    cp "$SRC/$n" "/target/srv/pxe/iso/$n.part" && mv "/target/srv/pxe/iso/$n.part" "/target/srv/pxe/iso/$n"
+done
+if [ -f "$SRC/master.wim" ]; then
+    cp "$SRC/master.wim" /target/srv/pxe/images/master.wim.part \
+      && mv /target/srv/pxe/images/master.wim.part /target/srv/pxe/images/master.wim
+fi
+exit 0
+CPEOF
+    chmod +x "$TRAV/iso/bastion/copier.sh"
+else
+    rmdir "$TRAV/iso/bastion" 2>/dev/null || true
+fi
+
 # ── Fabrication ─────────────────────────────────────────────────────────────
+# « -iso-level 3 » et « -udf » sont INDISPENSABLES dès qu'un fichier dépasse 4 Go :
+# l'ISO 9660 de niveau 1 ou 2 ne sait pas les représenter, et le fichier serait
+# tronqué SANS ERREUR. La source Windows en fait près de 8.
 echo "→ Fabrication de l'image…"
 cd "$TRAV/iso"
 xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
+    -iso-level 3 -udf \
     -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
     -c isolinux/boot.cat -b isolinux/isolinux.bin \
     -no-emul-boot -boot-load-size 4 -boot-info-table \
     -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot \
     -isohybrid-gpt-basdat . >/dev/null 2>&1 \
   || xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
+       -iso-level 3 -udf \
        -c isolinux/boot.cat -b isolinux/isolinux.bin \
        -no-emul-boot -boot-load-size 4 -boot-info-table . >/dev/null 2>&1
+
+# CONTRÔLE : le fichier le plus gros de l'image est-il ressorti INTACT ? Un dépassement
+# de la limite ISO 9660 tronque sans rien dire ; on le vérifie plutôt que d'y croire.
+if [ "$COMPLET" = 1 ]; then
+    for f in "$TRAV/iso/bastion/"*.iso "$TRAV/iso/bastion/"*.wim; do
+        [ -f "$f" ] || continue
+        n=$(basename "$f"); att=$(stat -c%s "$f")
+        obt=$(xorriso -indev "$SORTIE" -find "/bastion/$n" -exec report_lba -- 2>/dev/null \
+              | awk '/^File data/ {print $6*2048}' | head -1)
+        obt=${obt:-0}
+        if [ "$obt" -lt "$att" ] && [ "$obt" -gt 0 ]; then
+            echo "  ERREUR : $n tronqué dans l'image ($obt au lieu de $att)."; exit 1
+        fi
+    done
+fi
 cd "$ICI"
 
 echo
