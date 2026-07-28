@@ -323,6 +323,7 @@ case "${1:-}" in
 755 account-expiry       services/scripts/account-expiry.sh
 755 dhcp                 services/scripts/dhcp-ctl.sh
 755 image                services/scripts/image-ctl.sh
+755 import-media         services/scripts/import-media.sh
 755 quarantine           services/scripts/quarantine-ctl.sh
 755 selftest             services/scripts/selftest.sh
 755 anomaly              services/scripts/anomaly-ctl.sh
