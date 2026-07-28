@@ -154,9 +154,16 @@ fi
 #
 # Les fichiers présents sont copiés dans /bastion/ de l'image, et récupérés PENDANT
 # l'installation (voir copier.sh ci-dessous), avant même le premier démarrage.
+#   Par défaut on n'embarque QUE la source Windows : c'est elle qui rend le parc
+#   déployable, et elle seule justifie le poids. Y ajouter l'image Ubuntu ferait
+#   passer le support de 9 à 15 Go pour un amorçage secondaire, et demanderait
+#   30 Go d'espace de travail. Pour tout embarquer :
+#       MEDIAS="/srv/pxe/iso/win11.iso /srv/pxe/iso/ubuntu.iso /srv/pxe/images/master.wim" ./build-iso.sh
+#   Pour n'embarquer RIEN (image légère, médias apportés sur une clé à part) :
+#       MEDIAS=" " ./build-iso.sh
 COMPLET=0
 mkdir -p "$TRAV/iso/bastion"
-for src in "${MEDIAS:-/srv/pxe/iso/win11.iso /srv/pxe/iso/ubuntu.iso /srv/pxe/images/master.wim}"; do
+for src in "${MEDIAS-/srv/pxe/iso/win11.iso}"; do
     for f in $src; do
         [ -f "$f" ] || continue
         echo "→ Média embarqué : $(basename "$f") ($(du -h "$f" | cut -f1))"
