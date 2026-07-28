@@ -441,6 +441,7 @@ echo  [2/3] Exclusions
 rem  Le repertoire de travail de DISM, EN PREMIER : il grossit pendant la capture,
 rem  et sans cette exclusion DISM se capturerait lui-meme en train de travailler.
 >>X:\wimscript.ini echo \BastionScratch
+>>X:\wimscript.ini echo \BastionCapture
 >>X:\wimscript.ini echo \pagefile.sys
 >>X:\wimscript.ini echo \hiberfil.sys
 >>X:\wimscript.ini echo \swapfile.sys
@@ -488,6 +489,40 @@ rem ============================================================================
 :capture_lancer
 set NEW=\\%GW%\ImagesRW\master.new.wim
 if exist %NEW% del /f /q %NEW%
+
+rem ============================================================================
+rem  ON CAPTURE EN LOCAL, PUIS ON COPIE.
+rem
+rem  Ecrire un fichier de plusieurs gigaoctets sur un partage reseau pendant 30 a
+rem  60 minutes, c'est demander a une session SMB de tenir sans faillir tout ce
+rem  temps. Trois captures de suite ont echoue exactement a 31,0 % avec
+rem  " Erreur : 6 - Descripteur non valide ".
+rem
+rem  On sort donc le reseau de l'operation longue : DISM ecrit sur le disque du
+rem  poste, puis le fichier est COPIE. Une copie interrompue se relance sans
+rem  refaire la capture -- et si l'echec a 31 % persiste malgre tout, il ne sera
+rem  plus imputable au partage. Dans les deux cas on aura appris quelque chose.
+rem
+rem  Le dossier est exclu de la capture (voir wimscript.ini) : sans cela DISM
+rem  capturerait le fichier qu'il est en train d'ecrire.
+rem ============================================================================
+set LOCAL=%SRC%\BastionCapture
+if exist "%LOCAL%" rd /s /q "%LOCAL%" >nul 2>&1
+md "%LOCAL%" >nul 2>&1
+if not exist "%LOCAL%" goto capture_via_reseau
+set OUT=%LOCAL%\master.wim
+set MODE=local
+echo.
+echo  Capture ECRITE EN LOCAL : %OUT%
+echo   Elle sera copiee sur le partage une fois terminee et verifiee.
+goto capture_go
+:capture_via_reseau
+set OUT=%NEW%
+set MODE=reseau
+echo.
+echo  AVERTISSEMENT : ecriture locale impossible sur %SRC%
+echo   La capture ecrira directement sur le partage ^(moins fiable^).
+:capture_go
 echo.
 echo  [3/3] Capture en cours...
 rem  /Compress:FAST et non MAX. Ce choix est CONTRE-INTUITIF, il merite d'etre
@@ -499,7 +534,7 @@ rem  Le fichier n'est transfere qu'une fois et le reseau n'est pas le facteur
 rem  limitant ^(3 min sur 1 Gb/s^). La decompression, elle, est refaite sur
 rem  CHAQUE poste, a chaque restauration, et c'est elle qui prend le temps.
 rem  On optimise donc ce qui est repete, pas ce qui est unique.
-Dism /Capture-Image /ImageFile:%NEW% /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini /ScratchDir:"%SCRATCH%"
+Dism /Capture-Image /ImageFile:"%OUT%" /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini /ScratchDir:"%SCRATCH%"
 if not errorlevel 1 goto capture_valider
 
 echo.
@@ -507,11 +542,34 @@ echo  ERREUR : la capture a echoue.
 if exist %NEW% del /f /q %NEW%
 echo   Le fichier partiel a ete supprime.
 if exist \\%GW%\ImagesRW\master.wim echo   L image master precedente est INTACTE : le parc reste deployable.
+
+rem ============================================================================
+rem  ON MONTRE LE JOURNAL, ON NE RENVOIE PLUS VERS LUI.
+rem
+rem  Trois echecs successifs, toujours EXACTEMENT a 31,0 %%, ont ete attribues
+rem  tour a tour a une temporisation Samba puis a un repertoire de travail trop
+rem  petit. Les deux ont ete corriges ; l'echec est reste identique. Autrement
+rem  dit : trois hypotheses, aucune preuve. Le journal de DISM, lui, contient la
+rem  cause exacte -- il etait juste sur le poste, que personne ne lisait.
+rem
+rem  Il est desormais affiche a l'ecran ET recopie sur le partage, pour pouvoir
+rem  etre examine depuis la console sans revenir sur le poste.
+rem ============================================================================
 echo.
-echo   Erreur 6 ^(descripteur non valide^) : la session vers le partage a ete
-echo   coupee pendant l ecriture. La cause connue -- une temporisation Samba
-echo   trop courte -- a ete corrigee le 28/07. Si cela se reproduit, verifiez
-echo   le reseau du poste, puis relancez : rien n a ete perdu.
+echo   ================= JOURNAL DISM - CAUSE EXACTE =================
+if not exist X:\windows\Logs\DISM\dism.log goto capture_nolog
+rem  " find " et non " findstr " : findstr N'EXISTE PAS dans WinPE.
+type X:\windows\Logs\DISM\dism.log | find /i "error" | more +0
+echo.
+echo   --- fin du journal ---
+type X:\windows\Logs\DISM\dism.log | more +0 > X:\dismtail.txt
+copy /y X:\windows\Logs\DISM\dism.log \\%GW%\ImagesRW\dism-echec.log >nul 2>&1
+if exist \\%GW%\ImagesRW\dism-echec.log echo   Journal complet copie sur le partage : dism-echec.log
+goto capture_apres_log
+:capture_nolog
+echo   Journal introuvable ^(X:\windows\Logs\DISM\dism.log^).
+:capture_apres_log
+echo   ==============================================================
 echo.
 echo   Manque de place : supprimez l ancienne image depuis la console
 echo   ^(Postes ^> Images^) et relancez la capture.
@@ -531,9 +589,23 @@ if errorlevel 1 (
   goto pause_menu
 )
 echo   Image lisible.
-rem  Menage : le repertoire de travail ne doit pas rester sur le poste de reference,
-rem  il fausserait la mesure d'espace d'une prochaine preparation.
+rem  Menage : le repertoire de travail ne doit pas rester sur le poste.
 if exist "%SCRATCH%" rd /s /q "%SCRATCH%" >nul 2>&1
+
+if "%MODE%"=="reseau" goto capture_en_service
+echo.
+echo  Copie vers le partage ^(cette etape, elle, se relance sans refaire la capture^)...
+copy /y "%OUT%" %NEW% >nul
+if errorlevel 1 (
+  echo  ERREUR : la copie vers le partage a echoue.
+  echo   L image capturee reste sur le poste : %OUT%
+  echo   Relancez l option [3] ou copiez-la a la main -- la capture, elle, est bonne.
+  goto pause_menu
+)
+echo   Copie terminee.
+rd /s /q "%LOCAL%" >nul 2>&1
+
+:capture_en_service
 
 echo  Mise en service...
 if exist \\%GW%\ImagesRW\master.wim del /f /q \\%GW%\ImagesRW\master.wim
