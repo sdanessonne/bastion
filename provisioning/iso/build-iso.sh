@@ -242,15 +242,22 @@ fi
 # CONTRÔLE : le fichier le plus gros de l'image est-il ressorti INTACT ? Un dépassement
 # de la limite ISO 9660 tronque sans rien dire ; on le vérifie plutôt que d'y croire.
 if [ "$COMPLET" = 1 ]; then
+    echo "→ Contrôle des médias embarqués…"
+    # « -lsl » donne la taille réelle en 5e champ. Un premier jet lisait « report_lba »
+    # et en tirait un chiffre sans rapport : le contrôle criait à la troncature sur une
+    # image parfaitement saine. Un contrôle qui se trompe est pire que pas de contrôle.
     for f in "$TRAV/iso/bastion/"*.iso "$TRAV/iso/bastion/"*.wim; do
         [ -f "$f" ] || continue
         n=$(basename "$f"); att=$(stat -c%s "$f")
-        obt=$(xorriso -indev "$SORTIE" -find "/bastion/$n" -exec report_lba -- 2>/dev/null \
-              | awk '/^File data/ {print $6*2048}' | head -1)
+        obt=$(xorriso -indev "$SORTIE" -cd /bastion -lsl -- 2>/dev/null \
+              | awk -v n="'$n'" '$9==n {print $5; exit}')
         obt=${obt:-0}
-        if [ "$obt" -lt "$att" ] && [ "$obt" -gt 0 ]; then
-            echo "  ERREUR : $n tronqué dans l'image ($obt au lieu de $att)."; exit 1
+        if [ "$obt" != "$att" ]; then
+            echo "  ERREUR : $n fait $obt octets dans l'image au lieu de $att."
+            echo "  L'image est inutilisable — elle n'est pas conservée."
+            rm -f "$SORTIE"; exit 1
         fi
+        echo "   $n : $att octets, intact."
     done
 fi
 cd "$ICI"
