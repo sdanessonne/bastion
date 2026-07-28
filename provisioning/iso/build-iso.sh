@@ -18,7 +18,7 @@ set -euo pipefail
 
 ICI=$(cd "$(dirname "$0")" && pwd)
 SECRETS="$ICI/iso-secrets.env"
-SORTIE="$ICI/bastion-installation.iso"
+SORTIE="${SORTIE:-$ICI/bastion-installation.iso}"
 DEPOT_DEFAUT="https://github.com/sdanessonne/bastion.git"
 
 # ── Secrets (hors dépôt) ────────────────────────────────────────────────────
@@ -31,8 +31,25 @@ if [ ! -f "$SECRETS" ]; then
     [ -n "$_mdp" ] || { echo "  ERREUR : mot de passe vide."; exit 1; }
     printf "  Phrase secrète du disque chiffré (Entrée = identique) : "; read -rs _luks; echo
     [ -n "$_luks" ] || _luks="$_mdp"
-    printf "  Dépôt Git [%s] : " "$DEPOT_DEFAUT"; read -r _dep
-    [ -n "$_dep" ] || _dep="$DEPOT_DEFAUT"
+    # Cette invite-ci N'EST PAS masquée, contrairement aux deux précédentes : on y voit
+    # ce qu'on tape. Un mot de passe saisi ici par inadvertance serait donc affiché à
+    # l'écran ET enregistré comme adresse de dépôt — c'est arrivé, et le serveur
+    # installé n'aurait rien pu récupérer. On refuse donc ce qui n'est pas une adresse.
+    while :; do
+        printf "  Dépôt Git [%s] : " "$DEPOT_DEFAUT"; read -r _dep
+        [ -n "$_dep" ] && break
+        _dep="$DEPOT_DEFAUT"; break
+    done
+    case "$_dep" in
+        http://*|https://*|git@*|ssh://*|file://*|/*) ;;
+        *)  echo
+            echo "  « $_dep » n'est pas une adresse de dépôt."
+            echo "  Attendu : https://…, git@…, ssh://… ou un chemin absolu."
+            echo
+            echo "  ATTENTION : si vous venez de saisir un MOT DE PASSE ici, il s'est"
+            echo "  affiché en clair à l'écran. Considérez-le comme divulgué et changez-le."
+            exit 1 ;;
+    esac
     umask 077
     {   echo "# Bastion — secrets de fabrication de l'ISO. FICHIER NON VERSIONNÉ."
         echo "# Conservez-le en lieu sûr ; supprimez-le si vous n'en avez plus besoin."
@@ -200,6 +217,31 @@ CPEOF
     chmod +x "$TRAV/iso/bastion/copier.sh"
 else
     rmdir "$TRAV/iso/bastion" 2>/dev/null || true
+fi
+
+# ── Destination : là où il y a la place ─────────────────────────────────────
+# La variable TRAVAIL ne déplaçait QUE le répertoire de travail : l'image sortait
+# toujours à côté du script, sur une partition de 8 Go. Une fabrication complète y
+# échouait — mais SEULEMENT à la toute fin, après avoir recopié 8 Go de médias :
+#   « Image size 4618663s exceeds free space on media 4380986s »
+# On vérifie donc AVANT, et l'on bascule sur le répertoire de travail si besoin.
+BESOIN=$(du -sb "$TRAV/iso" | cut -f1)
+MARGE=$((BESOIN + BESOIN / 20))          # 5 % pour les métadonnées de l'image
+LIBRE=$(df -B1 --output=avail "$(dirname "$SORTIE")" | tail -1)
+if [ "${LIBRE:-0}" -lt "$MARGE" ]; then
+    LIBRE_TRAV=$(df -B1 --output=avail "$TRAVAIL" | tail -1)
+    if [ "${LIBRE_TRAV:-0}" -ge "$MARGE" ]; then
+        echo "→ Place insuffisante dans $(dirname "$SORTIE") ($(numfmt --to=iec "$LIBRE")) :"
+        echo "  l'image sortira dans $TRAVAIL, où il reste $(numfmt --to=iec "$LIBRE_TRAV")."
+        SORTIE="$TRAVAIL/$(basename "$SORTIE")"
+    else
+        echo
+        echo "  ERREUR : il faut environ $(numfmt --to=iec "$MARGE") pour écrire l'image."
+        echo "    $(dirname "$SORTIE") : $(numfmt --to=iec "$LIBRE") libres"
+        echo "    $TRAVAIL : $(numfmt --to=iec "$LIBRE_TRAV") libres"
+        echo "  Libérez de la place, ou indiquez une destination avec SORTIE=/chemin/image.iso"
+        exit 1
+    fi
 fi
 
 # ── Fabrication ─────────────────────────────────────────────────────────────
