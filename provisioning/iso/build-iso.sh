@@ -208,17 +208,32 @@ fi
 # tronqué SANS ERREUR. La source Windows en fait près de 8.
 echo "→ Fabrication de l'image…"
 cd "$TRAV/iso"
-xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
-    -iso-level 3 -udf \
-    -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-    -c isolinux/boot.cat -b isolinux/isolinux.bin \
-    -no-emul-boot -boot-load-size 4 -boot-info-table \
-    -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot \
-    -isohybrid-gpt-basdat . >/dev/null 2>&1 \
-  || xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
-       -iso-level 3 -udf \
-       -c isolinux/boot.cat -b isolinux/isolinux.bin \
-       -no-emul-boot -boot-load-size 4 -boot-info-table . >/dev/null 2>&1
+# Les erreurs de xorriso ne sont PAS avalées : elles l'étaient, et une fabrication
+# ratée ne laissait qu'un journal s'arrêtant sur « Fabrication de l'image… », sans
+# la moindre explication. On garde la sortie, on ne masque que le bavardage normal.
+JRN="$TRAV/xorriso.log"
+if ! xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
+        -iso-level 3 -udf \
+        -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+        -c isolinux/boot.cat -b isolinux/isolinux.bin \
+        -no-emul-boot -boot-load-size 4 -boot-info-table \
+        -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot \
+        -isohybrid-gpt-basdat . > "$JRN" 2>&1; then
+    echo "  L'amorçage hybride a échoué, seconde tentative sans lui :"
+    grep -iE "FAILURE|SORRY|aborting" "$JRN" | head -5 | sed 's/^/    /'
+    if ! xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
+            -iso-level 3 -udf \
+            -c isolinux/boot.cat -b isolinux/isolinux.bin \
+            -no-emul-boot -boot-load-size 4 -boot-info-table . > "$JRN" 2>&1; then
+        echo
+        echo "  ERREUR : fabrication de l'image impossible."
+        grep -iE "FAILURE|SORRY|aborting|No such" "$JRN" | head -10 | sed 's/^/    /'
+        cp "$JRN" "$ICI/xorriso-echec.log" 2>/dev/null && \
+            echo "    Journal complet : $ICI/xorriso-echec.log"
+        exit 1
+    fi
+fi
+[ -f "$SORTIE" ] || { echo "  ERREUR : aucune image produite."; exit 1; }
 
 # CONTRÔLE : le fichier le plus gros de l'image est-il ressorti INTACT ? Un dépassement
 # de la limite ISO 9660 tronque sans rien dire ; on le vérifie plutôt que d'y croire.
