@@ -27,7 +27,7 @@ if [ ! -f "$SECRETS" ]; then
     echo "  Première fabrication : les secrets sont demandés une seule fois, puis conservés"
     echo "  dans $SECRETS (permissions 600, HORS DÉPÔT — ils ne partiront jamais sur Git)."
     echo
-    printf "  Mot de passe du compte BASTION : "; read -rs _mdp; echo
+    printf "  Mot de passe du compte d'administration (proxyfibre) : "; read -rs _mdp; echo
     [ -n "$_mdp" ] || { echo "  ERREUR : mot de passe vide."; exit 1; }
     printf "  Phrase secrète du disque chiffré (Entrée = identique) : "; read -rs _luks; echo
     [ -n "$_luks" ] || _luks="$_mdp"
@@ -228,9 +228,9 @@ SRC=/cdrom/bastion
 # le script de démarrage ne tentera alors pas de « git clone », qui échouerait de
 # toute façon sur un dépôt privé.
 if [ -f "$SRC/source.tar" ]; then
-    mkdir -p /target/home/BASTION
-    tar -xf "$SRC/source.tar" -C /target/home/BASTION
-    [ -f "$SRC/source.version" ] && cp "$SRC/source.version" /target/home/BASTION/proxyFibre/.version-iso
+    mkdir -p /target/home/proxyfibre
+    tar -xf "$SRC/source.tar" -C /target/home/proxyfibre
+    [ -f "$SRC/source.version" ] && cp "$SRC/source.version" /target/home/proxyfibre/proxyFibre/.version-iso
 fi
 
 mkdir -p /target/srv/pxe/iso /target/srv/pxe/images
@@ -338,7 +338,7 @@ echo
 echo "  ✔ Image prête : $SORTIE"
 echo "    $(du -h "$SORTIE" | cut -f1)"
 echo
-echo "  ATTENTION : cette image contient le mot de passe du compte BASTION et la phrase"
+echo "  ATTENTION : cette image contient le mot de passe du compte d'administration"
 echo "  secrète du disque, en clair. C'est le prix d'une installation sans aucune saisie."
 echo "  Conservez-la comme une clé : coffre ou armoire forte, jamais un partage ouvert."
 echo

@@ -38,7 +38,7 @@ sudo ./build-iso.sh
 
 Trois questions, posées **une seule fois** :
 
-- mot de passe du compte `BASTION` du serveur ;
+- mot de passe du compte d'administration `proxyfibre` du serveur ;
 - phrase secrète du disque chiffré (Entrée = identique au mot de passe) ;
 - dépôt Git (Entrée = valeur par défaut).
 
