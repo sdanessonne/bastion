@@ -1,8 +1,18 @@
 # Bastion — pack d'installation clé en main
 
-Ce document décrit ce que l'on remet au client, et ce qui se passe quand il démarre
-le serveur. Il tient volontairement sur deux pages : c'est la procédure, pas le
-manuel — celui-ci est [`documentation-utilisateur.md`](documentation-utilisateur.md).
+Ce document décrit ce que l'on remet au client, comment le préparer, et ce qui se
+passe quand il démarre le serveur. C'est la procédure d'installation ; le manuel
+d'utilisation est [`documentation-utilisateur.md`](documentation-utilisateur.md).
+
+### Ce qu'il faut, côté serveur
+
+| | |
+|---|---|
+| **Deux cartes réseau** | l'une vers Internet (WAN), l'autre vers le réseau interne (LAN) — c'est structurel, Bastion est une passerelle |
+| Processeur 64 bits | 2 cœurs suffisent |
+| 4 Go de mémoire | 8 Go si le contrôleur de domaine sert plus de 50 postes |
+| 250 Go de disque | le disque est **entièrement effacé et chiffré** |
+| Un accès Internet | l'installation télécharge ses paquets Debian |
 
 ---
 
@@ -48,9 +58,37 @@ Les réponses sont conservées dans `iso-secrets.env` (permissions 600, **hors d
 Git**) : les fabrications suivantes ne redemandent rien. L'image sort dans le même
 dossier.
 
+### Écrire la clé USB
+
+Il faut une clé de **16 Go minimum** pour une image complète. Tout son contenu sera
+effacé.
+
+L'image est **hybride** : elle contient déjà sa propre table de partitions. Elle doit
+donc être recopiée **octet par octet**, et surtout pas « décompressée » ou copiée
+fichier par fichier — une clé préparée de cette façon ne démarre pas.
+
+**Sous Windows — Rufus**
+
+1. Sélectionner la clé, puis `bastion-installation.iso`.
+2. Cliquer sur **DÉMARRER**.
+3. Rufus détecte l'image hybride et propose deux modes : choisir
+   **« Écrire en mode Image DD »**, *pas* le mode ISO.
+
+Le mode ISO reconstruit une clé amorçable à sa façon et perd la partition EFI :
+l'image démarre alors en BIOS mais pas en UEFI. Le mode DD copie à l'identique.
+
+**Sous Linux ou macOS**
+
+Vérifiez le nom du périphérique avant de valider — `dd` n'a pas de garde-fou et
+écrase ce que vous lui désignez.
+
 ```bash
+lsblk                                    # identifier la clé : sdb, sdc…
 sudo dd if=bastion-installation.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
+
+Sur macOS, le périphérique s'appelle `/dev/rdiskN` et il faut d'abord le démonter
+avec `diskutil unmountDisk /dev/diskN`.
 
 > **L'image contient le mot de passe et la phrase secrète du disque, en clair.**
 > C'est le prix d'une installation sans aucune saisie : la machine doit bien lire

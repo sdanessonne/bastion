@@ -23,12 +23,29 @@ journalisation légale.
 Plus : une **console d'administration** web (comptes, groupes, filtrage, journaux, sessions live)
 et un **tableau de bord utilisateur** self-service — le tout en PHP/MariaDB sur la passerelle.
 
-## Démarrage rapide
+## Installer
+
+Deux chemins, selon ce dont vous disposez.
+
+### A. Image ISO clé en main — *recommandé*
+
+Une clé USB, un serveur nu, **aucune question posée**. L'image contient Debian, le
+code de Bastion et les sources de déploiement Windows. On démarre dessus et l'on
+revient 40 minutes plus tard sur un serveur configuré.
+
+**→ Le tutoriel complet : [docs/PACK-CLIENT.md](docs/PACK-CLIENT.md)**
+
+```bash
+cd provisioning/iso && sudo ./build-iso.sh    # fabriquer l'image
+```
+
+### B. Sur une Debian 12 déjà installée
 
 ```bash
 nano provisioning/config.env      # interfaces WAN/LAN, mot de passe admin
 sudo bash provisioning/setup.sh   # installation complète en une commande
 ```
+
 Détails : [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) · Architecture : [docs/architecture.md](docs/architecture.md)
 
 ## Topologie réseau
