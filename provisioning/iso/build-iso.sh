@@ -417,6 +417,22 @@ if ! xorriso -as mkisofs -r -V "BASTION" -o "$SORTIE" \
 fi
 [ -f "$SORTIE" ] || { echo "  ERREUR : aucune image produite."; exit 1; }
 
+# ── Rendre le dépôt à son propriétaire ──────────────────────────────────────
+# Ce script tourne sous sudo, et tout ce qu'il écrit dans le dépôt appartient donc
+# à root. Au « git pull » suivant, l'utilisateur se heurtait à :
+#   « propriétaire douteux détecté », puis « .git/FETCH_HEAD : Permission non accordée »
+# — le dépôt devenait inutilisable pour son propre propriétaire, et la seule façon
+# de s'en sortir était un chown manuel. On le fait donc ici, à la source.
+if [ -n "${SUDO_UID:-}" ] && [ -n "${SUDO_GID:-}" ]; then
+    DEPOT_RACINE=$(cd "$ICI/../.." && pwd)
+    chown -R "$SUDO_UID:$SUDO_GID" "$DEPOT_RACINE" 2>/dev/null || true
+    [ -f "$SORTIE" ] && chown "$SUDO_UID:$SUDO_GID" "$SORTIE" 2>/dev/null || true
+    # Une exception : le fichier de secrets reste à root. Il contient le mot de
+    # passe du serveur et la phrase du disque chiffré, en clair.
+    [ -f "$ICI/iso-secrets.env" ] && { chown root:root "$ICI/iso-secrets.env"
+                                       chmod 600 "$ICI/iso-secrets.env"; } 2>/dev/null
+fi
+
 # CONTRÔLE : le fichier le plus gros de l'image est-il ressorti INTACT ? Un dépassement
 # de la limite ISO 9660 tronque sans rien dire ; on le vérifie plutôt que d'y croire.
 if [ "$COMPLET" = 1 ]; then
