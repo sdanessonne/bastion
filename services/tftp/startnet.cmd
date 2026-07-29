@@ -534,7 +534,19 @@ rem  Le fichier n'est transfere qu'une fois et le reseau n'est pas le facteur
 rem  limitant ^(3 min sur 1 Gb/s^). La decompression, elle, est refaite sur
 rem  CHAQUE poste, a chaque restauration, et c'est elle qui prend le temps.
 rem  On optimise donc ce qui est repete, pas ce qui est unique.
-Dism /Capture-Image /ImageFile:"%OUT%" /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini /ScratchDir:"%SCRATCH%"
+rem  /LogPath ET /LogLevel:4 : deux ajouts qui changent tout pour le diagnostic.
+rem
+rem    /LogPath  -- la capture ecrivait dans X:\windows\Logs\DISM\dism.log, le
+rem                 MEME fichier que le /Cleanup-Image lance juste avant. Ce
+rem                 nettoyage y deverse des centaines de lignes CBS sur les
+rem                 paquets Windows. Resultat : a l'ecran, la vraie erreur de
+rem                 capture etait noyee sous le bavardage d'une autre etape.
+rem                 Un journal dedie, et le probleme disparait.
+rem    /LogLevel:4 -- niveau detaille. DISM nomme alors le FICHIER en cours de
+rem                 traitement. L'echec tombe trois fois de suite a 31,0 %%
+rem                 exactement : ce n'est ni le reseau ni la place, c'est un
+rem                 fichier precis du disque source. Il faut savoir lequel.
+Dism /Capture-Image /ImageFile:"%OUT%" /CaptureDir:%SRC%\ /Name:"Bastion Master" /Compress:fast /ConfigFile:X:\wimscript.ini /ScratchDir:"%SCRATCH%" /LogPath:X:\capture.log /LogLevel:4
 if not errorlevel 1 goto capture_valider
 
 echo.
@@ -568,15 +580,25 @@ rem  l'ecran et poussaient la vraie erreur hors du cadre. On croyait montrer la
 rem  cause ; on montrait du bruit.
 rem  DISM prefixe ses vraies erreurs par ", Error " (virgule, espace). Le nom de
 rem  paquet, lui, est colle a un tiret. Le filtre distingue donc les deux.
-type X:\windows\Logs\DISM\dism.log | find ", Error" | more +0
+rem  X:\capture.log et non le journal general : il ne contient QUE la capture.
+set JLOG=X:\capture.log
+if not exist %JLOG% set JLOG=X:\windows\Logs\DISM\dism.log
+type %JLOG% | find ", Error" | more +0
 echo.
 echo   --- lignes signalant un echec ---
-type X:\windows\Logs\DISM\dism.log | find /i "Failed to" | more +0
+type %JLOG% | find /i "Failed to" | more +0
+echo.
+echo   --- dernier fichier traite avant l arret ---
+rem  Avec /LogLevel:4, DISM nomme chaque fichier. La derniere ligne "Capturing"
+rem  designe donc celui sur lequel il a bute : c'est LA reponse au « 31 %% ».
+type %JLOG% | find /i "capturing" | more +0
 echo.
 echo   --- fin du journal ---
-type X:\windows\Logs\DISM\dism.log | more +0 > X:\dismtail.txt
-copy /y X:\windows\Logs\DISM\dism.log \\%GW%\ImagesRW\dism-echec.log >nul 2>&1
-if exist \\%GW%\ImagesRW\dism-echec.log echo   Journal complet copie sur le partage : dism-echec.log
+rem  On recopie le journal DEDIE : c'est celui qui contient la cause. L'ancien
+rem  melangeait la capture et le nettoyage de composants, et pesait des dizaines
+rem  de Mo pour une poignee de lignes utiles.
+copy /y %JLOG% \\%GW%\ImagesRW\dism-echec.log >nul 2>&1
+if exist \\%GW%\ImagesRW\dism-echec.log echo   Journal copie sur le partage : dism-echec.log
 goto capture_apres_log
 :capture_nolog
 echo   Journal introuvable ^(X:\windows\Logs\DISM\dism.log^).
