@@ -559,7 +559,19 @@ echo.
 echo   ================= JOURNAL DISM - CAUSE EXACTE =================
 if not exist X:\windows\Logs\DISM\dism.log goto capture_nolog
 rem  " find " et non " findstr " : findstr N'EXISTE PAS dans WinPE.
-type X:\windows\Logs\DISM\dism.log | find /i "error" | more +0
+rem
+rem  ATTENTION AU FILTRE. Il a d'abord ete " find /i "error" ", et le resultat a
+rem  ete pire que rien : il attrapait le NOM des paquets Windows contenant
+rem  "Error" -- Microsoft-Windows-ErrorReportingDumpTypeControl-Package -- soit
+rem  des dizaines de lignes CBS "Info" parfaitement anodines, qui remplissaient
+rem  l'ecran et poussaient la vraie erreur hors du cadre. On croyait montrer la
+rem  cause ; on montrait du bruit.
+rem  DISM prefixe ses vraies erreurs par ", Error " (virgule, espace). Le nom de
+rem  paquet, lui, est colle a un tiret. Le filtre distingue donc les deux.
+type X:\windows\Logs\DISM\dism.log | find ", Error" | more +0
+echo.
+echo   --- lignes signalant un echec ---
+type X:\windows\Logs\DISM\dism.log | find /i "Failed to" | more +0
 echo.
 echo   --- fin du journal ---
 type X:\windows\Logs\DISM\dism.log | more +0 > X:\dismtail.txt
