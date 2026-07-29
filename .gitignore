@@ -41,3 +41,7 @@ publish/
 # Secrets de fabrication de l ISO : ne doivent JAMAIS partir sur le depot.
 provisioning/iso/iso-secrets.env
 provisioning/iso/*.iso
+
+# Paquets de commits fabriques a la main pour ravitailler une machine sans acces
+# au depot prive (la passerelle n' a pas de cle enregistree sur GitHub).
+*.bundle
