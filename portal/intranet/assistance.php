@@ -50,7 +50,21 @@ intranet_head('Assistance informatique', 'assistance');
     <label>Description
       <textarea name="message" rows="6" required placeholder="Décrivez le problème, le poste concerné, l'heure…"></textarea>
     </label>
-    <?php if ($me['user']): ?><p class="muted" style="font-size:.8rem">Demande envoyée au nom de <strong><?= e_($me['user']) ?></strong>.</p><?php endif; ?>
+    <?php
+    // Le matricule est rempli par le navigateur, pas écrit ici : cette page est
+    // conservée pour la lecture hors ligne, et il partirait dans le cache avec
+    // elle. Le formulaire, lui, reste rattaché au bon agent — c'est le SERVEUR
+    // qui reprend l'identité à l'enregistrement (ligne 26), pas ce texte.
+    ?>
+    <p class="muted" id="auNom" style="font-size:.8rem" hidden>Demande envoyée au nom de <strong></strong>.</p>
+    <script>
+    document.addEventListener('bastion:moi', function (e) {
+      var d = e.detail || {}, p = document.getElementById('auNom');
+      if (!p || !d.auth || !d.user) { return; }
+      p.querySelector('strong').textContent = d.user;
+      p.hidden = false;
+    });
+    </script>
     <button type="submit">Envoyer la demande</button>
   </form>
 </div>

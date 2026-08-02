@@ -21,7 +21,7 @@ const JAMAIS = [
   '/portal/photo.php',     // photographie de l'agent
   '/portal/fas.php',       // page d'identification
   '/portal/logout.php',    // déconnexion
-  '/portal/nds.php',       // état de session
+  '/portal/moi.php',       // identité affichée dans l'en-tête (nom, photo)
   '/portal/ca.crt.php',    // certificat d'autorité (sans objet hors ligne)
 ];
 
@@ -29,7 +29,8 @@ const JAMAIS = [
  * paramètres. C'est exactement ce qu'on veut pouvoir lire hors ligne — une note de
  * service, une procédure. Les exclure au seul motif qu'ils portent un « ?slug= »
  * viderait le mode hors ligne de son intérêt. */
-var PUBLIC = ['/portal/intranet/page.php', '/portal/intranet/uploads/'];
+var PUBLIC = ['/portal/intranet/page.php', '/portal/intranet/uploads/',
+              '/portal/intranet/actualite.php', '/portal/intranet/actualites.php'];
 
 function prive(url) {
   var u = new URL(url);

@@ -157,6 +157,43 @@ function cms_render(string $body, string $format = 'markdown'): string {
     return $format === 'html' ? cms_sanitize_html($body) : cms_render_md($body);
 }
 
+/**
+ * Extrait de texte d'une actualité, pour la carte du fil.
+ *
+ * On rend d'abord le contenu, PUIS on retire les balises : travailler sur la
+ * source brute laisserait passer du markdown (« ## Titre », « **gras** ») ou des
+ * attributs HTML dans l'extrait. On coupe enfin sur un espace, pas au milieu
+ * d'un mot.
+ */
+function cms_extrait(string $body, string $format = 'markdown', int $max = 190): string {
+    $t = strip_tags(cms_render($body, $format));
+    $t = trim(html_entity_decode($t, ENT_QUOTES, 'UTF-8'));
+    $t = preg_replace('/\s+/u', ' ', $t);
+    if (mb_strlen($t, 'UTF-8') <= $max) { return $t; }
+    $c = mb_substr($t, 0, $max, 'UTF-8');
+    $p = mb_strrpos($c, ' ', 0, 'UTF-8');
+    if ($p !== false && $p > $max * 0.6) { $c = mb_substr($c, 0, $p, 'UTF-8'); }
+    return rtrim($c, " ,;:.") . '…';
+}
+
+/**
+ * Première image du contenu, qui sert de visuel à la carte.
+ *
+ * La source est relue APRÈS assainissement : le champ « src » d'une image
+ * atterrit dans un attribut HTML de la carte, et l'extraire du corps brut y
+ * ferait passer une adresse que le filtre aurait justement écartée.
+ * On n'accepte donc que ce qui reste après cms_render, et uniquement des
+ * adresses locales.
+ */
+function cms_image_une(string $body, string $format = 'markdown'): string {
+    if (!preg_match('/<img[^>]+src="([^"]+)"/i', cms_render($body, $format), $m)) { return ''; }
+    $u = html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
+    return (strlen($u) > 1 && $u[0] === '/' && $u[1] !== '/') ? $u : '';
+}
+
+/** Adresse permanente d'une actualité — une seule définition, pour ne pas la voir diverger. */
+function news_url($id): string { return '/portal/intranet/actualite.php?id=' . (int) $id; }
+
 /** Ne garde que des propriétés CSS sûres (couleur, alignement, graisse…) — jamais url()/expression. */
 function cms_clean_style(string $s): string {
     static $ok = ['color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration'];
@@ -312,10 +349,52 @@ function intranet_head(string $title, string $active = ''): void {
     a.tile .emo{font-size:1.5rem;transition:transform .3s} a.tile:hover .emo{transform:scale(1.18)}
     .news{border-left:3px solid var(--accent);padding:.2rem 0 .2rem 1rem;margin-bottom:1.3rem}
     .news .date{font-size:.75rem;color:var(--muted)} .news h3{margin:.2rem 0 .4rem;font-size:1.1rem}
+    /* ── Fil d'actualité en cartes ──────────────────────────────────────────
+       La carte ENTIÈRE est cliquable : sur un téléphone, viser le seul titre
+       demande une précision que la lecture debout dans un couloir n'autorise pas. */
+    .ncards{display:grid;gap:1rem}
+    .ncard{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);
+      border-radius:14px;overflow:hidden;text-decoration:none;color:inherit;
+      transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease}
+    .ncard:hover{transform:translateY(-3px);border-color:var(--accent);box-shadow:0 10px 26px rgba(2,8,20,.35)}
+    .ncard .vis{height:132px;background:#0d1728 center/cover no-repeat;border-bottom:1px solid var(--line);flex:none}
+    .ncard .bd{padding:.95rem 1.15rem 1.05rem;display:flex;flex-direction:column;gap:.35rem;flex:1}
+    .ncard .date{font-size:.74rem;color:var(--muted)}
+    .ncard h3{margin:0;font-size:1.04rem;line-height:1.35}
+    .ncard .ex{font-size:.88rem;color:#cbd5e1;line-height:1.6;margin:0}
+    .ncard .plus{margin-top:auto;padding-top:.5rem;font-size:.82rem;color:var(--accent);font-weight:600}
+    .ncard .plus .chev{display:inline-block;transition:transform .25s ease}
+    .ncard:hover .plus .chev{transform:translateX(4px)}
+    :root[data-theme="light"] .ncard .ex{color:#475569}
+    :root[data-theme="light"] .ncard .vis{background-color:#e2e8f0}
+    /* Écran tactile : « :hover » reste collé après le doigt et la carte paraîtrait
+       sélectionnée alors qu'on l'a seulement effleurée. */
+    @media(hover:none){
+      .ncard:hover{transform:none;border-color:var(--line);box-shadow:none}
+      .ncard:active{transform:scale(.99);border-color:var(--accent)}
+    }
+    @media(prefers-reduced-motion:reduce){.ncard,.ncard .plus .chev{transition:none}}
+
+    /* Pagination de l'archive */
+    .pager{display:flex;gap:.5rem;align-items:center;justify-content:center;margin:1.4rem 0 .4rem;flex-wrap:wrap}
+    .pager a,.pager span{padding:.45rem .8rem;border-radius:10px;border:1px solid var(--line);
+      text-decoration:none;color:var(--text);font-size:.88rem;min-width:2.4rem;text-align:center}
+    .pager a:hover{border-color:var(--accent);color:var(--accent)}
+    .pager .cur{background:rgba(56,189,248,.15);border-color:var(--accent);color:var(--accent);font-weight:700}
+    .pager .off{opacity:.4}
+
     .badge-cat{display:inline-block;font-size:.68rem;text-transform:uppercase;letter-spacing:.5px;background:rgba(56,189,248,.15);color:var(--accent);padding:.1rem .5rem;border-radius:20px;margin-left:.4rem}
     .person{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:.9rem 1.1rem;transition:transform .2s,border-color .2s}
     .person:hover{transform:translateY(-2px);border-color:var(--accent)}
     .person .n{font-weight:600} .person .r{font-size:.78rem;color:var(--muted)}
+    /* Terme trouvé, mis en évidence dans les résultats. Le « mark » par défaut du
+       navigateur est jaune vif sur noir : illisible sur le thème sombre, et il
+       attire l'oeil plus fort que le titre lui-même. */
+    mark{background:rgba(56,189,248,.28);color:inherit;border-radius:3px;padding:0 .15em}
+    :root[data-theme="light"] mark{background:rgba(14,165,233,.28)}
+    .sec-t{display:flex;align-items:center;gap:.7rem;font-size:.76rem;color:var(--muted);
+      text-transform:uppercase;letter-spacing:1.4px;margin:.2rem 0 1.1rem;font-weight:700}
+    .sec-t::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
     a.back{color:var(--accent);text-decoration:none;font-size:.9rem}
     .hero{position:relative;overflow:hidden;background:linear-gradient(120deg,#1e3a5f,#152238,#1e3a5f);background-size:200% 200%;animation:heroMove 12s ease infinite}
     @keyframes heroMove{0%{background-position:0 50%}50%{background-position:100% 50%}100%{background-position:0 50%}}
@@ -404,17 +483,20 @@ function intranet_head(string $title, string $active = ''): void {
     // Le portail SAIT si la session est ouverte ; autant le dire.
     $_u = intranet_user();
     ?>
+    <?php
+    // ── L'IDENTITÉ N'EST PLUS ÉCRITE ICI ───────────────────────────────────
+    // Le nom et la photo étaient rendus par le serveur dans le HTML. Ces pages
+    // étant conservées pour la lecture hors ligne, l'identité partait dans le
+    // cache avec elles : sur un téléphone de service partagé, l'agent suivant
+    // pouvait y lire le nom du précédent.
+    // La coquille ci-dessous est vide et IDENTIQUE pour tout le monde ; elle est
+    // remplie par « /portal/moi.php », qui n'est jamais mis en cache.
+    ?>
+    <span class="act" id="moi" hidden
+          style="opacity:.85;align-items:center;gap:.45rem" title="Session ouverte">
+      <span id="moiAv">👤</span><span id="moiNom"></span>
+    </span>
     <?php if (!empty($_u['auth'])): ?>
-      <?php if (!empty($_u['user'])): ?>
-        <span class="act" style="opacity:.85;display:inline-flex;align-items:center;gap:.45rem" title="Session ouverte">
-          <?php if (!empty($_u['photo'])): ?>
-            <img src="/portal/photo.php?v=<?= e_($_u['photo']) ?>" alt=""
-                 style="width:26px;height:26px;border-radius:50%;object-fit:cover;
-                        border:1px solid rgba(56,189,248,.5)">
-          <?php else: ?>👤<?php endif; ?>
-          <?= e_($_u['complet']) ?>
-        </span>
-      <?php endif; ?>
       <a class="act" href="/portal/account.php">Mon compte</a>
       <a class="act" href="/portal/logout.php">Se déconnecter</a>
     <?php else: ?>
@@ -427,8 +509,10 @@ function intranet_head(string $title, string $active = ''): void {
     <?php foreach ($menu as $p): ?>
       <a href="/portal/intranet/page.php?slug=<?= urlencode($p['slug']) ?>" class="<?= $active === $p['slug'] ? 'on' : '' ?>"><?= e_($p['title']) ?></a>
     <?php endforeach; ?>
+    <a href="/portal/intranet/actualites.php" class="<?= $active === 'actualites' ? 'on' : '' ?>">Actualités</a>
     <a href="/portal/intranet/annuaire.php" class="<?= $active === 'annuaire' ? 'on' : '' ?>">Annuaire</a>
     <a href="/portal/intranet/assistance.php" class="<?= $active === 'assistance' ? 'on' : '' ?>">Assistance</a>
+    <a href="/portal/intranet/recherche.php" class="<?= $active === 'recherche' ? 'on' : '' ?>">🔍 Rechercher</a>
   </nav>
   <div class="drawer-ov" id="drawerOv" hidden></div>
   <nav class="drawer" id="drawer" aria-label="Navigation" hidden>
@@ -440,8 +524,10 @@ function intranet_head(string $title, string $active = ''): void {
     <?php foreach ($menu as $p): ?>
       <a href="/portal/intranet/page.php?slug=<?= urlencode($p['slug']) ?>" class="<?= $active === $p['slug'] ? 'on' : '' ?>"><span>📄</span><?= e_($p['title']) ?></a>
     <?php endforeach; ?>
+    <a href="/portal/intranet/actualites.php" class="<?= $active === 'actualites' ? 'on' : '' ?>"><span>📰</span>Actualités</a>
     <a href="/portal/intranet/annuaire.php" class="<?= $active === 'annuaire' ? 'on' : '' ?>"><span>👥</span>Annuaire</a>
     <a href="/portal/intranet/assistance.php" class="<?= $active === 'assistance' ? 'on' : '' ?>"><span>🛟</span>Assistance</a>
+    <a href="/portal/intranet/recherche.php" class="<?= $active === 'recherche' ? 'on' : '' ?>"><span>🔍</span>Rechercher</a>
     <div class="sep"></div>
     <?php if (!empty($_u['auth'])): ?>
       <a href="/portal/account.php"><span>👤</span>Mon compte</a>
@@ -454,7 +540,7 @@ function intranet_head(string $title, string $active = ''): void {
   <nav class="tabbar">
     <a href="/portal/intranet.php" class="<?= $active === 'home' ? 'on' : '' ?>"><span class="i">🏠</span>Accueil</a>
     <a href="/portal/intranet/annuaire.php" class="<?= $active === 'annuaire' ? 'on' : '' ?>"><span class="i">👥</span>Annuaire</a>
-    <a href="/portal/intranet/assistance.php" class="<?= $active === 'assistance' ? 'on' : '' ?>"><span class="i">🛟</span>Aide</a>
+    <a href="/portal/intranet/recherche.php" class="<?= $active === 'recherche' ? 'on' : '' ?>"><span class="i">🔍</span>Chercher</a>
     <?php if (!empty($_u['auth'])): ?>
       <a href="/portal/account.php"><span class="i">👤</span>Compte</a>
     <?php else: ?>
@@ -531,6 +617,40 @@ if ('serviceWorker' in navigator && window.__pwaSecure) {
               + "puis R\u00e9glages \u2192 G\u00e9n\u00e9ral \u2192 Informations \u2192 Confiance certificats." : "");
     b.style.display = 'flex';
   }
+})();
+(function () {
+  // Remplissage de l'identité, hors du HTML mis en cache (voir portal/moi.php).
+  // « no-store » côté requête EN PLUS de l'en-tête serveur : le service worker
+  // décide seul de ce qu'il garde, et « /portal/moi.php » figure dans sa liste
+  // d'exclusion — les deux ensemble, pour que la protection ne tienne pas à un
+  // seul verrou.
+  var el = document.getElementById('moi');
+  if (!el || !window.fetch) { return; }
+  fetch('/portal/moi.php', {cache: 'no-store', credentials: 'same-origin'})
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      // Republié pour les pages qui affichent l'identité ailleurs (le bandeau de
+      // l'accueil) : un second appel repasserait par ndsctl, qui prend ~1,7 s.
+      window.__moi = j;   // pour un ecouteur enregistre trop tard
+      document.dispatchEvent(new CustomEvent('bastion:moi', {detail: j}));
+      if (!j || !j.auth || !j.complet) { return; }   // hors ligne : aucun nom, c'est voulu
+      document.getElementById('moiNom').textContent = j.complet;
+      if (j.photo) {
+        var i = document.createElement('img');
+        i.src = '/portal/photo.php?v=' + encodeURIComponent(j.photo);
+        i.alt = '';
+        i.style.cssText = 'width:26px;height:26px;border-radius:50%;object-fit:cover;' +
+                          'border:1px solid rgba(56,189,248,.5)';
+        var av = document.getElementById('moiAv');
+        av.textContent = ''; av.appendChild(i);
+      }
+      // « hidden » est retiré ET l'affichage posé : la coquille porte un
+      // « display:inline-flex » dès qu'elle est visible, et un style en ligne
+      // l'emporterait sur « hidden ».
+      el.hidden = false;
+      el.style.display = 'inline-flex';
+    })
+    .catch(function () {});   // hors ligne : la coquille reste vide
 })();
 (function () {
   var b = document.getElementById('burger'), d = document.getElementById('drawer'),

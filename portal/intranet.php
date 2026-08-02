@@ -5,8 +5,12 @@ require_once __DIR__ . '/intranet/_common.php';
 $me = intranet_user();
 
 $news = [];
+$total_news = 0;
 $links = [];
 if ($db = intranet_db()) {
+    // Le total sert à savoir s'il existe des actualités AU-DELÀ des six affichées :
+    // un lien « Toutes les actualités » qui mène aux six mêmes ne promet rien.
+    try { $total_news = (int) $db->query('SELECT COUNT(*) FROM pf_cms_news WHERE published=1')->fetchColumn(); } catch (Throwable $e) {}
     try { $news = $db->query('SELECT * FROM pf_cms_news WHERE published=1 ORDER BY created_at DESC, id DESC LIMIT 6')->fetchAll(); }
     catch (Throwable $e) {}
 }
@@ -59,19 +63,13 @@ intranet_head('Accueil', 'home');
   .hero-x .meta{display:flex;gap:1.2rem;flex-wrap:wrap;margin-top:1rem;font-size:.83rem;color:var(--muted);position:relative}
   .hero-x .meta b{color:#e6f2ff;font-weight:600}
 
-  .sec-t{display:flex;align-items:center;gap:.7rem;font-size:.76rem;color:var(--muted);
-    text-transform:uppercase;letter-spacing:1.4px;margin:.2rem 0 1.1rem;font-weight:700}
-  .sec-t::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+  /* .sec-t est passe dans _common.php : la recherche s'en sert aussi, et un titre
+     de section doit se ressembler d'une page a l'autre. */
 
-  /* Actualités : la carte glisse et son filet s'illumine au survol. Le mouvement dit
-     « ceci est un bloc », sans promettre un clic — il n'y a pas de lien derrière. */
-  .news{position:relative;padding-left:1.1rem;margin-bottom:1.7rem;transition:transform .25s ease}
-  .news::before{content:"";position:absolute;left:0;top:.35rem;bottom:.35rem;width:3px;border-radius:3px;
-    background:linear-gradient(180deg,var(--accent),transparent);transition:box-shadow .25s ease}
-  .news:hover{transform:translateX(3px)}
-  .news:hover::before{box-shadow:0 0 12px rgba(56,189,248,.55)}
-  .news .prose img{transition:transform .5s cubic-bezier(.16,1,.3,1);border-radius:12px}
-  .news:hover .prose img{transform:scale(1.012)}
+  /* Actualités : le style des cartes est dans _common.php — l'accueil, l'archive et
+     l'article le partagent, et une carte doit se ressembler d'une page à l'autre.
+     Ne reste ici que la disposition propre à la colonne de l'accueil. */
+  .home-news{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
 
   /* Services : la tuile glisse, l'icône rebondit, un chevron apparaît. Trois signaux
      pour une seule intention — c'est cliquable, et ça se voit avant le clic. */
@@ -108,8 +106,9 @@ intranet_head('Accueil', 'home');
        d'écran ; seul l'affichage change. */
     .home-cols > aside{order:-1}
     .tile-x{padding:1rem 1.05rem}                     /* cible tactile confortable */
-    .news{margin-bottom:1.3rem}
-    .news .prose img{max-height:180px;object-fit:cover;width:100%}
+    /* Une seule colonne : deux cartes côte à côte sur 360 px ne laissent de place
+       ni au titre ni à l'extrait. */
+    .home-news{grid-template-columns:1fr}
   }
   @media(max-width:430px){
     .hero-x h1{font-size:1.25rem}
@@ -123,7 +122,6 @@ intranet_head('Accueil', 'home');
     .tile-x:hover{transform:none;background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.09)}
     .tile-x:hover .emo{transform:none}
     .tile-x:hover::before{transform:scaleY(0)}
-    .news:hover{transform:none}
     .tile-x:active{transform:scale(.98);background:rgba(56,189,248,.12)}
   }
 
@@ -132,17 +130,24 @@ intranet_head('Accueil', 'home');
      ces mouvements réellement pénibles, et l'agent n'a pas à les subir. */
   @media(prefers-reduced-motion:reduce){
     .anim,.hero-x::after,.hero-x .wave{animation:none!important}
-    .news,.tile-x,.tile-x .emo,.tile-x .chev,.news .prose img{transition:none!important}
+    .tile-x,.tile-x .emo,.tile-x .chev{transition:none!important}
   }
 </style>
 
 <div class="hero-x anim">
-  <h1><?= $salut ?><?= !empty($me['affiche']) ? ' ' . e_($me['affiche']) : '' ?> <span class="wave">👋</span></h1>
+  <?php
+  // Le prénom et le matricule sont remplis par le navigateur, pas écrits ici :
+  // cette page est conservée pour la lecture hors ligne, et l'identité y serait
+  // partie avec elle. Sur un téléphone de service partagé, l'agent suivant aurait
+  // été accueilli par le prénom du précédent.
+  // Le salut, lui, reste côté serveur : il dépend de l'heure, pas de la personne.
+  ?>
+  <h1><?= $salut ?><span id="heroNom"></span> <span class="wave">👋</span></h1>
   <p class="muted" style="margin:0;max-width:64ch;position:relative"><?= e_(intranet_setting('intranet_welcome', 'Bienvenue sur l’espace interne. Retrouvez ici l’actualité et vos services.')) ?></p>
   <div class="meta">
     <span>📅 <b><?= e_($dateFr) ?></b></span>
-    <?php if (!empty($me['user'])): ?><span>🆔 Matricule <b><?= e_($me['user']) ?></b></span><?php endif; ?>
-    <?php if (!empty($news)): ?><span>📰 <b><?= count($news) ?></b> actualité<?= count($news) > 1 ? 's' : '' ?></span><?php endif; ?>
+    <span id="heroMat" hidden>🆔 Matricule <b></b></span>
+    <?php if (!empty($news)): $nb = $total_news ?: count($news); ?><span>📰 <b><?= $nb ?></b> actualité<?= $nb > 1 ? 's' : '' ?></span><?php endif; ?>
   </div>
 </div>
 
@@ -167,13 +172,25 @@ if ($notice !== '' && $jusqu !== '') {
     <h2 class="sec-t">Actualités</h2>
     <?php if (!$news): ?>
       <p class="muted">Aucune actualité pour le moment.</p>
-    <?php else: $i = 0; foreach ($news as $n): $i++; ?>
-      <article class="news anim d<?= min(6, $i + 1) ?>">
-        <div class="date"><?= e_(date('d/m/Y', strtotime((string) $n['created_at']))) ?><?= $n['author'] ? ' · ' . e_($n['author']) : '' ?></div>
-        <h3><?= e_($n['title']) ?><?php if (!empty($n['category'])): ?><span class="badge-cat"><?= e_($n['category']) ?></span><?php endif; ?></h3>
-        <div class="prose"><?= cms_render((string) $n['body'], (string) ($n['format'] ?? 'markdown')) ?></div>
-      </article>
-    <?php endforeach; endif; ?>
+    <?php else: $i = 0; ?>
+      <div class="ncards home-news">
+      <?php foreach ($news as $n): $i++;
+          $vis = cms_image_une((string) $n['body'], (string) ($n['format'] ?? 'markdown')); ?>
+        <a class="ncard anim d<?= min(6, $i + 1) ?>" href="<?= e_(news_url($n['id'])) ?>">
+          <?php if ($vis !== ''): ?><div class="vis" style="background-image:url('<?= e_($vis) ?>')"></div><?php endif; ?>
+          <div class="bd">
+            <div class="date"><?= e_(date('d/m/Y', strtotime((string) $n['created_at']))) ?><?= $n['author'] ? ' · ' . e_($n['author']) : '' ?></div>
+            <h3><?= e_($n['title']) ?><?php if (!empty($n['category'])): ?><span class="badge-cat"><?= e_($n['category']) ?></span><?php endif; ?></h3>
+            <p class="ex"><?= e_(cms_extrait((string) $n['body'], (string) ($n['format'] ?? 'markdown'))) ?></p>
+            <span class="plus">Lire <span class="chev">›</span></span>
+          </div>
+        </a>
+      <?php endforeach; ?>
+      </div>
+      <?php if ($total_news > count($news)): ?>
+        <p style="margin-top:1rem"><a class="back" href="/portal/intranet/actualites.php">Toutes les actualités (<?= (int) $total_news ?>) →</a></p>
+      <?php endif; ?>
+    <?php endif; ?>
   </section>
   <aside class="anim d3">
     <h2 class="sec-t">Services</h2>
@@ -188,4 +205,18 @@ if ($notice !== '' && $jusqu !== '') {
     </div>
   </aside>
 </div>
+<script>
+// L'en-tête a déjà demandé « /portal/moi.php » ; il republie le résultat plutôt
+// que d'imposer un second appel — la réponse traverse ndsctl, qui prend ~1,7 s.
+function bastionMoi(d) {
+  d = d || {};
+  if (!d.auth) { return; }
+  if (d.prenom) { document.getElementById('heroNom').textContent = ' ' + d.prenom; }
+  var m = document.getElementById('heroMat');
+  if (m && d.user) { m.querySelector('b').textContent = d.user; m.hidden = false; }
+}
+document.addEventListener('bastion:moi', function (e) { bastionMoi(e.detail); });
+// Si la reponse est deja arrivee, l'evenement est passe : on la reprend.
+if (window.__moi) { bastionMoi(window.__moi); }
+</script>
 <?php intranet_foot();
