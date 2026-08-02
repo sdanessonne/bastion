@@ -112,6 +112,27 @@ else
   done
 fi
 
+# ── 4 ter) OPcache : le code est-il recompilé à chaque affichage ? ───────────
+# Une régression ici ne casse rien : la console fonctionne, elle est seulement
+# deux à trois fois plus lente. Personne ne l'attribuerait à une extension PHP —
+# c'est exactement le genre de panne qu'il faut rendre visible.
+h "OPcache (compilation évitée)"
+if ! php -m 2>/dev/null | grep -qi '^Zend OPcache$'; then
+  ko "extension OPcache ABSENTE — PHP recompile tout le code à chaque page"
+elif ! ls /etc/php/*/apache2/conf.d/*opcache*.ini >/dev/null 2>&1; then
+  wn "extension présente mais aucune configuration pour Apache"
+else
+  sonde=/var/www/html/.opcache-selftest.php
+  printf '<?php $s=function_exists("opcache_get_status")?@opcache_get_status(false):false; echo ($s && !empty($s["opcache_enabled"]))?"ACTIF":"INACTIF";' > "$sonde" 2>/dev/null
+  etat=$(curl -s --max-time 8 "http://127.0.0.1:2080/.opcache-selftest.php" 2>/dev/null || echo "")
+  rm -f "$sonde"
+  case "$etat" in
+    ACTIF)   ok "OPcache actif dans Apache" ;;
+    INACTIF) ko "OPcache configuré mais INACTIF dans Apache" ;;
+    *)       wn "état d'OPcache non vérifiable (sonde injoignable)" ;;
+  esac
+fi
+
 # ── 5) Scripts des postes : encodage et caractères ───────────────────────────
 # Une faute d'encodage ne se voit NULLE PART côté serveur : le fichier est bien écrit,
 # bien déployé, bien lu par le poste... qui n'arrive pas à l'analyser et n'exécute alors

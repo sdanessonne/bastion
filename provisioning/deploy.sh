@@ -453,6 +453,43 @@ systemctl enable --now proxyfibre-updatecheck.timer >/dev/null 2>&1 || true
 install -m755 "${REPO_DIR}/services/scripts/speedtest-wan.sh" /usr/local/sbin/proxyfibre-speedtest
 # Diagnostic de lenteur : lecture seule, ne modifie rien.
 install -m755 "${REPO_DIR}/services/scripts/perf-check.sh" /usr/local/sbin/proxyfibre-perf-check
+
+# ── OPcache : PHP ne recompile plus le code à chaque affichage ───────────────
+# Sans lui, les 1,1 Mo de code de la console sont relus, analysés et recompilés
+# à CHAQUE clic pour produire le même résultat. C'est le seul réglage qui pèse
+# identiquement sur toutes les pages, donc le premier à poser quand la lenteur
+# est générale.
+if ! php -m 2>/dev/null | grep -qi '^Zend OPcache$'; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y php-opcache >/dev/null 2>&1 || true
+fi
+# Le numéro de version PHP n'est pas codé en dur : Debian 13 livre PHP 8.4
+# aujourd'hui, et un chemin figé casserait silencieusement à la prochaine
+# version majeure -- le fichier serait écrit là où plus personne ne le lit.
+OPC_POSE=0
+for d in /etc/php/*/apache2/conf.d; do
+  [ -d "$d" ] || continue
+  install -m644 "${REPO_DIR}/services/php/opcache.ini" "$d/99-bastion-opcache.ini"
+  OPC_POSE=1
+done
+if [ "$OPC_POSE" = "1" ]; then
+  systemctl reload apache2 >/dev/null 2>&1 || systemctl restart apache2 >/dev/null 2>&1 || true
+  # ── ON VÉRIFIE, ON NE SUPPOSE PAS ─────────────────────────────────────────
+  # Le fichier peut être en place et l'extension absente ; la configuration peut
+  # être lue par le PHP en ligne de commande et pas par celui d'Apache. Seul
+  # Apache lui-même peut répondre, on le lui demande donc.
+  OPC_SONDE=/var/www/html/.opcache-probe.php
+  printf '<?php $s=function_exists("opcache_get_status")?@opcache_get_status(false):false;\n' > "$OPC_SONDE"
+  printf 'echo ($s && !empty($s["opcache_enabled"])) ? "ACTIF ".intval($s["memory_usage"]["free_memory"]/1048576)."Mo libres" : "INACTIF";\n' >> "$OPC_SONDE"
+  OPC_ETAT=$(curl -s --max-time 10 "http://127.0.0.1:2080/.opcache-probe.php" 2>/dev/null || echo "")
+  rm -f "$OPC_SONDE"
+  case "$OPC_ETAT" in
+    ACTIF*) log "OPcache actif (${OPC_ETAT#ACTIF })" ;;
+    INACTIF) log "ATTENTION : OPcache configuré mais INACTIF dans Apache — la console restera lente" ;;
+    *)      log "OPcache configuré (état non vérifiable : sonde injoignable)" ;;
+  esac
+else
+  log "ATTENTION : aucun répertoire /etc/php/*/apache2/conf.d — OPcache NON configuré"
+fi
 # Dépôt Git de Bastion : renseigné depuis la console (Système → Mise à jour de Bastion).
 # 600 : le fichier peut contenir un jeton d'accès à un dépôt privé.
 [ -f /etc/proxyfibre/update.env ] || printf 'GIT_REPO=""\nGIT_BRANCH="main"\nGIT_TOKEN=""\n' > /etc/proxyfibre/update.env
