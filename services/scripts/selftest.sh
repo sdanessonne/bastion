@@ -88,6 +88,30 @@ else
   done
 fi
 
+# ── 4 bis) La racine du portail mène AU PORTAIL ──────────────────────────────
+# Le vhost du portail a pour racine /var/www/html, où Debian laisse son
+# « Apache2 Debian Default Page ». Rien ne signalait le problème : Apache
+# répondait 200, le service était « actif », et le contrôle des pages ci-dessus
+# ne teste que la console. Seul un agent tapant l'adresse sans chemin le voyait —
+# et concluait que la passerelle était en panne.
+h "Racine du portail"
+LAN_IP_T=$(sed -n 's/^LAN_IP=//p' /etc/proxyfibre/config.env 2>/dev/null | tr -d '"' | head -1)
+if [ -z "$LAN_IP_T" ]; then
+  wn "adresse LAN inconnue (config.env) — contrôle sauté"
+else
+  for pt in 2443 2080; do
+    corps=$(curl -sk --max-time 10 "https://$LAN_IP_T:$pt/" 2>/dev/null ||             curl -s  --max-time 10 "http://$LAN_IP_T:$pt/"  2>/dev/null)
+    dest=$(curl -sk -o /dev/null -w '%{redirect_url}' --max-time 10 "https://$LAN_IP_T:$pt/" 2>/dev/null || true)
+    if printf '%s' "$corps" | grep -qi 'Debian Default Page'; then
+      ko "port $pt : la racine sert la page Apache par défaut"
+    elif printf '%s' "$dest" | grep -q 'fas.php' || printf '%s' "$corps" | grep -qi 'fas.php\|Bastion'; then
+      ok "port $pt : la racine mène au portail"
+    else
+      wn "port $pt : racine ni page Debian ni portail (à vérifier)"
+    fi
+  done
+fi
+
 # ── 5) Scripts des postes : encodage et caractères ───────────────────────────
 # Une faute d'encodage ne se voit NULLE PART côté serveur : le fichier est bien écrit,
 # bien déployé, bien lu par le poste... qui n'arrive pas à l'analyser et n'exécute alors

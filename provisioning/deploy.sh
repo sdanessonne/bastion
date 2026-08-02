@@ -290,6 +290,25 @@ install -m755 "${REPO_DIR}/services/scripts/make-web-cert.sh" /usr/local/sbin/pr
 grep -q '^Listen 2443$' /etc/apache2/ports.conf || echo "Listen 2443" >> /etc/apache2/ports.conf
 install -m644 "${REPO_DIR}/services/apache/portal-ssl.conf" /etc/apache2/sites-available/proxyfibre-portal-ssl.conf
 a2ensite proxyfibre-portal-ssl >/dev/null 2>&1 || true
+
+# ── L'INDEX DEBIAN N'A RIEN A FAIRE SUR UNE PASSERELLE EN SERVICE ────────────
+# Le vhost du portail a pour racine /var/www/html, ou Debian laisse son
+# « Apache2 Debian Default Page ». Un agent qui saisit l'adresse de la passerelle
+# sans chemin -- le cas courant -- tombait dessus et la croyait en panne. Le vhost
+# redirige desormais « / », et ce fichier couvre « /index.html », demande
+# explicitement par certains navigateurs et par les detections de portail captif.
+if [[ -f /var/www/html/index.html ]] && grep -qi 'Debian Default Page' /var/www/html/index.html 2>/dev/null; then
+  cat > /var/www/html/index.html <<'IDXEOF'
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<title>Bastion — portail</title>
+<meta http-equiv="refresh" content="0; url=/portal/fas.php"></head>
+<body><p>Redirection vers le <a href="/portal/fas.php">portail Bastion</a>…</p></body></html>
+IDXEOF
+  chmod 644 /var/www/html/index.html
+  log "Page Apache par défaut remplacée par une redirection vers le portail"
+fi
+
 log "Portail FAS déployé (http://${LAN_IP}:2080/portal/fas.php)"
 
 # ── OpenNDS (config UCI /etc/config/opennds — Debian ignore le fichier legacy) ─
