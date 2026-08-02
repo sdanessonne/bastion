@@ -71,9 +71,18 @@ function pf_ports_reseau(): array {
         foreach (explode("\n", (string) shell_exec('ip -4 -br addr show ' . escapeshellarg($if) . ' 2>/dev/null')) as $l) {
             if (preg_match_all('/\d+\.\d+\.\d+\.\d+\/\d+/', $l, $mm)) $ips = $mm[0];
         }
+        // Une interface peut n'avoir ni adresse ni rôle propre et servir tout de même
+        // le LAN : c'est le cas des membres d'un pont (câble + point d'accès Wi-Fi
+        // réunis sous br-lan). Sans cette lecture, le Wi-Fi apparaissait « sans rôle »
+        // alors qu'il porte le portail captif — exactement l'inverse de la réalité.
+        $pont = @readlink("$p/master");
+        $pont = $pont ? basename($pont) : '';
+        $sansfil = is_dir("$p/wireless") || is_dir("$p/phy80211");
         $out[] = [
             'if'    => $if,
-            'role'  => $roles[$if] ?? '',
+            'role'  => $roles[$if] ?? ($pont && ($roles[$pont] ?? '') ? $roles[$pont] : ''),
+            'pont'  => $pont,
+            'sansfil' => $sansfil,
             'lien'  => $lien === '1',
             'debit' => ($deb > 0) ? (int) $deb : 0,
             'ips'   => $ips,
@@ -95,9 +104,14 @@ pf_header('Supervision réseau', 'reseau.php');
       <tr>
         <td><?= $p['role'] === 'WAN' ? '<b>WAN</b> — Internet'
               : ($p['role'] === 'LAN' ? '<b>LAN</b> — postes' : '<span class="muted">—</span>') ?></td>
-        <td><code><?= htmlspecialchars($p['if']) ?></code></td>
-        <td><?= $p['lien'] ? '<span class="badge ok">branché</span>'
-                           : '<span class="badge warn">aucun câble</span>' ?></td>
+        <td>
+          <code><?= htmlspecialchars($p['if']) ?></code>
+          <?php if ($p['sansfil']): ?><span class="muted small">· Wi-Fi</span><?php endif; ?>
+          <?php if ($p['pont']): ?><br><span class="muted small">membre de <code><?= htmlspecialchars($p['pont']) ?></code></span><?php endif; ?>
+        </td>
+        <td><?= $p['sansfil']
+              ? ($p['lien'] ? '<span class="badge ok">radio active</span>' : '<span class="badge warn">radio inactive</span>')
+              : ($p['lien'] ? '<span class="badge ok">branché</span>' : '<span class="badge warn">aucun câble</span>') ?></td>
         <td><?= $p['ips'] ? htmlspecialchars(implode(' · ', $p['ips'])) : '<span class="muted">—</span>' ?></td>
         <td><?= $p['debit'] ? $p['debit'] . ' Mb/s' : '<span class="muted">—</span>' ?></td>
       </tr>
