@@ -162,6 +162,39 @@ html.rail .nav-group-label{height:0;padding:.35rem 0 0;margin:.15rem .4rem 0;ove
 @media(prefers-reduced-motion:reduce){.fill{transition:none}}
 
 /* ── Forms & buttons ── */
+
+/* Style de BASE des champs. Il n'y en avait aucun : seuls « .login-card », « .stack »
+   et « .toolbar » habillaient leurs champs. Or 12 pages sur 17 posent des <label> sans
+   ces classes — leurs champs sortaient donc bruts, au style par défaut du navigateur,
+   avec des libellés collés en ligne. Chaque page corrigeait le problème à sa façon, ou
+   pas du tout, et le résultat variait d'un écran à l'autre.
+   ATTENTION AU « :where() », il n'est pas décoratif. Écrite en « :not([type=…]) » sans
+   lui, cette règle pesait (0,5,1) — chaque :not() compte dans la spécificité — et
+   écrasait donc « .toolbar input » (0,1,1) : MESURÉ, 8,8 px de rembourrage au lieu des
+   8 px voulus. « :where() » ne compte pour rien : la règle retombe à (0,0,1) et toute
+   classe existante reprend la main, ce qui est bien l'intention. */
+input:where(:not([type=checkbox],[type=radio],[type=submit],[type=button],[type=file])),
+select, textarea{
+  padding:.55rem .7rem;background:var(--bg);color:var(--text);font-family:inherit;
+  border:1px solid var(--line);border-radius:8px;font-size:.9rem;max-width:100%
+}
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:none;border-color:var(--accent2);box-shadow:0 0 0 3px rgba(56,189,248,.18)
+}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:.7}
+input:disabled,select:disabled,textarea:disabled{opacity:.55;cursor:not-allowed}
+
+/* Un <label> qui CONTIENT son champ devient une petite grille : libellé au-dessus,
+   champ en dessous, sur toute la largeur disponible. On exclut cases à cocher et
+   boutons radio, dont le libellé doit rester à côté du champ — les empiler donnerait
+   une liste d'options illisible. */
+label:where(:has(> input:where(:not([type=checkbox],[type=radio])), > select, > textarea)){
+  display:grid;gap:.35rem;font-size:.82rem;color:var(--muted)
+}
+label:where(:has(> input:where(:not([type=checkbox],[type=radio])), > select, > textarea)) > :where(input,select,textarea){
+  width:100%
+}
+
 .split{display:grid;grid-template-columns:320px 1fr;gap:1.4rem;align-items:start}
 @media(max-width:820px){.split{grid-template-columns:1fr}}
 .stack{display:grid;gap:1rem;padding:1.2rem}

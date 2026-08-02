@@ -45,3 +45,6 @@ provisioning/iso/*.iso
 # Paquets de commits fabriques a la main pour ravitailler une machine sans acces
 # au depot prive (la passerelle n' a pas de cle enregistree sur GitHub).
 *.bundle
+
+# Bac a sable de controle visuel (jamais versionne)
+.essai-css/
