@@ -332,8 +332,26 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     USB branché sur la passerelle : une copie <strong>hors-machine</strong>, sans réseau et sous votre contrôle. On n'écrit
     jamais sur un disque système — seules les partitions <strong>amovibles</strong> sont proposées.</p>
     <?php if (!$usbTargets): ?>
-      <div class="flash" style="margin:.4rem 0">Aucune clé USB détectée. Branchez une clé (VirtualBox : menu
-        <em>Périphériques → USB</em> pour la rattacher à la VM), puis rechargez cette page.</div>
+      <?php
+      // État « rien de branché ». Il annonçait « rechargez cette page » et une manœuvre
+      // VirtualBox — inutile sur un serveur physique, et surtout muet sur ce qui est
+      // possible. Sans clé, la jauge et le formatage n'ont rien à afficher : autant le
+      // dire, plutôt que de laisser croire à une fonction absente.
+      // Un lecteur de cartes VIDE se présente au noyau comme un disque amovible de
+      // 0 octet : il est volontairement ignoré, sinon il apparaîtrait comme une clé.
+      ?>
+      <div class="flash" style="margin:.4rem 0">
+        <b>Aucune clé USB détectée.</b> Branchez une clé sur la passerelle, puis rechargez
+        cette page : sa capacité s'affichera, avec la copie de sauvegarde et le formatage.
+      </div>
+      <p class="muted small" style="margin:.5rem 0 0">
+        Une clé <b>neuve ou effacée</b>, sans partition, est reconnue et formatable. Un
+        lecteur de cartes vide, lui, est ignoré — il se présente au système comme un
+        support de 0 octet.
+        <?php if ($u = trim((string) shell_exec("lsblk -dno PATH,SIZE,MODEL 2>/dev/null | grep -viE 'sda|loop' | head -3"))): ?>
+          <br>Supports amovibles vus par le système : <code><?= e(preg_replace('/\s+/', ' ', $u)) ?></code>
+        <?php endif; ?>
+      </p>
     <?php else: ?>
       <?php
       // Octets → unité lisible. Une jauge sans chiffres ne dit pas si les 12 % libres

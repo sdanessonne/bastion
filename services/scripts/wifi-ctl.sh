@@ -90,8 +90,79 @@ case "${1:-}" in
         "$SSID" "$CANAL" "$WIF" "$PONT" "$ACTIF" "${CLIENTS:-0}"
     ;;
 
+  scan)
+    # ── OCCUPATION DU SPECTRE 2,4 GHz ───────────────────────────────────────
+    # But : choisir un canal, pas afficher une jolie courbe.
+    #
+    # On aurait préféré « iw survey dump », qui donne le temps d'occupation RÉEL du
+    # canal — la seule mesure honnête. Le pilote rtw88 de ce dongle ne le remonte
+    # pas : la commande sort vide. On se rabat donc sur le balayage des réseaux
+    # voisins, qui lui fonctionne même en mode point d'accès (ce n'était pas acquis).
+    #
+    # LE POINT QUI COMPTE : en 2,4 GHz les canaux se CHEVAUCHENT. Un réseau sur le
+    # canal 6 gêne les canaux 4 à 8. Compter les réseaux « sur le canal 1 » pour
+    # juger le canal 1 donnerait une réponse fausse — c'est pourquoi le score étale
+    # chaque réseau sur ses voisins, pondéré par l'écart ET par sa puissance.
+    WIF=$(sed -n 's/^interface=//p' "$CONF" 2>/dev/null | head -1)
+    [ -n "$WIF" ] || { echo '{"erreur":"aucune interface sans fil"}'; exit 1; }
+
+    # Le balayage fait quitter le canal quelques centaines de millisecondes : les
+    # clients connectés peuvent avoir un hoquet. C'est pour cela qu'il est déclenché
+    # à la demande depuis la console, et jamais au chargement de la page.
+    # NOTRE PROPRE BALISE figure dans le résultat du balayage. Sans l'écarter, notre
+    # point d'accès se compte lui-même : le canal occupé paraît toujours être celui
+    # qu'on utilise, et l'outil conseille invariablement d'en changer. Constaté à la
+    # première exécution — deux réseaux sur le canal 6, dont le nôtre.
+    MOI=$(cat "/sys/class/net/$WIF/address" 2>/dev/null | tr 'A-Z' 'a-z')
+
+    iw dev "$WIF" scan 2>/dev/null | awk -v actuel="$(sed -n 's/^channel=//p' "$CONF" 2>/dev/null | head -1)" -v moi="$MOI" '
+      /^BSS /            { if (ch > 0 && !soi) enregistrer()
+                           ch = 0; sig = -100
+                           bss = $2; sub(/\(.*/, "", bss)
+                           soi = (tolower(bss) == moi) }
+      /^[ \t]*freq:/     { f = $2 + 0
+                           if (f == 2484) ch = 14
+                           else if (f >= 2412 && f <= 2472) ch = int((f - 2407) / 5 + 0.5) }
+      /^[ \t]*signal:/   { sig = $2 + 0 }
+      END                { if (ch > 0 && !soi) enregistrer(); sortir() }
+
+      function enregistrer(   d, c, poids, force) {
+        nb[ch]++
+        if (sig > pic[ch] || pic[ch] == 0) pic[ch] = sig
+        # Puissance ramenée à une échelle simple : -50 dBm → 50, -90 dBm → 10.
+        # Un réseau lointain gêne réellement moins qu’un réseau proche.
+        force = sig + 100; if (force < 1) force = 1
+        for (d = -4; d <= 4; d++) {
+          c = ch + d
+          if (c < 1 || c > 14) continue
+          poids = 1 - (d < 0 ? -d : d) / 5      # 1 sur le canal même, 0,2 à 4 canaux
+          score[c] += force * poids
+        }
+      }
+      function sortir(   c, max, best, bestv, virgule) {
+        max = 0
+        for (c = 1; c <= 13; c++) if (score[c] > max) max = score[c]
+        bestv = -1
+        for (c = 1; c <= 13; c++) {
+          # À égalité on préfère 1, 6 ou 11 : les seuls qui ne se chevauchent pas
+          # entre eux. Un canal « libre » coincé entre deux voisins encombrés est
+          # un mauvais choix que le score seul ne suffit pas toujours à écarter.
+          v = -score[c] + ((c == 1 || c == 6 || c == 11) ? 0.5 : 0)
+          if (v > bestv) { bestv = v; best = c }
+        }
+        printf "{\"actuel\":%d,\"conseille\":%d,\"canaux\":[", actuel + 0, best
+        for (c = 1; c <= 13; c++) {
+          printf "%s{\"canal\":%d,\"reseaux\":%d,\"pic\":%d,\"charge\":%d}",
+                 virgule, c, nb[c] + 0, pic[c] + 0,
+                 (max > 0 ? int(score[c] * 100 / max + 0.5) : 0)
+          virgule = ","
+        }
+        printf "]}\n"
+      }'
+    ;;
+
   *)
-    echo "Usage: $0 apply|state" >&2
+    echo "Usage: $0 apply|state|scan" >&2
     exit 1
     ;;
 esac

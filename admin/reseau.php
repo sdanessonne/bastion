@@ -145,6 +145,16 @@ foreach (@file('/etc/proxyfibre/net.env') ?: [] as $l) {
 // payé pour rien — l'état du Wi-Fi n'est affiché que dans la page complète.
 $wifi = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wifi state 2>/dev/null'), true) ?: [];
 
+// Le balayage n'est PAS fait au chargement : il oblige la carte à quitter son canal
+// quelques centaines de millisecondes, ce qui donne un hoquet aux terminaux connectés.
+// Payer cela à chaque affichage de page serait absurde. Il se déclenche à la demande.
+$spectre = null;
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['do'] ?? '') === 'wifiscan') {
+    csrf_check();
+    $spectre = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wifi scan 2>/dev/null'), true) ?: null;
+    if (function_exists('audit')) audit('wifi.scan', 'analyse du spectre 2,4 GHz');
+}
+
 pf_header('Supervision réseau', 'reseau.php');
 ?>
 <section class="panel">
@@ -277,6 +287,87 @@ pf_header('Supervision réseau', 'reseau.php');
       </label>
       <div><button class="btn" type="submit">Appliquer</button></div>
     </form>
+    <!-- ── Spectre 2,4 GHz ─────────────────────────────────────────────────
+         Choisir un canal « au hasard parmi ceux qui semblent libres » ne marche pas
+         en 2,4 GHz : les canaux se CHEVAUCHENT. Un réseau sur le 6 gêne du 4 au 8.
+         D'où une barre par canal montrant la gêne SUBIE, et non le simple décompte
+         des réseaux qui s'y déclarent — les deux donnent des réponses différentes. -->
+    <div style="border-top:1px solid var(--line);margin-top:1.2rem;padding-top:1rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap">
+        <h3 style="margin:0;font-size:.95rem">📡 Occupation du spectre 2,4 GHz</h3>
+        <form method="post" style="margin:0">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <input type="hidden" name="do" value="wifiscan">
+          <button class="btn" type="submit" style="padding:.45rem .9rem;font-size:.85rem">Analyser</button>
+        </form>
+      </div>
+
+      <?php if ($spectre === null): ?>
+        <p class="muted small" style="margin:.7rem 0 0;max-width:70ch">
+          L’analyse n’est pas lancée automatiquement : elle oblige la carte à quitter son
+          canal une fraction de seconde, ce qui donne un hoquet aux terminaux connectés.
+          À faire à l’installation, ou quand le Wi-Fi se dégrade.
+        </p>
+      <?php else: ?>
+        <?php
+        $canaux    = $spectre['canaux'] ?? [];
+        $conseille = (int) ($spectre['conseille'] ?? 0);
+        $actuel    = (int) ($spectre['actuel'] ?? 0);
+        $totalRes  = array_sum(array_column($canaux, 'reseaux'));
+        ?>
+        <div style="display:flex;align-items:flex-end;gap:.35rem;height:130px;margin:1rem 0 .3rem">
+          <?php foreach ($canaux as $c): ?>
+            <?php
+            $h = max(3, (int) $c['charge']);
+            $moi = ((int) $c['canal'] === $actuel);
+            $best = ((int) $c['canal'] === $conseille);
+            $col = $best ? '#22c55e' : ($moi ? 'var(--accent2)' : ($c['charge'] >= 60 ? '#ef4444' : 'var(--line)'));
+            ?>
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%"
+                 title="Canal <?= (int) $c['canal'] ?> — gêne <?= (int) $c['charge'] ?> % · <?= (int) $c['reseaux'] ?> réseau(x) déclaré(s)<?= $c['reseaux'] ? ', pic ' . (int) $c['pic'] . ' dBm' : '' ?>">
+              <?php if ($c['reseaux']): ?>
+                <span class="muted" style="font-size:.65rem"><?= (int) $c['reseaux'] ?></span>
+              <?php endif; ?>
+              <div style="width:100%;height:<?= $h ?>%;background:<?= $col ?>;border-radius:4px 4px 0 0;
+                          <?= ($moi || $best) ? 'box-shadow:0 0 0 1px ' . $col : 'opacity:.75' ?>"></div>
+              <span style="font-size:.7rem;margin-top:.25rem;<?= ($moi || $best) ? 'font-weight:700;color:' . $col : 'color:var(--muted)' ?>">
+                <?= (int) $c['canal'] ?>
+              </span>
+            </div>
+          <?php endforeach; ?>
+        </div>
+
+        <div class="muted small" style="display:flex;gap:1.1rem;flex-wrap:wrap;margin-bottom:.7rem">
+          <span><span style="display:inline-block;width:.65rem;height:.65rem;background:var(--accent2);border-radius:2px"></span> canal actuel (<?= $actuel ?>)</span>
+          <span><span style="display:inline-block;width:.65rem;height:.65rem;background:#22c55e;border-radius:2px"></span> conseillé (<?= $conseille ?>)</span>
+          <span><span style="display:inline-block;width:.65rem;height:.65rem;background:#ef4444;border-radius:2px"></span> gêne forte</span>
+          <span>le chiffre au-dessus d’une barre = réseaux déclarés sur ce canal</span>
+        </div>
+
+        <?php if ($conseille && $conseille !== $actuel): ?>
+          <form method="post" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="do" value="wifi">
+            <input type="hidden" name="wifi_ssid" value="<?= e((string) ($wifi['ssid'] ?? '')) ?>">
+            <input type="hidden" name="wifi_channel" value="<?= $conseille ?>">
+            <button class="btn" type="submit">Basculer sur le canal <?= $conseille ?></button>
+            <span class="muted small">La phrase secrète n’est pas modifiée.</span>
+          </form>
+        <?php elseif ($conseille): ?>
+          <p class="muted small" style="margin:0">Le canal <?= $actuel ?> est déjà le meilleur choix disponible.</p>
+        <?php endif; ?>
+
+        <p class="muted small" style="margin:.8rem 0 0;max-width:70ch">
+          <?= $totalRes ?> réseau(x) voisin(s) détecté(s). La hauteur d’une barre mesure la
+          gêne <b>subie</b> par ce canal, pas le nombre de réseaux qui s’y déclarent : en
+          2,4 GHz un réseau occupe environ quatre canaux de part et d’autre du sien. Un
+          canal sans aucun réseau déclaré peut donc être fortement gêné — c’est le cas de
+          ses voisins immédiats. À égalité, 1, 6 et 11 sont préférés : ce sont les seuls
+          qui ne se chevauchent pas entre eux.
+        </p>
+      <?php endif; ?>
+    </div>
+
     <p class="muted small" style="margin:.9rem 0 0;max-width:70ch">
       Le réseau se coupe une seconde à l’application, le temps du redémarrage : les
       terminaux connectés se reconnectent seuls, sauf si la phrase a changé. Cette phrase
