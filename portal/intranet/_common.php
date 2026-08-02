@@ -429,6 +429,7 @@ function intranet_head(string $title, string $active = ''): void {
     <div id="pwaBanner" style="display:none;align-items:center;gap:.7rem;background:#152a45;border:1px solid var(--accent);border-radius:12px;padding:.7rem .9rem;margin-bottom:1.1rem">
       <img src="/portal/assets/icon-192.png" alt="" style="width:34px;height:34px;border-radius:8px;flex:none">
       <div style="flex:1;font-size:.85rem;line-height:1.35"><strong style="color:#fff">Installer l'application</strong><br><span class="muted" id="pwaHint">Accédez à l'intranet en un geste depuis votre écran d'accueil.</span></div>
+      <a id="pwaCa" href="/portal/ca.crt.php" style="display:none;flex:none;background:var(--accent);color:#052536;font-weight:600;padding:.45rem .8rem;border-radius:9px;font-size:.85rem;white-space:nowrap;text-decoration:none">Installer le certificat</a>
       <button id="pwaInstall" style="padding:.45rem .8rem;font-size:.85rem">Installer</button>
       <button id="pwaClose" aria-label="Fermer" style="background:transparent;color:var(--muted);border:none;font-size:1.2rem;cursor:pointer;padding:0 .2rem">×</button>
     </div>
@@ -447,7 +448,15 @@ function intranet_foot(): void {
   var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.08});
   els.forEach(function(el,i){el.style.transitionDelay=(Math.min(i,8)*40)+'ms';io.observe(el);});
 })();
-if('serviceWorker' in navigator){navigator.serviceWorker.register('/portal/sw.js').catch(function(){});}
+// Le service worker ne s'enregistre QUE sur une origine sûre. Le portail présente un
+// certificat de l'autorité Bastion : tant qu'un appareil ne la reconnaît pas, le
+// navigateur affiche « Non sécurisé », REFUSE le service worker, et l'installation
+// devient impossible. On retient donc l'échec au lieu de l'avaler — la bannière s'en
+// sert pour expliquer ce qui manque.
+window.__pwaSecure = (window.isSecureContext === true);
+if ('serviceWorker' in navigator && window.__pwaSecure) {
+  navigator.serviceWorker.register('/portal/sw.js').catch(function () { window.__pwaSecure = false; });
+}
 (function(){
   var b=document.getElementById('pwaBanner'); if(!b)return;
   var standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone;
@@ -457,6 +466,21 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/portal/sw.js
   install.addEventListener('click',function(){if(deferred){deferred.prompt();deferred.userChoice.finally(function(){b.style.display='none';deferred=null;});}});
   close.addEventListener('click',function(){b.style.display='none';localStorage.setItem('pwaDismiss','1');});
   if(/iphone|ipad|ipod/i.test(navigator.userAgent)&&!standalone){install.style.display='none';hint.textContent='Appuyez sur Partager puis « Sur l\'écran d\'accueil ».';b.style.display='flex';}
+  // ── DIRE CE QUI MANQUE, PLUTÔT QUE DE SE TAIRE ────────────────────────────
+  // Sans origine sûre, « beforeinstallprompt » ne se déclenche JAMAIS : la bannière
+  // ne s'affichait pas, et l'agent n'avait aucun moyen de comprendre pourquoi son
+  // téléphone refusait d'installer l'application. On l'affiche donc précisément dans
+  // ce cas, avec la marche à suivre et le certificat à portée de doigt.
+  if (!window.__pwaSecure) {
+    var ios2 = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    install.style.display = 'none';
+    var ca = document.getElementById('pwaCa'); if (ca) { ca.style.display = 'inline-block'; }
+    hint.innerHTML = "Votre appareil ne reconnaît pas encore la passerelle : installez le certificat "
+      + "Bastion, puis rouvrez cette page — l'installation deviendra possible."
+      + (ios2 ? " Sur iPhone : R\u00e9glages \u2192 G\u00e9n\u00e9ral \u2192 VPN et gestion des appareils, "
+              + "puis R\u00e9glages \u2192 G\u00e9n\u00e9ral \u2192 Informations \u2192 Confiance certificats." : "");
+    b.style.display = 'flex';
+  }
 })();
 (function(){
   var tb=document.getElementById('themeBtn');

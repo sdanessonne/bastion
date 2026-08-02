@@ -93,7 +93,39 @@ intranet_head('Accueil', 'home');
   .tile-x:focus-visible{outline:none;border-color:var(--accent);background:rgba(56,189,248,.09)}
   .tile-x:focus-visible .chev{opacity:1;transform:none}
 
-  @media(max-width:760px){.home-cols{grid-template-columns:1fr!important}.hero-x h1{font-size:1.5rem}}
+  /* ── Téléphone ────────────────────────────────────────────────────────────
+     La barre de navigation du bas est fixe : le socle commun réserve déjà la place
+     sous le contenu. Ici on s'occupe de ce que cette page ajoute — le héros trop
+     large, les métadonnées qui s'entassent, les bandeaux d'actualité démesurés. */
+  @media(max-width:760px){
+    .home-cols{grid-template-columns:1fr!important;gap:1.2rem}
+    .hero-x{padding:1.2rem 1.15rem;border-radius:15px}
+    .hero-x h1{font-size:1.4rem}
+    .hero-x::after{width:260px;height:260px}          /* halo proportionné à l'écran */
+    .hero-x .meta{gap:.5rem .9rem;font-size:.78rem;margin-top:.8rem}
+    /* Les services d'abord : sur un téléphone on vient chercher un accès rapide,
+       pas lire les actualités. L'ordre du HTML garde le sens pour un lecteur
+       d'écran ; seul l'affichage change. */
+    .home-cols > aside{order:-1}
+    .tile-x{padding:1rem 1.05rem}                     /* cible tactile confortable */
+    .news{margin-bottom:1.3rem}
+    .news .prose img{max-height:180px;object-fit:cover;width:100%}
+  }
+  @media(max-width:430px){
+    .hero-x h1{font-size:1.25rem}
+    .hero-x .meta span:nth-child(n+3){display:none}   /* on garde l'essentiel */
+    .sec-t{font-size:.7rem;letter-spacing:1.1px}
+  }
+  /* Sur écran tactile, « :hover » reste collé après le doigt : les effets de survol
+     y sont donc inutiles, et trompeurs — une tuile paraît sélectionnée alors qu'on
+     l'a simplement effleurée. On les réserve aux dispositifs de pointage. */
+  @media(hover:none){
+    .tile-x:hover{transform:none;background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.09)}
+    .tile-x:hover .emo{transform:none}
+    .tile-x:hover::before{transform:scaleY(0)}
+    .news:hover{transform:none}
+    .tile-x:active{transform:scale(.98);background:rgba(56,189,248,.12)}
+  }
 
   /* Réglage système « animations réduites » : on coupe TOUT mouvement, halo compris.
      Ce n'est pas une préférence esthétique — certains troubles vestibulaires rendent
