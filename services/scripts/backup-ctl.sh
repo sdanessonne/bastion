@@ -36,6 +36,24 @@ is_removable_part() {
   [ "$_t" = "part" ] && [ -n "$_pk" ] && [ "$(cat "/sys/block/$_pk/removable" 2>/dev/null)" = "1" ]
 }
 
+# Un DISQUE amovible entier, sans table de partition exploitable. C'est le cas d'une
+# clé neuve ou d'une clé qu'on vient d'effacer — précisément celle qu'on veut
+# formater. La première version ne listait que des PARTITIONS : ces clés-là
+# n'apparaissaient nulle part, et la fonction « formater » était inutile au moment
+# où elle servait le plus.
+# Le contrôle de taille n'est pas superflu : un lecteur de cartes vide se présente
+# comme un disque amovible de 0 octet.
+is_removable_disk() {
+  _n=$(basename "$1")
+  _t=$(lsblk -rno TYPE "$1" 2>/dev/null | head -1)
+  [ "$_t" = "disk" ] || return 1
+  [ "$(cat "/sys/block/$_n/removable" 2>/dev/null)" = "1" ] || return 1
+  [ "$(cat "/sys/block/$_n/size" 2>/dev/null || echo 0)" -gt 0 ] || return 1
+  # Jamais le disque qui porte la racine, même s'il se déclare amovible.
+  _rootpk=$(lsblk -rno PKNAME "$(findmnt -no SOURCE / 2>/dev/null)" 2>/dev/null | head -1)
+  [ "$_n" != "$_rootpk" ]
+}
+
 # Écrit l'état de progression (lu par la console via 'status').
 setstatus() { # state op pct step [result]
   {
@@ -250,6 +268,20 @@ case "$action" in
             rmdir "$_tmp" 2>/dev/null
           fi
           printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$p" "${lbl:-sans nom}" "$fst" "$sz" "$mp" "$tot" "$use"
+        done
+        # Puis les disques amovibles SANS partition exploitable : clés neuves ou
+        # effacées. Elles n'ont ni étiquette ni système de fichiers — on les annonce
+        # telles quelles, « à préparer », pour qu'elles soient au moins formatables.
+        lsblk -rno PATH,TYPE 2>/dev/null | while read -r d t; do
+          [ "$t" = "disk" ] || continue
+          is_removable_disk "$d" || continue
+          # A-t-il déjà une partition avec un système de fichiers ? Alors il est
+          # couvert par la boucle précédente, et le lister deux fois n'aiderait pas.
+          if lsblk -rno TYPE,FSTYPE "$d" 2>/dev/null | awk '$1=="part" && $2!=""{f=1} END{exit !f}'; then
+            continue
+          fi
+          sz=$(lsblk -dno SIZE "$d" 2>/dev/null | tr -d ' ')
+          printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$d" "clé non préparée" "aucun" "$sz" "" "0" "0"
         done ;;
       export)
         dev="${3:-}"
@@ -276,7 +308,17 @@ case "$action" in
         # l'utilisateur distrait, jamais le système.
         dev="${3:-}"; fs="${4:-exfat}"
         [ -n "$dev" ] || { echo "usage: usb format <device> [exfat|ntfs|fat32]" >&2; exit 2; }
-        is_removable_part "$dev" || { echo "REFUS: $dev n'est pas une partition USB amovible" >&2; exit 2; }
+        # Deux cas : une partition existante, ou un DISQUE entier sans table de
+        # partition — la clé neuve. Dans le second on prépare le support, sinon la
+        # fonction serait inutile là où elle sert le plus.
+        entier=0
+        if is_removable_part "$dev"; then
+            entier=0
+        elif is_removable_disk "$dev"; then
+            entier=1
+        else
+            echo "REFUS: $dev n'est ni une partition ni un disque USB amovible" >&2; exit 2
+        fi
         # Une partition amovible peut malgré tout porter le système : un serveur
         # démarré sur clé USB, ou la clé d'installation encore branchée. On refuse
         # tout ce qui est monté sur un chemin vital, et le support d'amorçage.
@@ -302,12 +344,38 @@ case "$action" in
         # 4 Go, et une sauvegarde chiffrée les dépasse vite. La console propose donc
         # exFAT par défaut.
         [ -n "$_mp" ] && { umount "$dev" 2>/dev/null || { echo "ECHEC: $dev est occupe (demonter d'abord)" >&2; exit 1; }; }
-        if $mk $opt "$dev" >/dev/null 2>&1; then
+
+        cible="$dev"
+        if [ "$entier" = 1 ]; then
+            # Clé neuve : on lui pose une table de partition et UNE partition unique
+            # occupant tout le support. Table MS-DOS et non GPT : c'est ce que tous les
+            # Windows savent lire sans discuter, et une clé de sauvegarde a vocation à
+            # être relue sur n'importe quel poste, y compris ancien.
+            command -v sfdisk >/dev/null 2>&1 || { echo "ECHEC: sfdisk absent (paquet util-linux)" >&2; exit 1; }
+            for _p in $(lsblk -rno PATH,TYPE "$dev" 2>/dev/null | awk '$2=="part"{print $1}'); do
+                umount "$_p" 2>/dev/null || true
+            done
+            wipefs -a "$dev" >/dev/null 2>&1 || true
+            printf 'label: dos\n,,07\n' | sfdisk "$dev" >/dev/null 2>&1 || {
+                echo "ECHEC: table de partition impossible sur $dev" >&2; exit 1; }
+            partprobe "$dev" >/dev/null 2>&1 || true
+            # Le noyau met un instant à publier la nouvelle partition : sans cette
+            # attente, mkfs échouerait sur un fichier de périphérique inexistant.
+            _n=0
+            while [ $_n -lt 10 ]; do
+                cible=$(lsblk -rno PATH,TYPE "$dev" 2>/dev/null | awk '$2=="part"{print $1; exit}')
+                [ -b "$cible" ] && break
+                sleep 1; _n=$((_n + 1))
+            done
+            [ -b "$cible" ] || { echo "ECHEC: partition non apparue sur $dev" >&2; exit 1; }
+        fi
+
+        if $mk $opt "$cible" >/dev/null 2>&1; then
             sync
-            echo "formate: $dev en $fs (etiquette BASTION)"
+            echo "formate: $cible en $fs (etiquette BASTION)"
             exit 0
         else
-            echo "ECHEC du formatage de $dev en $fs" >&2
+            echo "ECHEC du formatage de $cible en $fs" >&2
             exit 1
         fi ;;
       *) echo "usage: usb list | export <device> | format <device> [fs]" >&2; exit 2 ;;
