@@ -17,8 +17,18 @@ log(){ printf '\033[1;32m[Bastion]\033[0m %s\n' "$*"; }
 die(){ printf '\033[1;31m[Bastion]\033[0m %s\n' "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "Lancer en root (sudo)."
 
-# ── Secrets ──────────────────────────────────────────────────────────────────
+# ── Où vit le code ───────────────────────────────────────────────────────────
+# selfupdate, selftest et import-media codaient ce chemin en dur, sur
+# /home/proxyfibre/proxyFibre. Une installation faite depuis un compte portant un
+# autre nom donnait un serveur parfaitement fonctionnel mais INCAPABLE de se
+# mettre à jour, et un auto-test qui ne contrôlait rien — sans qu'aucun des deux
+# ne s'en plaigne. Ce script, lui, sait où il est : on l'écrit une fois pour
+# toutes, et les autres le lisent.
 mkdir -p /etc/proxyfibre
+printf 'REPO_DIR=%s\n' "$REPO_DIR" > /etc/proxyfibre/repo.env
+chmod 644 /etc/proxyfibre/repo.env
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
 gen(){ head -c 32 /dev/urandom | sha256sum | cut -c1-64; }
 # Mot de passe lisible et TYPOGRAPHIABLE : il sera tapé à la main. Alphabet sans
 # caractère ambigu (ni O/0, ni I/l/1), présenté en groupes de 5.

@@ -119,9 +119,15 @@ fi
 
 # ── Prise en compte : monter l'ISO Windows et publier les partages ───────────
 # setup-pxe.sh est idempotent : il ne refait que ce qui a changé.
-if [ -x /home/proxyfibre/proxyFibre/services/scripts/setup-pxe.sh ]; then
+# Où vit le code : écrit par deploy.sh, qui est le seul à le savoir de source
+# sûre. Le chemin était codé en dur sur /home/proxyfibre/proxyFibre — une
+# installation depuis un compte portant un autre nom donnait alors un serveur
+# incapable de se mettre à jour, sans que rien ne le signale.
+[ -r /etc/proxyfibre/repo.env ] && . /etc/proxyfibre/repo.env
+REPO_DIR="${REPO_DIR:-/home/proxyfibre/proxyFibre}"
+if [ -x "$REPO_DIR/services/scripts/setup-pxe.sh" ]; then
     log "Prise en compte par le serveur PXE…"
-    bash /home/proxyfibre/proxyFibre/services/scripts/setup-pxe.sh >>"$LOG" 2>&1 \
+    bash "$REPO_DIR/services/scripts/setup-pxe.sh" >>"$LOG" 2>&1 \
         && log "Serveur PXE actualisé." \
         || log "ATTENTION : actualisation du serveur PXE en échec — voir $LOG"
 fi

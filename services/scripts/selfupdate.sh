@@ -22,7 +22,12 @@
 set -uo pipefail
 
 CONF=/etc/proxyfibre/update.env
-REPO_DIR=/home/proxyfibre/proxyFibre
+# Où vit le code : écrit par deploy.sh, qui est le seul à le savoir de source
+# sûre. Le chemin était codé en dur sur /home/proxyfibre/proxyFibre — une
+# installation depuis un compte portant un autre nom donnait alors un serveur
+# incapable de se mettre à jour, sans que rien ne le signale.
+[ -r /etc/proxyfibre/repo.env ] && . /etc/proxyfibre/repo.env
+REPO_DIR="${REPO_DIR:-/home/proxyfibre/proxyFibre}"
 UNIT=proxyfibre-selfupdate
 STATE_DIR=/var/lib/proxyfibre
 LAST="$STATE_DIR/git-last-apply"

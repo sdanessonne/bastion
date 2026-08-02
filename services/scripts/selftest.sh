@@ -14,9 +14,13 @@ MODE="${1:-full}"
 WWW=/var/www/admin
 BASE=https://127.0.0.1:8443
 SBIN=/usr/local/sbin
-# Même emplacement que celui utilisé par proxyfibre-selfupdate. Un chemin faux ne
-# provoquerait AUCUNE erreur — les contrôles ne trouveraient simplement rien à inspecter
-# et passeraient au vert à tort, ce qui est pire qu'un échec.
+# Où vit le code. Un chemin faux ne provoquerait AUCUNE erreur : les contrôles ne
+# trouveraient simplement rien à inspecter et passeraient au vert à tort — ce qui
+# est pire qu'un échec. Le chemin était code en dur sur /home/proxyfibre/proxyFibre ;
+# une installation depuis un compte portant un autre nom donnait alors un serveur
+# incapable de se mettre à jour, sans que rien ne le signale. deploy.sh, lui, sait
+# où il est : il l'écrit dans repo.env, et tout le monde le relit ici.
+[ -r /etc/proxyfibre/repo.env ] && . /etc/proxyfibre/repo.env
 REPO_DIR="${REPO_DIR:-/home/proxyfibre/proxyFibre}"
 
 pass=0; fail=0; warn=0
