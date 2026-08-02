@@ -171,10 +171,17 @@ $pdf->SetTextColor(140, 140, 140);
 $pdf->Cell(0, 5, $w2('Bastion — fiche établie le ' . date('d/m/Y à H\hi')
     . ' · canal ' . (int) ($etat['canal'] ?? 0)), 0, 0, 'C');
 
-audit('wifi.fiche', 'fiche de connexion PDF' . ($ouvert ? ' (réseau ouvert)' : ' (avec phrase secrète)'));
+// Deux modes de remise. « attachment » force le téléchargement ; un aperçu dans une
+// fenêtre de la console a besoin de « inline », sinon le navigateur téléchargerait le
+// fichier au lieu de l'afficher dans le cadre.
+$apercu = isset($_GET['apercu']);
+audit('wifi.fiche', ($apercu ? 'aperçu' : 'téléchargement') . ' de la fiche de connexion'
+    . ($ouvert ? ' (réseau ouvert)' : ' (avec phrase secrète)'));
 
 $nom = 'Bastion-WiFi-' . preg_replace('/[^A-Za-z0-9_-]/', '', $ssid) . '.pdf';
 header('Content-Type: application/pdf');
-header('Content-Disposition: attachment; filename="' . $nom . '"');
-header('Cache-Control: private, no-store');
-$pdf->Output('D', $nom);
+header('Content-Disposition: ' . ($apercu ? 'inline' : 'attachment') . '; filename="' . $nom . '"');
+// Le document porte la phrase secrète : il ne doit rester ni dans le cache du
+// navigateur ni dans celui d'un intermédiaire.
+header('Cache-Control: private, no-store, max-age=0');
+$pdf->Output($apercu ? 'I' : 'D', $nom);

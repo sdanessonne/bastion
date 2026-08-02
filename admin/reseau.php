@@ -300,9 +300,9 @@ pf_header('Supervision réseau', 'reseau.php');
       </label>
       <div style="display:flex;gap:.6rem;flex-wrap:wrap">
         <button class="btn" type="submit">Appliquer</button>
-        <a class="btn" href="wifi-fiche.php" target="_blank" rel="noopener"
-           style="background:var(--panel2);color:var(--text);text-decoration:none;display:inline-block"
-           title="Fiche PDF avec le QR de connexion, à afficher ou à remettre">📄 Fiche PDF</a>
+        <button type="button" class="btn" id="btn-fiche"
+                style="background:var(--panel2);color:var(--text)"
+                title="Fiche PDF avec le QR de connexion, à afficher ou à remettre">📄 Fiche PDF</button>
       </div>
 
       <!-- Réseau ouvert : hors de la grille, sur toute la largeur, avec ce qu'il faut
@@ -419,6 +419,52 @@ pf_header('Supervision réseau', 'reseau.php');
     </p>
   </div>
 </section>
+
+<!-- ── Aperçu de la fiche ────────────────────────────────────────────────────
+     Le cadre reste VIDE tant que la fenêtre n'est pas ouverte. Charger le PDF au
+     chargement de la page le ferait fabriquer à chaque visite — et inscrirait une
+     divulgation au journal d'audit à chaque fois, ce qui rendrait ce journal
+     inexploitable pour ce qu'il sert : savoir qui a vu la phrase secrète. -->
+<div class="modal-ov" id="fichemodal">
+  <div class="modal" style="max-width:min(860px,94vw)" role="dialog" aria-modal="true" aria-labelledby="fichetitre">
+    <div class="modal-head">
+      <h2 id="fichetitre">📄 Fiche de connexion Wi-Fi</h2>
+      <button type="button" class="btn" id="fiche-x" style="background:transparent;color:var(--muted);padding:.3rem .6rem"
+              aria-label="Fermer">✕</button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <iframe id="fiche-cadre" title="Aperçu de la fiche" style="width:100%;height:min(70vh,780px);border:0;display:block;background:#525659"></iframe>
+    </div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;padding:1rem 1.3rem;border-top:1px solid var(--line);flex-wrap:wrap">
+      <a class="btn" href="wifi-fiche.php" style="text-decoration:none">⬇ Télécharger</a>
+      <button type="button" class="btn" id="fiche-close" style="background:var(--panel2);color:var(--text)">Fermer</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var ov = document.getElementById('fichemodal'),
+      cadre = document.getElementById('fiche-cadre'),
+      ouvrir = document.getElementById('btn-fiche');
+  if (!ov || !ouvrir) return;
+  function fermer() {
+    ov.classList.remove('open');
+    // On vide le cadre : le PDF porte la phrase secrète, il n'a pas à rester
+    // affiché en arrière-plan d'une console qu'on laisse ouverte.
+    cadre.removeAttribute('src');
+  }
+  ouvrir.addEventListener('click', function () {
+    cadre.src = 'wifi-fiche.php?apercu=1&t=' + Date.now();
+    ov.classList.add('open');
+  });
+  document.getElementById('fiche-x').addEventListener('click', fermer);
+  document.getElementById('fiche-close').addEventListener('click', fermer);
+  ov.addEventListener('click', function (e) { if (e.target === ov) fermer(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && ov.classList.contains('open')) fermer();
+  });
+})();
+</script>
 <?php endif; ?>
 <?php ?>
 <style>
