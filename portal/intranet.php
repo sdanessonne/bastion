@@ -22,7 +22,7 @@ foreach (preg_split('/\r?\n/', intranet_setting('intranet_links',
 intranet_head('Accueil', 'home');
 ?>
 <div class="card hero">
-  <h1 style="margin:0 0 .3rem">Bonjour<?= $me['user'] !== '' ? ' ' . e_($me['user']) : '' ?> 👋</h1>
+  <h1 style="margin:0 0 .3rem">Bonjour<?= !empty($me['affiche']) ? ' ' . e_($me['affiche']) : '' ?> 👋</h1>
   <p class="muted" style="margin:0"><?= e_(intranet_setting('intranet_welcome', 'Bienvenue sur l’espace interne. Retrouvez ici l’actualité et vos services.')) ?></p>
 </div>
 

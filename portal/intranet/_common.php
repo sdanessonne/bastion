@@ -62,7 +62,36 @@ function intranet_user(): array {
         && ($d = base64_decode($x['custom'], true)) && preg_match('/user=([^,]+)/', $d, $m)) {
         $u = $m[1];
     }
-    return $c = ['user' => $u, 'auth' => $auth];
+    // ── LE MATRICULE NE SUFFIT PAS ──────────────────────────────────────────
+    // L'intranet accueillait l'agent par « Bonjour 0110480 ». C'est son
+    // identifiant technique, pas son nom : la page compte affichait deja
+    // « MONESTIER Mickael » au meme instant, ce qui rendait l'ecart d'autant plus
+    // visible. On resout donc l'identite ici, une fois, pour tout l'intranet.
+    $nom = ''; $prenom = ''; $photo = '';
+    if ($auth && $u !== '' && ($db = intranet_db()) !== null) {
+        try {
+            $st = $db->prepare('SELECT nom, prenom FROM pf_user_profile WHERE username = ? LIMIT 1');
+            $st->execute([$u]);
+            if ($p = $st->fetch(PDO::FETCH_ASSOC)) { $nom = (string) $p['nom']; $prenom = (string) $p['prenom']; }
+        } catch (Throwable $e) {}
+        // Seulement la version de la photo : inutile de charger 65 Ko de binaire
+        // pour savoir s'il y en a une.
+        try {
+            $st = $db->prepare('SELECT v FROM pf_user_photo WHERE username = ? LIMIT 1');
+            $st->execute([$u]);
+            $photo = (string) ($st->fetchColumn() ?: '');
+        } catch (Throwable $e) {}
+    }
+    return $c = [
+        'user'    => $u,
+        'auth'    => $auth,
+        'nom'     => $nom,
+        'prenom'  => $prenom,
+        'photo'   => $photo,
+        // Ce qu'on affiche : le prenom si on le connait, le matricule sinon.
+        'affiche' => $prenom !== '' ? $prenom : $u,
+        'complet' => trim($prenom . ' ' . $nom) ?: $u,
+    ];
 }
 
 function intranet_db(): ?PDO {
@@ -348,7 +377,14 @@ function intranet_head(string $title, string $active = ''): void {
     ?>
     <?php if (!empty($_u['auth'])): ?>
       <?php if (!empty($_u['user'])): ?>
-        <span class="act" style="opacity:.75" title="Session ouverte">👤 <?= e_($_u['user']) ?></span>
+        <span class="act" style="opacity:.85;display:inline-flex;align-items:center;gap:.45rem" title="Session ouverte">
+          <?php if (!empty($_u['photo'])): ?>
+            <img src="/portal/photo.php?v=<?= e_($_u['photo']) ?>" alt=""
+                 style="width:26px;height:26px;border-radius:50%;object-fit:cover;
+                        border:1px solid rgba(56,189,248,.5)">
+          <?php else: ?>👤<?php endif; ?>
+          <?= e_($_u['complet']) ?>
+        </span>
       <?php endif; ?>
       <a class="act" href="/portal/account.php">Mon compte</a>
       <a class="act" href="/portal/logout.php">Se déconnecter</a>
