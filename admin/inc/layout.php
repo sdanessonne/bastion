@@ -95,8 +95,24 @@ function pf_header(string $title, string $active = ''): void {
     .usermenu-pop .ico{width:1.2rem;text-align:center}
     @media (max-width:640px){.uname{display:none}}
   </style>
+  <style>
+    /* ── Barre de chargement ─────────────────────────────────────────────────
+       La console rend ses pages côté serveur : entre le clic et l'affichage, il
+       ne se passe visuellement RIEN. Sur les pages lentes — l'annuaire, le
+       journal — l'administrateur reclique, croyant n'avoir pas cliqué.
+       La barre part au clic et ne DISPARAÎT qu'au chargement de la page
+       suivante : c'est le navigateur qui la fait disparaître en remplaçant le
+       document, et non un minuteur qui prétendrait savoir quand c'est fini. */
+    #pf-load{position:fixed;top:0;left:0;height:3px;width:0;z-index:9999;
+      background:linear-gradient(90deg,var(--accent2),var(--accent));
+      box-shadow:0 0 8px rgba(56,189,248,.6);opacity:0;
+      transition:width .25s ease-out,opacity .2s ease}
+    #pf-load.on{opacity:1}
+    @media (prefers-reduced-motion:reduce){#pf-load{transition:opacity .15s ease}}
+  </style>
 </head>
 <body>
+<div id="pf-load" role="presentation"></div>
 <?php if ($embed): ?>
   <style>#splash,.sidebar,.topbar,.nav-backdrop{display:none!important}
     .content{margin-left:0!important}.page{padding:1rem 1.2rem!important;max-width:none!important}</style>
@@ -188,6 +204,57 @@ function pf_footer(): void {
     </div>
   </main>
   <script>
+    // ── Barre de chargement, en haut de l'écran ───────────────────────────────
+    (function () {
+      var b = document.getElementById('pf-load');
+      if (!b) { return; }
+      var t = null, p = 0;
+
+      function demarrer() {
+        if (t) { return; }                  // déjà en route : un second clic ne relance pas
+        p = 8; b.classList.add('on'); b.style.width = p + '%';
+        // On progresse par pas DÉCROISSANTS et l'on plafonne à 92 %. Atteindre 100 %
+        // serait mentir : la page n'est pas prête, et une barre pleine qui stagne
+        // inquiète davantage qu'une barre qui avance encore.
+        t = setInterval(function () {
+          p += Math.max(0.4, (92 - p) / 12);
+          if (p > 92) { p = 92; }
+          b.style.width = p + '%';
+        }, 220);
+      }
+      function arreter() {
+        if (t) { clearInterval(t); t = null; }
+        b.style.width = '0'; b.classList.remove('on');
+      }
+
+      document.addEventListener('click', function (ev) {
+        var a = ev.target.closest && ev.target.closest('a');
+        if (!a || ev.defaultPrevented) { return; }
+        // Ce qui ne provoque PAS de navigation dans cet onglet : nouvel onglet,
+        // téléchargement, ancre interne, protocole autre, clic modifié (ctrl/cmd
+        // ouvre en arrière-plan), ou bouton du milieu.
+        if (a.target === '_blank' || a.hasAttribute('download')) { return; }
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) { return; }
+        var h = a.getAttribute('href') || '';
+        if (h === '' || h.charAt(0) === '#' || /^(javascript|mailto|tel):/i.test(h)) { return; }
+        if (a.origin && a.origin !== location.origin) { return; }   // site externe
+        demarrer();
+      }, true);
+
+      document.addEventListener('submit', function (ev) {
+        var f = ev.target;
+        if (ev.defaultPrevented || (f && f.target === '_blank')) { return; }
+        demarrer();
+      }, true);
+
+      // Retour par le bouton « Précédent » : le navigateur restaure la page telle
+      // qu'elle était, barre comprise — elle resterait figée à 92 % sans ceci.
+      window.addEventListener('pageshow', arreter);
+      // Navigation annulée (échappement, téléchargement déclenché à la place) :
+      // sans cela la barre resterait indéfiniment à l'écran.
+      window.addEventListener('focus', function () { setTimeout(arreter, 1200); });
+    })();
+
     // Splashscreen : affiché une fois par session, fondu à la fin du chargement.
     (function(){
       var s=document.getElementById('splash'); if(!s||s.style.display==='none') return;
