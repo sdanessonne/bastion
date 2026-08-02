@@ -63,6 +63,25 @@ fi
 ADMINPASS="${AD_ADMIN_PASS}"
 echo "[AD] Domaine cible : ${REALM} (NetBIOS ${DOMAIN})"
 
+# ── Les paquets, installés et non supposés ───────────────────────────────────
+# L'en-tête les déclarait « prérequis » et le script partait du principe qu'on les
+# avait posés. Sur un serveur neuf, il déroulait donc six étapes — arrêt des
+# services, adresse .2, DNS, nom d'hôte — avant de buter sur « samba-tool :
+# commande introuvable », laissant la machine à moitié configurée pour un domaine
+# qui n'existait pas. Un prérequis qu'on peut satisfaire soi-même n'a pas à être
+# une condition d'entrée.
+if ! command -v samba-tool >/dev/null 2>&1; then
+    echo "[AD] Installation des paquets Samba (absents)…"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        samba smbclient krb5-user winbind dnsutils acl attr >/dev/null 2>&1 || true
+    command -v samba-tool >/dev/null 2>&1 || {
+        echo "[AD] ECHEC : samba-tool reste introuvable après installation."
+        echo "     Vérifier l'accès au dépôt Debian, puis relancer ce script."
+        exit 1
+    }
+    echo "[AD]   samba-tool $(samba-tool --version 2>/dev/null | head -1)"
+fi
+
 echo "[AD] Arrêt des services Samba classiques (mode DC uniquement)…"
 systemctl disable --now smbd nmbd winbind samba 2>/dev/null || true
 
