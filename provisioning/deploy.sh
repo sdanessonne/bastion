@@ -254,8 +254,15 @@ install -D -m640 /dev/null /etc/proxyfibre/portal.env
 printf 'FAS_KEY="%s"\nRADIUS_SECRET="%s"\n' "$FAS_KEY" "$RADIUS_SECRET" > /etc/proxyfibre/portal.env
 chgrp www-data /etc/proxyfibre/portal.env
 # Autoriser Apache (www-data) à interroger OpenNDS pour le tableau de bord utilisateur.
+# Deconnexion d'un client : ndsctl NE SUFFIT PAS. Il retire les regles de pare-feu
+# mais laisse vivre les connexions deja etablies dans le suivi de connexions du
+# noyau -- le client continue de naviguer sous une session officiellement close.
+# « conntrack » est donc un prerequis, pas un agrement.
+DEBIAN_FRONTEND=noninteractive apt-get install -y conntrack >/dev/null 2>&1 || true
+install -m755 "${REPO_DIR}/services/scripts/deauth.sh" /usr/local/sbin/proxyfibre-deauth
 cat > /etc/sudoers.d/proxyfibre-portal <<'SUD'
 www-data ALL=(root) NOPASSWD: /usr/bin/ndsctl json, /usr/bin/ndsctl deauth *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-deauth *
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-portal
 # Apache écoute sur 2080 (OpenNDS réserve 80/443 pour la capture).

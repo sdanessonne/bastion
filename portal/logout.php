@@ -10,9 +10,18 @@ $clientIp = $_SERVER['REMOTE_ADDR'] ?? '';
 $done = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && filter_var($clientIp, FILTER_VALIDATE_IP)) {
-    // ndsctl accepte l'IP directement : deauth mac|ip|token
-    shell_exec('sudo /usr/bin/ndsctl deauth ' . escapeshellarg($clientIp) . ' 2>/dev/null');
-    $done = true;
+    // « proxyfibre-deauth » et non « ndsctl deauth » : ce dernier retire bien les
+    // règles de pare-feu, mais laisse VIVRE les connexions déjà établies dans le
+    // suivi de connexions du noyau. Mesuré ici : 46 connexions survivaient à la
+    // déconnexion, le navigateur les réutilisait, et l'agent restait en ligne sous
+    // une session officiellement close. Le script purge donc aussi le conntrack.
+    $r = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-deauth '
+        . escapeshellarg($clientIp) . ' 2>&1'));
+    // On ne déclare plus la réussite d'office. La version précédente affichait
+    // « Vous êtes déconnecté » quoi qu'il arrive — y compris quand la commande
+    // échouait. Un écran rassurant et faux est pire qu'un message d'échec.
+    $done = (strpos($r, 'deconnecte:') === 0 || strpos($r, 'absent:') === 0);
+    $erreur = $done ? '' : $r;
 }
 ?>
 <!doctype html>
@@ -28,11 +37,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && filter_var($clientIp, FILTER_VALIDA
 <body>
   <main class="card centered" style="align-self:center">
     <img class="logo" src="/portal/assets/bastion-icon.svg" alt="Bastion">
-    <h1><?= $done ? 'Vous êtes déconnecté' : 'Déconnexion' ?></h1>
+    <h1><?= $done ? 'Vous êtes déconnecté' : (!empty($erreur) ? 'Déconnexion incomplète' : 'Déconnexion') ?></h1>
     <p class="muted">
-      <?= $done
-        ? "Votre accès à Internet a été fermé. Reconnectez-vous pour y accéder de nouveau."
-        : "Utilisez le bouton du tableau de bord pour vous déconnecter." ?>
+      <?php if ($done): ?>
+        Votre accès à Internet a été fermé, et les connexions en cours ont été coupées.
+        Reconnectez-vous pour y accéder de nouveau.
+      <?php elseif (!empty($erreur)): ?>
+        La passerelle n'a pas confirmé la fermeture de votre accès. Signalez-le à
+        l'administrateur ; votre session est peut-être encore ouverte.
+        <br><span class="mono small"><?= htmlspecialchars($erreur) ?></span>
+      <?php else: ?>
+        Utilisez le bouton du tableau de bord pour vous déconnecter.
+      <?php endif; ?>
     </p>
     <a class="btn" href="/portal/fas.php">Se reconnecter</a>
   </main>

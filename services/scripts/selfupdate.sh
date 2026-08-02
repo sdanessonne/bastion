@@ -330,6 +330,7 @@ case "${1:-}" in
 755 image                services/scripts/image-ctl.sh
 755 import-media         services/scripts/import-media.sh
 755 quarantine           services/scripts/quarantine-ctl.sh
+755 deauth               services/scripts/deauth.sh
 755 wifi                 services/scripts/wifi-ctl.sh
 755 blacklist            services/scripts/blacklist-ctl.sh
 755 selftest             services/scripts/selftest.sh
