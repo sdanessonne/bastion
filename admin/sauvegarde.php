@@ -99,6 +99,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (function_exists('audit')) { audit('backup.usb_export', $ok ? $dev : 'echec'); }
             $flash = [$ok ? 'Sauvegarde copiée sur la clé USB (' . $dev . ').' : 'Échec de l\'export : ' . $r, $ok ? 'ok' : 'err'];
         }
+    } elseif ($do === 'usb_format') {
+        // Effacement complet d'une clé. La confirmation du navigateur ne compte pas :
+        // elle se contourne. On exige la saisie EXACTE du chemin du périphérique —
+        // le seul geste qu'on ne fait pas par distraction. Le script revalide ensuite
+        // « amovible » et refuse toute partition système.
+        $dev  = (string) ($_POST['dev'] ?? '');
+        $fs   = (string) ($_POST['fs'] ?? 'exfat');
+        $conf = trim((string) ($_POST['confirm_dev'] ?? ''));
+        if (!preg_match('#^/dev/[a-zA-Z0-9]+$#', $dev)) {
+            $flash = ['Cible USB invalide.', 'err'];
+        } elseif (!in_array($fs, ['exfat', 'ntfs', 'fat32'], true)) {
+            $flash = ['Système de fichiers non pris en charge.', 'err'];
+        } elseif ($conf !== $dev) {
+            $flash = ['Formatage annulé : recopiez exactement ' . e($dev) . ' pour confirmer.', 'err'];
+        } else {
+            $r  = trim(bk('usb', 'format', $dev, $fs));
+            $ok = strpos($r, 'formate:') === 0;
+            if (function_exists('audit')) { audit('backup.usb_format', ($ok ? '' : 'ECHEC ') . $dev . ' → ' . $fs); }
+            $flash = [$ok ? 'Clé formatée en ' . $fs . ' (' . $dev . '), étiquette BASTION.'
+                          : 'Échec du formatage : ' . $r, $ok ? 'ok' : 'err'];
+        }
     } elseif ($do === 'offsite_set') {
         $host  = trim((string) ($_POST['host'] ?? ''));
         $share = trim((string) ($_POST['share'] ?? ''));
@@ -139,7 +160,16 @@ $usbTargets = [];
 foreach (explode("\n", bk('usb', 'list')) as $l) {
     $p = explode("\t", $l);
     if (count($p) >= 4 && $p[0] !== '') {
-        $usbTargets[] = ['dev' => $p[0], 'label' => $p[1], 'fs' => $p[2], 'size' => $p[3], 'mp' => $p[4] ?? ''];
+        // tot/use en octets : « 0 » signifie « illisible » (système de fichiers
+        // inconnu du noyau, clé défectueuse). On l'affiche alors comme tel plutôt
+        // que de dessiner une jauge vide, qui laisserait croire à une clé neuve.
+        $tot = (int) ($p[5] ?? 0);
+        $use = (int) ($p[6] ?? 0);
+        $usbTargets[] = [
+            'dev' => $p[0], 'label' => $p[1], 'fs' => $p[2], 'size' => $p[3],
+            'mp'  => $p[4] ?? '', 'tot' => $tot, 'use' => $use,
+            'pct' => $tot > 0 ? (int) round($use * 100 / $tot) : -1,
+        ];
     }
 }
 
@@ -305,6 +335,43 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <div class="flash" style="margin:.4rem 0">Aucune clé USB détectée. Branchez une clé (VirtualBox : menu
         <em>Périphériques → USB</em> pour la rattacher à la VM), puis rechargez cette page.</div>
     <?php else: ?>
+      <?php
+      // Octets → unité lisible. Une jauge sans chiffres ne dit pas si les 12 % libres
+      // sont 400 Mo ou 40 Go — or c'est cela qui décide si la copie passera.
+      $fmt = static function (int $o): string {
+          if ($o <= 0) return '—';
+          $u = ['o', 'Ko', 'Mo', 'Go', 'To']; $i = 0;
+          while ($o >= 1024 && $i < 4) { $o /= 1024; $i++; }
+          return number_format($o, $o < 10 && $i > 0 ? 1 : 0, ',', ' ') . ' ' . $u[$i];
+      };
+      ?>
+      <div style="display:grid;gap:.9rem;margin:.2rem 0 1rem">
+        <?php foreach ($usbTargets as $u): ?>
+          <div style="border:1px solid var(--line);border-radius:10px;padding:.75rem .9rem;background:var(--bg)">
+            <div style="display:flex;justify-content:space-between;gap:.8rem;flex-wrap:wrap;align-items:baseline">
+              <b><?= e($u['label']) ?></b>
+              <span class="muted small"><code><?= e($u['dev']) ?></code> · <?= e($u['fs']) ?> · <?= e($u['size']) ?></span>
+            </div>
+            <?php if ($u['pct'] >= 0): ?>
+              <?php $crit = $u['pct'] >= 90; ?>
+              <div class="gauge" style="margin:.5rem 0 .3rem">
+                <div class="gauge-bar" style="width:<?= max(2, min(100, $u['pct'])) ?>%<?= $crit ? ';background:#ef4444' : '' ?>"></div>
+              </div>
+              <div class="muted small">
+                <?= $fmt($u['use']) ?> occupés sur <?= $fmt($u['tot']) ?> —
+                <b><?= $fmt($u['tot'] - $u['use']) ?> libres</b> (<?= $u['pct'] ?> %)
+                <?= $crit ? ' · <span style="color:#ef4444">clé presque pleine</span>' : '' ?>
+              </div>
+            <?php else: ?>
+              <div class="muted small" style="margin-top:.4rem">
+                Occupation illisible — système de fichiers non reconnu par la passerelle.
+                Un formatage la rendra utilisable.
+              </div>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+      </div>
+
       <form method="post" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap"
             onsubmit="return confirm('Copier la dernière sauvegarde chiffrée sur cette clé USB ?')">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="usb_export">
@@ -317,6 +384,46 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       </form>
       <p class="muted small" style="margin:.6rem 0 0">La copie est placée dans un dossier <code>Bastion-sauvegardes</code>
       de la clé. Rangez la clé en lieu sûr : l'archive contient l'annuaire et les clés BitLocker (chiffrés).</p>
+
+      <!-- ── Formatage ─────────────────────────────────────────────────────
+           Séparé visuellement du reste : c'est la seule commande de la console
+           qui détruit des données. La case à cocher du navigateur ne suffit pas
+           comme rempart — on exige la recopie du chemin, et le script revalide
+           « amovible » de son côté. -->
+      <details style="margin-top:1.1rem;border-top:1px solid var(--line);padding-top:.9rem">
+        <summary style="cursor:pointer;font-weight:600">🧹 Formater une clé — efface tout son contenu</summary>
+        <p class="muted small" style="margin:.6rem 0 .8rem">
+          Utile pour une clé neuve, illisible, ou formatée en FAT32 — ce dernier plafonne
+          les fichiers à 4 Go, ce qu'une sauvegarde chiffrée dépasse vite. <b>exFAT</b> est
+          le choix conseillé : pas de limite gênante, et relisible sur Windows comme sur Linux.
+        </p>
+        <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.7rem;align-items:end"
+              onsubmit="return confirm('EFFACER définitivement tout le contenu de cette clé ?')">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="usb_format">
+          <label>Clé à effacer
+            <select name="dev" id="fmtdev">
+              <?php foreach ($usbTargets as $u): ?>
+                <option value="<?= e($u['dev']) ?>"><?= e($u['label']) ?> — <?= e($u['size']) ?> (<?= e($u['dev']) ?>)</option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <label>Système de fichiers
+            <select name="fs">
+              <option value="exfat">exFAT — conseillé</option>
+              <option value="ntfs">NTFS</option>
+              <option value="fat32">FAT32 — fichiers limités à 4 Go</option>
+            </select>
+          </label>
+          <label>Confirmation
+            <input name="confirm_dev" required autocomplete="off" placeholder="recopier /dev/sdX">
+          </label>
+          <button class="btn" style="background:#b91c1c;border-color:#b91c1c">Formater</button>
+        </form>
+        <p class="muted small" style="margin:.7rem 0 0">
+          Recopiez exactement le chemin de la clé choisie pour confirmer. Toute autre
+          saisie annule l'opération. L'action est inscrite au journal d'audit.
+        </p>
+      </details>
     <?php endif; ?>
   </div>
 </section>

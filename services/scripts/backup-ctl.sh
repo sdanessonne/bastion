@@ -224,13 +224,32 @@ case "$action" in
     # souveraine, sans réseau). On refuse toute cible non amovible (disque système).
     case "$arg" in
       list)
+        # La console affiche une jauge : il lui faut l'OCCUPATION, pas seulement la
+        # taille. Or « lsblk » ne connaît l'espace utilisé que pour un système de
+        # fichiers MONTÉ. Une clé fraîchement branchée ne l'est pas forcément — on la
+        # monte donc en LECTURE SEULE le temps de lire, puis on la démonte. Afficher
+        # « 32 Go » sans dire combien il en reste ne renseigne sur rien : c'est
+        # justement quand la clé est pleine que la copie échoue.
         lsblk -rno PATH,TYPE,FSTYPE,PKNAME 2>/dev/null | while read -r p t fst pk; do
           [ "$t" = "part" ] && [ -n "$fst" ] && [ -n "$pk" ] || continue
           [ "$(cat "/sys/block/$pk/removable" 2>/dev/null)" = "1" ] || continue
           lbl=$(lsblk -no LABEL "$p" 2>/dev/null | sed 's/[^[:print:]]//g')
           sz=$(lsblk -no SIZE "$p" 2>/dev/null | tr -d ' ')
           mp=$(findmnt -no TARGET "$p" 2>/dev/null | head -1)
-          printf '%s\t%s\t%s\t%s\t%s\n' "$p" "${lbl:-sans nom}" "$fst" "$sz" "$mp"
+          tot=0; use=0
+          if [ -n "$mp" ]; then
+            set -- $(df -B1 --output=size,used "$mp" 2>/dev/null | tail -1)
+            tot=${1:-0}; use=${2:-0}
+          else
+            _tmp=$(mktemp -d)
+            if mount -o ro,nosuid,nodev,noexec "$p" "$_tmp" 2>/dev/null; then
+              set -- $(df -B1 --output=size,used "$_tmp" 2>/dev/null | tail -1)
+              tot=${1:-0}; use=${2:-0}
+              umount "$_tmp" 2>/dev/null
+            fi
+            rmdir "$_tmp" 2>/dev/null
+          fi
+          printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$p" "${lbl:-sans nom}" "$fst" "$sz" "$mp" "$tot" "$use"
         done ;;
       export)
         dev="${3:-}"
@@ -249,7 +268,49 @@ case "$action" in
         else msg="ECHEC de la copie vers $dev"; rc=1; fi
         [ "$here" = 1 ] && { umount "$mp" 2>/dev/null; rmdir "$mp" 2>/dev/null; }
         echo "$msg"; exit "$rc" ;;
-      *) echo "usage: usb list | export <device>" >&2; exit 2 ;;
+      format)
+        # ── EFFACEMENT TOTAL D'UNE CLÉ ────────────────────────────────────────
+        # La seule commande de ce dépôt qui détruit des données à la demande d'une
+        # page web. Les garde-fous ne sont donc pas négociables, et ils sont ici —
+        # pas dans le formulaire : une validation qui n'existe qu'en PHP protège
+        # l'utilisateur distrait, jamais le système.
+        dev="${3:-}"; fs="${4:-exfat}"
+        [ -n "$dev" ] || { echo "usage: usb format <device> [exfat|ntfs|fat32]" >&2; exit 2; }
+        is_removable_part "$dev" || { echo "REFUS: $dev n'est pas une partition USB amovible" >&2; exit 2; }
+        # Une partition amovible peut malgré tout porter le système : un serveur
+        # démarré sur clé USB, ou la clé d'installation encore branchée. On refuse
+        # tout ce qui est monté sur un chemin vital, et le support d'amorçage.
+        _mp=$(findmnt -no TARGET "$dev" 2>/dev/null | head -1)
+        case "$_mp" in
+          /|/boot|/boot/*|/usr|/usr/*|/var|/var/*|/home|/home/*|/etc|/etc/*|/srv|/srv/*)
+            echo "REFUS: $dev est monte sur $_mp — partition systeme" >&2; exit 2 ;;
+        esac
+        _root=$(findmnt -no SOURCE / 2>/dev/null | head -1)
+        [ "$dev" = "$_root" ] && { echo "REFUS: $dev porte le systeme de fichiers racine" >&2; exit 2; }
+
+        case "$fs" in
+          exfat) mk="mkfs.exfat"; opt="-n BASTION" ;;
+          ntfs)  mk="mkfs.ntfs";  opt="-f -L BASTION" ;;
+          fat32) mk="mkfs.vfat";  opt="-F 32 -n BASTION" ;;
+          *) echo "REFUS: systeme de fichiers inconnu ($fs)" >&2; exit 2 ;;
+        esac
+        command -v "$mk" >/dev/null 2>&1 || {
+            echo "ECHEC: $mk absent. Installer exfatprogs (exfat), ntfs-3g (ntfs) ou dosfstools (fat32)." >&2
+            exit 1; }
+
+        # exFAT et NTFS sont préférables à FAT32 : celui-ci plafonne les fichiers à
+        # 4 Go, et une sauvegarde chiffrée les dépasse vite. La console propose donc
+        # exFAT par défaut.
+        [ -n "$_mp" ] && { umount "$dev" 2>/dev/null || { echo "ECHEC: $dev est occupe (demonter d'abord)" >&2; exit 1; }; }
+        if $mk $opt "$dev" >/dev/null 2>&1; then
+            sync
+            echo "formate: $dev en $fs (etiquette BASTION)"
+            exit 0
+        else
+            echo "ECHEC du formatage de $dev en $fs" >&2
+            exit 1
+        fi ;;
+      *) echo "usage: usb list | export <device> | format <device> [fs]" >&2; exit 2 ;;
     esac ;;
 
   offsite)
