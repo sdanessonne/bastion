@@ -720,11 +720,19 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   <span class="badge on">Contrôleur actif</span>
 </div>
 
+<!-- Les compteurs MÈNENT à leur section. Ils annonçaient « 5 stratégies » sans dire où
+     les trouver : le contenu est derrière un onglet, et rien ne le laissait deviner. Le
+     geste naturel devant un chiffre est de cliquer dessus — autant qu'il fonctionne. -->
+<style>
+  .kpi[data-tab]{cursor:pointer;transition:border-color .15s ease,transform .15s ease}
+  .kpi[data-tab]:hover{border-color:var(--accent2);transform:translateY(-2px)}
+  .kpi[data-tab]::after{content:"›";float:right;color:var(--muted);font-size:1.3rem;line-height:1}
+</style>
 <section class="cards">
-  <div class="kpi"><div class="kpi-val"><?= count($humanUsers) ?></div><div class="kpi-lbl">Fonctionnaires</div></div>
-  <div class="kpi"><div class="kpi-val"><?= count($computers) ?></div><div class="kpi-lbl">Ordinateurs</div></div>
-  <div class="kpi"><div class="kpi-val"><?= count($gpos) ?></div><div class="kpi-lbl">Stratégies (GPO)</div></div>
-  <div class="kpi"><div class="kpi-val"><?= count($shares) ?></div><div class="kpi-lbl">Dossiers partagés</div></div>
+  <div class="kpi" data-tab="comptes" title="Voir les comptes"><div class="kpi-val"><?= count($humanUsers) ?></div><div class="kpi-lbl">Fonctionnaires</div></div>
+  <div class="kpi" data-tab="postes" title="Voir les postes"><div class="kpi-val"><?= count($computers) ?></div><div class="kpi-lbl">Ordinateurs</div></div>
+  <div class="kpi" data-tab="gpo" title="Voir les stratégies"><div class="kpi-val"><?= count($gpos) ?></div><div class="kpi-lbl">Stratégies (GPO)</div></div>
+  <div class="kpi" data-tab="partages" title="Voir les partages"><div class="kpi-val"><?= count($shares) ?></div><div class="kpi-lbl">Dossiers partagés</div></div>
 </section>
 
 <!-- Onglets : la page Active Directory est vaste — on regroupe ses sections. -->
@@ -767,9 +775,27 @@ document.addEventListener('DOMContentLoaded', function () {
     try { localStorage.setItem('ad_tab', name); } catch (e) {}
   }
   tabs.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.tab); }); });
+
+  // Les compteurs du haut mènent à leur section.
+  document.querySelectorAll('.kpi[data-tab]').forEach(function (k) {
+    k.addEventListener('click', function () {
+      show(k.dataset.tab);
+      document.querySelector('.ad-tabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  function connu(n) { return Array.prototype.some.call(tabs, function (b) { return b.dataset.tab === n; }); }
+
+  // Ancre : « ad.php#gpo » ouvre directement les stratégies. Permet d'écrire un lien
+  // vers une section précise — dans la documentation, un courriel, un signet — sans
+  // avoir à décrire un parcours de clics.
+  var ancre = (location.hash || '').replace('#', '');
   var init = null; try { init = localStorage.getItem('ad_tab'); } catch (e) {}
-  var valid = Array.prototype.some.call(tabs, function (b) { return b.dataset.tab === init; });
-  show(valid ? init : 'ensemble');
+  show(connu(ancre) ? ancre : (connu(init) ? init : 'ensemble'));
+  window.addEventListener('hashchange', function () {
+    var h = (location.hash || '').replace('#', '');
+    if (connu(h)) { show(h); }
+  });
 });
 </script>
 
