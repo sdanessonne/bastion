@@ -125,8 +125,18 @@ if [ -f /srv/pxe/iso/win11.iso ]; then
   mountpoint -q /srv/pxe/mnt/win11 || mount -o loop,ro /srv/pxe/iso/win11.iso /srv/pxe/mnt/win11 2>/dev/null || true
   grep -q "/srv/pxe/mnt/win11" /etc/fstab 2>/dev/null || \
     echo "/srv/pxe/iso/win11.iso /srv/pxe/mnt/win11 udf,iso9660 loop,ro,nofail 0 0" >> /etc/fstab
-  touch /etc/samba/shares.conf 2>/dev/null || true
-  if ! grep -q "^\[Install\]" /etc/samba/shares.conf 2>/dev/null; then
+  # Samba peut ne pas être encore installé : il arrive avec setup-ad.sh, qui n'est
+  # pas un prérequis de ce script. Sans ce garde-fou, la redirection « >> » vers un
+  # répertoire inexistant faisait mourir setup-pxe.sh EN PLEIN MILIEU, avec pour
+  # seule trace « /etc/samba/shares.conf: Aucun fichier ou dossier ». Tout ce qui
+  # suit — dont la publication de boot.wim — était silencieusement sauté, et l'on
+  # se retrouvait avec une ISO montée mais un PXE incapable de démarrer un poste.
+  if [ ! -d /etc/samba ]; then
+    echo "[PXE] Samba absent — partage [Install] NON publié."
+    echo "      Les postes ne pourront pas atteindre la source Windows tant que"
+    echo "      setup-ad.sh n'aura pas installé Samba. Le reste du PXE est en place."
+  elif ! grep -q "^\[Install\]" /etc/samba/shares.conf 2>/dev/null; then
+    touch /etc/samba/shares.conf
     cat >> /etc/samba/shares.conf <<'SMBEOF'
 
 [Install]
