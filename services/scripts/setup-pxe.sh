@@ -196,7 +196,11 @@ mkdir -p /srv/pxe/images && chmod 775 /srv/pxe/images
 # contournés). Servis par [Images] en lecture anonyme → ils ne contiennent AUCUN mot de
 # passe (la création du compte local reste demandée à la fin).
 # Realm réel du domaine, pour la jonction proposée à la 1re ouverture de session (FirstLogonCommands).
-_REALM=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+# « || true » indispensable : testparm est un outil Samba. Quand Samba n'est pas
+# installé, la substitution échoue, et « set -e » tue le script ICI — juste avant
+# l'injection du menu dans boot.wim. Le « 2>/dev/null » ne protégeait que la sortie
+# d'erreur, pas le code de retour : l'échec restait fatal, et parfaitement muet.
+_REALM=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z' || true)
 for U in bios uefi; do
   install -m644 "${REPO_DIR}/services/tftp/unattend-${U}.xml" "/srv/pxe/images/unattend-${U}.xml" 2>/dev/null || true
   [ -n "$_REALM" ] && sed -i "s/bastion\.pn\.int/$_REALM/gI" "/srv/pxe/images/unattend-${U}.xml" 2>/dev/null || true
