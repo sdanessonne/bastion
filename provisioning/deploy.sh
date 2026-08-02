@@ -451,6 +451,14 @@ systemctl daemon-reload
 systemctl enable --now proxyfibre-updatecheck.timer >/dev/null 2>&1 || true
 # Mesure de la ligne Internet : la passerelle ne peut pas connaître sa capacité autrement.
 install -m755 "${REPO_DIR}/services/scripts/speedtest-wan.sh" /usr/local/sbin/proxyfibre-speedtest
+# Base des fabricants de cartes réseau (paquet Debian « ieee-data »).
+# Elle sert à nommer l'appareil derrière une adresse MAC dans la page DHCP. Le
+# paquet vient du dépôt Debian, PAS d'un service web : interroger un service en
+# ligne enverrait à un tiers la liste des appareils présents dans le
+# commissariat. Sans lui, la console retombe sur une table intégrée d'une
+# trentaine de marques — dégradé, mais jamais dépendant de l'extérieur.
+dpkg -s ieee-data >/dev/null 2>&1 ||   DEBIAN_FRONTEND=noninteractive apt-get install -y ieee-data >/dev/null 2>&1 || true
+
 # Diagnostic de lenteur : lecture seule, ne modifie rien.
 install -m755 "${REPO_DIR}/services/scripts/perf-check.sh" /usr/local/sbin/proxyfibre-perf-check
 

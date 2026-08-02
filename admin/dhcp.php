@@ -3,6 +3,7 @@
 /** Bastion Admin — Réservations DHCP : IP fixe par adresse MAC (imprimantes, serveurs…). */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/oui.php';
 require_once __DIR__ . '/inc/audit.php';
 $db = pf_db();
 try {
@@ -88,6 +89,48 @@ foreach (@file('/var/lib/misc/dnsmasq.leases', FILE_IGNORE_NEW_LINES | FILE_SKIP
 }
 usort($leases, fn($a, $b) => ip2long($a['ip']) <=> ip2long($b['ip']));
 
+// ── QUEL APPAREIL SE CACHE DERRIÈRE CETTE ADRESSE ? ─────────────────────────
+// Une liste d'adresses IP et de MAC ne dit rien à personne. Devant une adresse
+// inattendue sur le réseau du commissariat, la question est « qu'est-ce que
+// c'est ? » — et jusqu'ici la page ne répondait pas.
+//
+// Deux sources, dans cet ordre de fiabilité :
+//   1. l'INVENTAIRE, rempli par le poste lui-même : marque ET modèle exacts,
+//      mais réservé aux postes du parc équipés de l'agent ;
+//   2. l'OUI de l'adresse MAC pour tout le reste — il ne donne QUE le fabricant
+//      de la carte réseau, jamais le modèle, et la carte n'est pas toujours de
+//      la marque de l'appareil (un portable Dell annonce souvent « Intel »).
+// La distinction est portée à l'écran : présenter une déduction avec le même
+// aplomb qu'un relevé serait trompeur.
+$invMac = $invHost = [];
+if ($db = pf_db()) {
+    try {
+        foreach ($db->query('SELECT poste,mac,fabricant,modele FROM pf_inventaire') as $iv) {
+            $marque = trim((string) $iv['fabricant']);
+            $mdl    = trim((string) $iv['modele']);
+            if ($marque === '' && $mdl === '') { continue; }
+            $e = ['marque' => $marque, 'modele' => $mdl];
+            $m = strtolower(preg_replace('/[^0-9a-fA-F:]/', '', (string) $iv['mac']));
+            if ($m !== '') { $invMac[$m] = $e; }
+            $h = strtolower(trim((string) $iv['poste']));
+            if ($h !== '') { $invHost[$h] = $e; }
+        }
+    } catch (Throwable $e) {}
+}
+$fabricants = oui_fabricants(array_column($leases, 'mac'));
+foreach ($leases as $i => $lz) {
+    $e = $invMac[$lz['mac']] ?? ($invHost[strtolower($lz['host'])] ?? null);
+    if ($e !== null) {
+        $leases[$i]['marque'] = $e['marque'];
+        $leases[$i]['modele'] = $e['modele'];
+        $leases[$i]['source'] = 'inventaire';
+    } else {
+        $leases[$i]['marque'] = $fabricants[$lz['mac']] ?? '';
+        $leases[$i]['modele'] = '';
+        $leases[$i]['source'] = 'oui';
+    }
+}
+
 // Clients actuellement en ligne (pour proposer leur MAC en un clic).
 $live = [];
 foreach (nds_clients() as $mac => $c) {
@@ -130,12 +173,17 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   <div style="padding:1.2rem">
     <p class="muted small" style="margin-top:0">Adresses <strong>réellement distribuées</strong> par le serveur DHCP
     en ce moment, avec le nom que le poste a annoncé. Un appareil éteint reste listé jusqu'à l'expiration de son bail.</p>
+    <p class="muted small" style="margin-top:-.4rem">La colonne <strong>Appareil</strong> vient de l'inventaire quand le poste
+    est connu du parc (marque <em>et</em> modèle réels). Sinon elle est déduite de l'adresse MAC, qui n'indique que le
+    <strong>fabricant de la carte réseau</strong> — un portable Dell peut s'y annoncer « Intel ». Les téléphones récents
+    utilisent une adresse aléatoire : aucun fabricant n'y figure.</p>
     <table class="grid-table">
-      <thead><tr><th style="width:150px">Adresse IP</th><th style="width:170px">Adresse MAC</th><th>Nom du poste</th>
-        <th style="width:150px">Bail expire</th><th style="width:120px">État</th><th style="width:120px"></th></tr></thead>
+      <thead><tr><th style="width:140px">Adresse IP</th><th style="width:160px">Adresse MAC</th>
+        <th style="width:210px">Appareil</th><th>Nom du poste</th>
+        <th style="width:140px">Bail expire</th><th style="width:110px">État</th><th style="width:110px"></th></tr></thead>
       <tbody>
         <?php if (!$leases): ?>
-          <tr><td colspan="6" class="muted center">Aucun bail en cours. Les appareils apparaîtront ici dès qu'ils
+          <tr><td colspan="7" class="muted center">Aucun bail en cours. Les appareils apparaîtront ici dès qu'ils
             demanderont une adresse.</td></tr>
         <?php else: $now = time(); foreach ($leases as $lz):
                 $resv = false; foreach ($rows as $rw) { if (strtolower($rw['mac']) === $lz['mac']) { $resv = true; break; } }
@@ -143,6 +191,19 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
           <tr>
             <td class="mono"><strong><?= e($lz['ip']) ?></strong></td>
             <td class="mono small"><?= e($lz['mac']) ?></td>
+            <td>
+              <?php if ($lz['source'] === 'inventaire'): ?>
+                <strong><?= e($lz['marque']) ?></strong>
+                <?php if ($lz['modele'] !== ''): ?><br><span class="small"><?= e($lz['modele']) ?></span><?php endif; ?>
+              <?php elseif ($lz['marque'] === '~aleatoire'): ?>
+                <span class="muted small" title="Adresse générée par l'appareil pour empêcher le pistage&#10;— aucun fabricant n'y est inscrit.">Adresse aléatoire</span>
+              <?php elseif ($lz['marque'] !== ''): ?>
+                <?= e($lz['marque']) ?>
+                <br><span class="muted small" title="Déduit des trois premiers octets de la MAC : c'est le fabricant de la CARTE RÉSEAU, pas forcément celui de l'appareil.">carte réseau</span>
+              <?php else: ?>
+                <span class="muted small">inconnu</span>
+              <?php endif; ?>
+            </td>
             <td><?= $lz['host'] !== '' ? e($lz['host']) : '<span class="muted">(sans nom)</span>' ?></td>
             <td class="small"><?= $lz['exp'] > 0
                   ? ($lz['exp'] > $now ? e(date('d/m/Y H:i', $lz['exp'])) : '<span class="muted">expiré</span>')
