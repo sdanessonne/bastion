@@ -146,8 +146,20 @@ intranet_head('Accueil', 'home');
   </div>
 </div>
 
-<?php if (trim(intranet_setting('intranet_notice')) !== ''): ?>
-  <div class="ok anim d1" style="background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.3);color:#bae6fd;margin-top:1.1rem">📢 <?= e_(intranet_setting('intranet_notice')) ?></div>
+<?php
+// Le bandeau n'avait pas de fin. « Maintenance prevue vendredi » serait encore
+// affiche en mars, et un bandeau qu'on a appris a ignorer ne sert plus a rien --
+// y compris le jour ou l'annonce compte vraiment.
+$notice = trim(intranet_setting('intranet_notice'));
+$jusqu  = trim(intranet_setting('intranet_notice_until'));
+if ($notice !== '' && $jusqu !== '') {
+    $t = strtotime($jusqu);
+    // Fin de la journee indiquee : une annonce « jusqu'au 5 » vaut tout le 5.
+    if ($t !== false && time() > $t + 86399) { $notice = ''; }
+}
+?>
+<?php if ($notice !== ''): ?>
+  <div class="ok anim d1" style="background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.3);color:#bae6fd;margin-top:1.1rem">📢 <?= e_($notice) ?></div>
 <?php endif; ?>
 
 <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:1.6rem;margin-top:1.5rem" class="home-cols">

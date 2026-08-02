@@ -3,6 +3,7 @@
 /** Bastion Admin — CMS intranet : pages, actualités, médias (images), groupes, éditeur. */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/audit.php';
 $db = pf_db();
 $MEDIA = '/var/www/html/portal/intranet/uploads';
 try {
@@ -59,14 +60,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             elseif ($id > 0) {
                 $db->prepare('UPDATE pf_cms_pages SET slug=?,title=?,body=?,format=?,menu_order=?,in_menu=?,published=?,group_required=?,updated_by=? WHERE id=?')
                    ->execute([$slug, $title, $body, 'html', $order, $inm, $pub, $grp, $_SESSION['admin'], $id]);
+                audit('cms.page.update', $slug . ' — ' . $title . ($pub ? ' (publiée)' : ' (brouillon)'));
                 $flash = ['Page mise à jour.', 'ok'];
             } else {
                 $db->prepare('INSERT INTO pf_cms_pages (slug,title,body,format,menu_order,in_menu,published,group_required,updated_by) VALUES (?,?,?,?,?,?,?,?,?)')
                    ->execute([$slug, $title, $body, 'html', $order, $inm, $pub, $grp, $_SESSION['admin']]);
+                audit('cms.page.create', $slug . ' — ' . $title . ($pub ? ' (publiée)' : ' (brouillon)'));
                 $flash = ['Page créée.', 'ok'];
             }
         }
-        elseif ($do === 'page_delete') { $db->prepare('DELETE FROM pf_cms_pages WHERE id=?')->execute([(int) $_POST['id']]); $flash = ['Page supprimée.', 'ok']; }
+        elseif ($do === 'page_delete') {
+            // Le titre est relu AVANT la suppression : après, il n'existe plus, et
+            // « page 7 supprimée » n'apprend rien à qui relit le journal.
+            $idp = (int) ($_POST['id'] ?? 0);
+            $t = '';
+            try { $q = $db->prepare('SELECT CONCAT(slug," — ",title) FROM pf_cms_pages WHERE id=?');
+                  $q->execute([$idp]); $t = (string) ($q->fetchColumn() ?: ''); } catch (Throwable $e) {}
+            $db->prepare('DELETE FROM pf_cms_pages WHERE id=?')->execute([$idp]);
+            audit('cms.page.delete', $t !== '' ? $t : ('id=' . $idp));
+            $flash = ['Page supprimée.', 'ok'];
+        }
         elseif ($do === 'news_save') {
             $id = (int) ($_POST['id'] ?? 0);
             $title = trim((string) ($_POST['title'] ?? ''));
@@ -76,13 +89,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($title === '') { $flash = ['Titre requis.', 'err']; }
             elseif ($id > 0) {
                 $db->prepare('UPDATE pf_cms_news SET title=?,body=?,format=?,category=?,published=? WHERE id=?')->execute([$title, $body, 'html', $cat, $pub, $id]);
+                audit('cms.news.update', $title . ($pub ? ' (publiée)' : ' (brouillon)'));
                 $flash = ['Actualité mise à jour.', 'ok'];
             } else {
                 $db->prepare('INSERT INTO pf_cms_news (title,body,format,author,category,published) VALUES (?,?,?,?,?,?)')->execute([$title, $body, 'html', $_SESSION['admin'], $cat, $pub]);
+                audit('cms.news.create', $title . ($pub ? ' (publiée)' : ' (brouillon)'));
                 $flash = ['Actualité publiée.', 'ok'];
             }
         }
-        elseif ($do === 'news_delete') { $db->prepare('DELETE FROM pf_cms_news WHERE id=?')->execute([(int) $_POST['id']]); $flash = ['Actualité supprimée.', 'ok']; }
+        elseif ($do === 'news_delete') {
+            $idn = (int) ($_POST['id'] ?? 0);
+            $t = '';
+            try { $q = $db->prepare('SELECT title FROM pf_cms_news WHERE id=?');
+                  $q->execute([$idn]); $t = (string) ($q->fetchColumn() ?: ''); } catch (Throwable $e) {}
+            $db->prepare('DELETE FROM pf_cms_news WHERE id=?')->execute([$idn]);
+            audit('cms.news.delete', $t !== '' ? $t : ('id=' . $idn));
+            $flash = ['Actualité supprimée.', 'ok'];
+        }
         elseif ($do === 'upload_media') {
             if (!is_dir($MEDIA)) { @mkdir($MEDIA, 0775, true); }
             $f = $_FILES['media'] ?? null;
@@ -122,7 +145,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         elseif ($ext === 'gif')  { $ok = imagegif($src, $path); }
                         elseif ($ext === 'webp') { $ok = imagewebp($src, $path, 88); }
                         imagedestroy($src);
-                        if ($ok) { @chmod($path, 0644); $flash = ["Image téléversée : $name", 'ok']; }
+                        if ($ok) { @chmod($path, 0644); audit('cms.media.upload', $name);
+                                   $flash = ["Image téléversée : $name", 'ok']; }
                         else { $flash = ["Écriture impossible dans $MEDIA.", 'err']; }
                     }
                 }
@@ -130,7 +154,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         elseif ($do === 'media_delete') {
             $name = basename((string) ($_POST['name'] ?? ''));
-            if ($name !== '' && is_file("$MEDIA/$name")) { @unlink("$MEDIA/$name"); $flash = ['Image supprimée.', 'ok']; }
+            if ($name !== '' && is_file("$MEDIA/$name")) {
+                @unlink("$MEDIA/$name");
+                audit('cms.media.delete', $name);
+                $flash = ['Image supprimée.', 'ok'];
+            }
         }
     } catch (Throwable $e) { $flash = ['Erreur : ' . $e->getMessage(), 'err']; }
 }

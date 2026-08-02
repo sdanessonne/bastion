@@ -52,5 +52,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && filter_var($clientIp, FILTER_VALIDA
     </p>
     <a class="btn" href="/portal/fas.php">Se reconnecter</a>
   </main>
+  <script>
+  // Purge du cache de l'application à la déconnexion. Le service worker conserve
+  // les pages consultées pour le mode hors ligne ; sur un téléphone de service
+  // PARTAGÉ, l'agent suivant pourrait s'y voir servir le tableau de bord du
+  // précédent. La déconnexion doit donc effacer, pas seulement fermer la session.
+  (function () {
+    if (!('serviceWorker' in navigator)) { return; }
+    navigator.serviceWorker.ready.then(function (reg) {
+      if (reg.active) { reg.active.postMessage('purge'); }
+    }).catch(function () {});
+    // Repli : si le service worker ne répond pas, on vide depuis la page.
+    if (window.caches && caches.keys) {
+      caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); }).catch(function () {});
+    }
+  })();
+  </script>
 </body>
 </html>

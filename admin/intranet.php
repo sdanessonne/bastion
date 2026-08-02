@@ -9,6 +9,7 @@ $DEF = [
     'intranet_title'   => 'Intranet',
     'intranet_welcome' => 'Bienvenue sur l’espace interne. Retrouvez ici vos services et informations.',
     'intranet_notice'  => '',
+    'intranet_notice_until' => '',
     'intranet_links'   => "Mon compte & consommation|/portal/account.php|📊\n"
                         . "Annuaire du personnel|/portal/intranet/annuaire.php|📇\n"
                         . "Documentation|/portal/intranet/documentation.php|📚\n"
@@ -22,6 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $up->execute(['intranet_title',   trim(str_replace(["\r", "\n"], ' ', (string) ($_POST['intranet_title'] ?? '')))]);
     $up->execute(['intranet_welcome', trim((string) ($_POST['intranet_welcome'] ?? ''))]);
     $up->execute(['intranet_notice',  trim((string) ($_POST['intranet_notice'] ?? ''))]);
+    // Date d'expiration du bandeau. Format contrôlé : un champ « date » du
+    // navigateur envoie AAAA-MM-JJ, mais rien n'oblige un client à le respecter, et
+    // une valeur libre finirait telle quelle dans un strtotime() côté portail.
+    $ju = trim((string) ($_POST['intranet_notice_until'] ?? ''));
+    if ($ju !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $ju)) { $ju = ''; }
+    $up->execute(['intranet_notice_until', $ju]);
     $up->execute(['intranet_links',   trim((string) ($_POST['intranet_links'] ?? ''))]);
     $flash = ['Intranet mis à jour — visible dès la prochaine connexion des utilisateurs.', 'ok'];
 }
@@ -52,6 +59,9 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <textarea name="intranet_welcome" rows="2"><?= $v('intranet_welcome') ?></textarea></label>
     <label class="field">Bandeau d'annonce <span class="muted small">(optionnel, laisser vide pour masquer)</span>
       <input type="text" name="intranet_notice" value="<?= $v('intranet_notice') ?>" placeholder="ex. Maintenance prévue vendredi 18h"></label>
+    <label class="field">Afficher jusqu'au
+      <span class="muted small">— au-delà, le bandeau disparaît seul. Vide = permanent.</span>
+      <input type="date" name="intranet_notice_until" value="<?= $v('intranet_notice_until') ?>"></label>
     <label class="field">Services / liens <span class="muted small">— un par ligne, format <code>Libellé|URL|emoji</code></span>
       <textarea name="intranet_links" rows="8"><?= $v('intranet_links') ?></textarea></label>
     <div class="form-actions"><button class="btn">💾 Enregistrer</button></div>
