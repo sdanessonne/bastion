@@ -201,8 +201,15 @@ for U in bios uefi; do
   install -m644 "${REPO_DIR}/services/tftp/unattend-${U}.xml" "/srv/pxe/images/unattend-${U}.xml" 2>/dev/null || true
   [ -n "$_REALM" ] && sed -i "s/bastion\.pn\.int/$_REALM/gI" "/srv/pxe/images/unattend-${U}.xml" 2>/dev/null || true
 done
-touch /etc/samba/shares.conf 2>/dev/null || true
-if ! grep -q "^\[Images\]" /etc/samba/shares.conf 2>/dev/null; then
+# Même garde-fou que pour [Install] plus haut : sans lui, cette redirection tuait le
+# script ICI, c'est-à-dire AVANT l'injection du menu dans boot.wim. On se retrouvait
+# donc avec les quatre fichiers d'amorçage bien posés, mais un boot.wim portant le
+# startnet.cmd d'origine de Microsoft — le poste démarrait sur l'installateur
+# Windows nu, sans le menu Bastion, et rien ne disait pourquoi.
+if [ ! -d /etc/samba ]; then
+  echo "[PXE] Samba absent — bibliothèque d'images [Images]/[ImagesRW] NON publiée."
+elif ! grep -q "^\[Images\]" /etc/samba/shares.conf 2>/dev/null; then
+  touch /etc/samba/shares.conf
   cat >> /etc/samba/shares.conf <<'SMBEOF'
 
 [Images]
