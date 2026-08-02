@@ -41,7 +41,11 @@ fi
 
 # Ce qui reste réellement suivi, LU DANS LE NOYAU. On ne se contente pas du
 # compte-rendu de l'outil : c'est l'état du système qui fait foi.
-restant=$(grep -c "src=$IP \|dst=$IP " /proc/net/nf_conntrack 2>/dev/null || echo 0)
+# PAS de « || echo 0 » ici : « grep -c » affiche déjà « 0 » ET sort en échec quand
+# il ne trouve rien — le repli ajoutait donc un second zéro, et le message annonçait
+# « connexions restantes: 0 » suivi d'un « 0 » orphelin.
+restant=$(grep -c "src=$IP \|dst=$IP " /proc/net/nf_conntrack 2>/dev/null)
+restant=${restant:-0}
 
 case "$sortie" in
     *deauthenticated*) echo "deconnecte: $IP (connexions restantes: $restant)"; exit 0 ;;
