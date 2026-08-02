@@ -390,6 +390,13 @@ a2ensite proxyfibre-block >/dev/null 2>&1 || true
 # Le script LIT la base ; rien ne transite par la ligne de commande — une phrase
 # secrète passée en argument apparaîtrait dans « ps » et dans les journaux du shell.
 install -m755 "${REPO_DIR}/services/scripts/wifi-ctl.sh" /usr/local/sbin/proxyfibre-wifi
+# Listes noires de contenu (universite de Toulouse). Le script ne prend aucune donnee
+# du web : les categories retenues sont lues dans pf_settings.
+install -m755 "${REPO_DIR}/services/scripts/blacklist-ctl.sh" /usr/local/sbin/proxyfibre-blacklist
+cat > /etc/sudoers.d/proxyfibre-blacklist <<'SUD'
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-blacklist check, /usr/local/sbin/proxyfibre-blacklist update, /usr/local/sbin/proxyfibre-blacklist rebuild, /usr/local/sbin/proxyfibre-blacklist state, /usr/local/sbin/proxyfibre-blacklist categories
+SUD
+chmod 440 /etc/sudoers.d/proxyfibre-blacklist
 cat > /etc/sudoers.d/proxyfibre-wifi <<'SUD'
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-wifi apply, /usr/local/sbin/proxyfibre-wifi state
 SUD
