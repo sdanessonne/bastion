@@ -1001,8 +1001,17 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
 </section>
 
 <!-- Formulaire de déplacement UNIQUE pour toute l'arborescence : il est déplacé par le
-     navigateur à côté de l'objet choisi, au lieu d'être recopié sur chacun d'eux. -->
-<form method="post" id="moveForm" hidden style="display:inline-flex;gap:.3rem;align-items:center;margin-left:.5rem">
+     navigateur à côté de l'objet choisi, au lieu d'être recopié sur chacun d'eux.
+     ── ATTENTION AU « hidden » ──────────────────────────────────────────────
+     Il portait « hidden » ET « style="display:inline-flex" ». L'attribut hidden agit
+     par la feuille de style du navigateur ([hidden]{display:none}) : un style EN LIGNE
+     l'emporte toujours sur elle. Le formulaire était donc VISIBLE en permanence, et
+     traînait en bas de la page — une liste déroulante et deux boutons sans contexte,
+     que personne ne savait interpréter.
+     La mise en page passe donc par une règle, qui ne s'applique QUE si l'élément
+     n'est pas masqué. -->
+<style>#moveForm:not([hidden]){display:inline-flex;gap:.3rem;align-items:center;margin-left:.5rem}</style>
+<form method="post" id="moveForm" hidden>
   <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
   <input type="hidden" name="do" value="obj_move">
   <input type="hidden" name="type" id="moveType"><input type="hidden" name="nom" id="moveNom">
