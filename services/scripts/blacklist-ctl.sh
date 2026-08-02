@@ -172,6 +172,10 @@ case "${1:-}" in
   rebuild)
     # Reconstruire SANS retélécharger : changer de catégories ne justifie pas de
     # reprendre 25 Mo. L'archive extraite est déjà là.
+    # Même verrou que « update ». La console lance ces verbes en tâche de fond : sans
+    # ce garde-fou, deux clics rapprochés — ou une page rechargée — feraient tourner
+    # deux constructions en parallèle sur le même fichier de sortie.
+    [ -f "$PROG" ] && grep -q '^etape=cours' "$PROG" 2>/dev/null && { echo "deja en cours"; exit 1; }
     [ -d "$EXTRAIT" ] || { echo "aucune archive extraite — lancer 'update' d'abord" >&2; exit 1; }
     . "$ETAT" 2>/dev/null || true
     progression cours 70 "Reconstruction depuis l'archive locale…"

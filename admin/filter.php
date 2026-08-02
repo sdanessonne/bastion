@@ -242,13 +242,17 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
           msg.textContent = j.message || '';
           if (!timer) timer = setInterval(sonder, 2000);
         } else if (timer) {
-          // Terminé : on montre le resultat une seconde, puis on recharge pour
-          // afficher les compteurs et les dates a jour.
           clearInterval(timer); timer = null;
           bar.classList.remove('run');
           bar.style.width = '100%';
           msg.textContent = j.message || (j.etape === 'echec' ? 'Échec' : 'Terminé');
-          setTimeout(function () { location.reload(); }, 1200);
+          // « location.replace » vers un GET, et SURTOUT PAS « location.reload() ».
+          // Cette page est le résultat d'un POST : la recharger REJOUE le formulaire,
+          // donc relance une mise à jour, qui se termine, qui recharge… La jauge
+          // tournait en boucle sans fin, et le serveur retéléchargeait 25 Mo à chaque
+          // tour. « replace » remplace aussi l'entrée d'historique : le bouton
+          // « Précédent » ne repropose pas l'envoi du formulaire.
+          setTimeout(function () { location.replace(location.pathname); }, 1500);
         }
       }).catch(function () {});
   }
