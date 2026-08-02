@@ -386,6 +386,15 @@ install -m644 "${REPO_DIR}/services/apache/block.conf" /etc/apache2/sites-availa
 a2ensite proxyfibre-block >/dev/null 2>&1 || true
 /usr/local/sbin/proxyfibre-apply-filter || true
 
+# Point d'accès Wi-Fi pilotable depuis la console (SSID + phrase secrète).
+# Le script LIT la base ; rien ne transite par la ligne de commande — une phrase
+# secrète passée en argument apparaîtrait dans « ps » et dans les journaux du shell.
+install -m755 "${REPO_DIR}/services/scripts/wifi-ctl.sh" /usr/local/sbin/proxyfibre-wifi
+cat > /etc/sudoers.d/proxyfibre-wifi <<'SUD'
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-wifi apply, /usr/local/sbin/proxyfibre-wifi state
+SUD
+chmod 440 /etc/sudoers.d/proxyfibre-wifi
+
 # Pilotage des services depuis la console admin (liste blanche stricte)
 install -m755 "${REPO_DIR}/services/scripts/service-ctl.sh" /usr/local/sbin/proxyfibre-service
 install -m755 "${REPO_DIR}/services/scripts/apt-ctl.sh"     /usr/local/sbin/proxyfibre-apt

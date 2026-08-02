@@ -11,7 +11,47 @@
  */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/audit.php';
 
+// ── Point d'accès Wi-Fi : SSID + phrase secrète, modifiables ici ─────────────
+// Ils étaient figés dans /etc/hostapd/hostapd.conf, donc inaccessibles au client :
+// changer le nom du réseau ou renouveler la phrase demandait un accès SSH au serveur.
+// La console écrit en base ; proxyfibre-wifi relit la base et régénère la
+// configuration. Rien ne transite par la ligne de commande.
+$wifi_flash = null;
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['do'] ?? '') === 'wifi') {
+    csrf_check();
+    $ssid  = trim((string) ($_POST['wifi_ssid'] ?? ''));
+    $psk   = (string) ($_POST['wifi_psk'] ?? '');
+    $canal = (int) ($_POST['wifi_channel'] ?? 6);
+    $db    = pf_db();
+    // Bornes de la norme 802.11 : hostapd refuserait de démarrer hors de celles-ci,
+    // et le point d'accès disparaîtrait — souvent en emportant l'accès de celui qui
+    // vient de valider. On refuse donc AVANT d'écrire, pas après.
+    if (strlen($ssid) < 1 || strlen($ssid) > 32) {
+        $wifi_flash = ['Le nom du réseau doit faire 1 à 32 caractères.', 'err'];
+    } elseif ($psk !== '' && (strlen($psk) < 8 || strlen($psk) > 63)) {
+        $wifi_flash = ['La phrase secrète doit faire 8 à 63 caractères (norme WPA2).', 'err'];
+    } elseif (preg_match('/[\x00-\x1F\x7F]/', $ssid . $psk)) {
+        $wifi_flash = ['Caractère de contrôle refusé.', 'err'];
+    } elseif ($canal < 1 || $canal > 13) {
+        $wifi_flash = ['Canal invalide (1 à 13).', 'err'];
+    } else {
+        $up = $db->prepare('INSERT INTO pf_settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)');
+        $up->execute(['wifi_ssid', $ssid]);
+        $up->execute(['wifi_channel', (string) $canal]);
+        // Phrase laissée vide = inchangée : on ne force pas à la retaper pour
+        // renommer le réseau, et elle n'est jamais réaffichée dans la page.
+        if ($psk !== '') $up->execute(['wifi_psk', $psk]);
+        $out = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wifi apply 2>&1'));
+        if (stripos($out, 'ECHEC') !== false || $out === '') {
+            $wifi_flash = ['Le point d’accès n’a pas redémarré. ' . htmlspecialchars($out), 'err'];
+        } else {
+            audit('wifi.config', 'SSID ' . $ssid . ' · canal ' . $canal . ($psk !== '' ? ' · phrase renouvelée' : ''));
+            $wifi_flash = [$out, 'ok'];
+        }
+    }
+}
 // ── Endpoint JSON (?data=1) : débit WAN + compteurs cumulés par client + horodatage ──
 if (isset($_GET['data'])) {
     header('Content-Type: application/json; charset=utf-8');
@@ -93,6 +133,11 @@ function pf_ports_reseau(): array {
 }
 $pf_ports = pf_ports_reseau();
 
+// L'état du point d'accès est lu APRÈS la sortie du point d'entrée JSON : cette page
+// se sonde toutes les deux secondes pour le débit, et un « sudo » par sondage serait
+// payé pour rien — l'état du Wi-Fi n'est affiché que dans la page complète.
+$wifi = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wifi state 2>/dev/null'), true) ?: [];
+
 pf_header('Supervision réseau', 'reseau.php');
 ?>
 <section class="panel">
@@ -118,6 +163,45 @@ pf_header('Supervision réseau', 'reseau.php');
     <?php endforeach; ?>
     </tbody>
   </table>
+  <?php if (!empty($wifi['interface'])): ?>
+  <div style="border-top:1px solid var(--line);margin-top:1rem;padding-top:1rem">
+    <h3 style="margin:0 0 .6rem;font-size:.95rem">📶 Point d’accès Wi-Fi</h3>
+    <?php if ($wifi_flash): ?>
+      <div class="flash <?= $wifi_flash[1] === 'ok' ? 'ok' : 'err' ?>" role="alert"><?= htmlspecialchars($wifi_flash[0]) ?></div>
+    <?php endif; ?>
+    <p class="muted small" style="margin:0 0 .8rem">
+      État : <b><?= $wifi['actif'] === 'active' ? 'en service' : htmlspecialchars((string) $wifi['actif']) ?></b>
+      · <?= (int) ($wifi['clients'] ?? 0) ?> terminal(aux) connecté(s)
+      <?= !empty($wifi['pont']) ? '· relié au LAN par <code>' . htmlspecialchars($wifi['pont']) . '</code>' : '' ?>
+    </p>
+    <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.8rem;align-items:end">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <input type="hidden" name="do" value="wifi">
+      <label>Nom du réseau (SSID)
+        <input name="wifi_ssid" maxlength="32" required
+               value="<?= htmlspecialchars((string) ($wifi['ssid'] ?? '')) ?>">
+      </label>
+      <label>Phrase secrète
+        <input name="wifi_psk" type="password" minlength="8" maxlength="63" autocomplete="new-password"
+               placeholder="inchangée si laissée vide">
+      </label>
+      <label>Canal
+        <select name="wifi_channel">
+          <?php for ($c = 1; $c <= 13; $c++): ?>
+            <option value="<?= $c ?>" <?= ((int) ($wifi['canal'] ?? 6) === $c) ? 'selected' : '' ?>><?= $c ?></option>
+          <?php endfor; ?>
+        </select>
+      </label>
+      <button class="btn" type="submit">Appliquer</button>
+    </form>
+    <p class="muted small" style="margin:.7rem 0 0">
+      Le réseau se coupe une seconde à l’application, le temps du redémarrage — les
+      terminaux connectés se reconnectent seuls, sauf si la phrase a changé.
+      La phrase protège le lien radio ; l’identification de l’agent se fait ensuite
+      sur le portail, comme sur le câble.
+    </p>
+  </div>
+  <?php endif; ?>
   <p class="muted small" style="margin:.7rem 0 0">
     Le port <b>LAN</b> distribue les adresses <code>DHCP</code> et intercepte le DNS des postes.
     Il doit aller sur le <b>switch isolé du parc</b>, jamais sur un réseau déjà équipé d'un serveur
