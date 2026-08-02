@@ -28,6 +28,8 @@ if (isset($_GET['preview']) && in_array($clientIp, ['127.0.0.1', '::1'], true)
 // consultations tombaient en même temps.
 $client = pf_nds_client($clientIp, 10);
 
+
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtBytes($n): string {
     $n = (float) $n; $u = ['o', 'Ko', 'Mo', 'Go', 'To']; $i = 0;
@@ -53,6 +55,42 @@ if ($client && !empty($client['custom'])) {
         $username = $m[1];
     }
 }
+
+// ── Identité de l'agent ──────────────────────────────────────────────────────
+// La page n'affichait que le matricule — « 0110480 ». Exact, mais personne ne se
+// reconnaît dans un numéro : l'agent doute d'être sur SON tableau de bord, ce qui
+// est justement ce qu'une page « Mon compte » doit lever d'emblée.
+// Le nom, le prénom et le service sont déjà en base (pf_user_profile), la photo
+// aussi (pf_user_photo). Rien à créer : il suffisait de les lire.
+// On réutilise intranet_db() plutôt que d'ouvrir une seconde connexion à la main :
+// deux copies du même code de connexion finissent toujours par diverger.
+require_once __DIR__ . '/intranet/_common.php';
+
+$profil = ['nom' => '', 'prenom' => '', 'service' => '', 'photo' => false, 'groupe' => ''];
+if ($username !== '' && ($pdo = intranet_db()) !== null) {
+    try {
+        $st = $pdo->prepare('SELECT nom, prenom, service FROM pf_user_profile WHERE username = ? LIMIT 1');
+        $st->execute([$username]);
+        if ($r = $st->fetch(PDO::FETCH_ASSOC)) { $profil = array_merge($profil, $r); }
+    } catch (Throwable $e) {}
+    // Présence de la photo seulement : on ne charge pas 65 Ko de binaire dans la
+    // page pour savoir s'il faut afficher une image.
+    try {
+        $st = $pdo->prepare('SELECT v FROM pf_user_photo WHERE username = ? LIMIT 1');
+        $st->execute([$username]);
+        $profil['photo'] = (string) ($st->fetchColumn() ?: '');
+    } catch (Throwable $e) {}
+    // Groupe RADIUS : c'est lui qui décide des quotas et des horaires. L'agent a le
+    // droit de savoir sous quel régime il se trouve.
+    try {
+        $st = $pdo->prepare('SELECT groupname FROM radusergroup WHERE username = ? LIMIT 1');
+        $st->execute([$username]);
+        $profil['groupe'] = (string) ($st->fetchColumn() ?: '');
+    } catch (Throwable $e) {}
+}
+$nomComplet = trim($profil['prenom'] . ' ' . $profil['nom']);
+$initiales  = mb_strtoupper(mb_substr($profil['prenom'] ?: $username, 0, 1)
+                          . mb_substr($profil['nom'] ?: '', 0, 1));
 
 $now       = time();
 $start     = (int) ($client['session_start'] ?? 0);
@@ -118,11 +156,46 @@ $iface  = $client['clientif'] ?? '—';
       <div class="user">
         <span class="status-dot"></span>
         <div>
-          <div class="hello">Bonjour, <strong><?= $esc($username) ?></strong></div>
+          <div class="hello">Bonjour, <strong><?= $esc($nomComplet !== '' ? $profil['prenom'] : $username) ?></strong></div>
           <div class="muted small">Connecté · accès Internet actif</div>
         </div>
       </div>
     </header>
+
+    <?php
+    // ── CARTE D'IDENTITÉ ────────────────────────────────────────────────────
+    // Ce que l'agent doit reconnaître en une seconde : sa photo, son nom, et sous
+    // quel régime il navigue. Le matricule reste affiché — c'est lui qu'on donne au
+    // support — mais il n'est plus la SEULE chose lisible.
+    ?>
+    <section class="idcard" style="display:flex;gap:1.1rem;align-items:center;flex-wrap:wrap;
+             background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);
+             border-radius:16px;padding:1.1rem 1.3rem;margin-bottom:1.1rem">
+      <?php if (!empty($profil['photo'])): ?>
+        <img src="/portal/photo.php?v=<?= $esc($profil['photo']) ?>" alt=""
+             style="width:76px;height:76px;border-radius:50%;object-fit:cover;flex:none;
+                    border:2px solid rgba(56,189,248,.5)">
+      <?php else: ?>
+        <div style="width:76px;height:76px;border-radius:50%;flex:none;display:grid;place-items:center;
+                    background:linear-gradient(140deg,#38bdf8,#0369a1);color:#04212f;
+                    font-weight:700;font-size:1.6rem"><?= $esc($initiales ?: '?') ?></div>
+      <?php endif; ?>
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:1.35rem;font-weight:700;color:#fff;line-height:1.2">
+          <?= $esc($nomComplet !== '' ? $nomComplet : $username) ?>
+        </div>
+        <div class="muted" style="margin-top:.25rem;font-size:.9rem">
+          Matricule <strong><?= $esc($username) ?></strong>
+          <?php if ($profil['service'] !== ''): ?> · <?= $esc($profil['service']) ?><?php endif; ?>
+        </div>
+        <?php if ($profil['groupe'] !== ''): ?>
+          <div class="muted small" style="margin-top:.3rem">
+            Régime d'accès : <strong><?= $esc($profil['groupe']) ?></strong>
+            <span style="opacity:.7">— c'est lui qui fixe vos quotas et vos horaires.</span>
+          </div>
+        <?php endif; ?>
+      </div>
+    </section>
 
     <section class="grid">
       <div class="stat">
