@@ -60,7 +60,7 @@ pf_header("Journal d'audit", 'audit.php');
   <div style="padding:1.2rem">
     <p class="muted small" style="margin-top:0">Qui a fait quoi, et quand, dans cette console. Aucun secret (mot de
     passe, jeton) n'est enregistré — seulement l'action et sa cible.</p>
-    <form method="get" class="ad-inline" style="margin-bottom:1rem;gap:.5rem">
+    <form method="get" class="dir-inline" style="margin-bottom:1rem;gap:.5rem">
       <?php if (($_GET['embed'] ?? '') === '1'): ?><input type="hidden" name="embed" value="1"><?php endif; ?>
       <select name="admin" style="padding:.5rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
         <option value="">— Tous les administrateurs —</option>

@@ -136,7 +136,7 @@ $horloge = count(array_filter($inv, fn($r) => $r['horloge_ecart'] !== null && ab
     <strong>à l'ouverture de session</strong> d'un agent, une fois par jour au plus.</p>
 
     <?php if (!$nbP): ?>
-      <p class="ad-help">Aucun poste ne s'est encore signalé.
+      <p class="dir-help">Aucun poste ne s'est encore signalé.
       <?= $gpoOn ? "Le collecteur est déployé : les fiches apparaîtront à la prochaine ouverture de session des agents."
                  : "Cliquez « Activer l'inventaire » pour déployer le collecteur sur les postes du domaine." ?></p>
     <?php else: ?>
@@ -234,7 +234,7 @@ $horloge = count(array_filter($inv, fn($r) => $r['horloge_ecart'] !== null && ab
       <p><?php foreach ($jamais as $n): ?><span class="badge" style="margin:.15rem"><?= e($n) ?></span><?php endforeach; ?></p>
     <?php endif; ?>
 
-    <p class="ad-help" style="margin-top:1rem">
+    <p class="dir-help" style="margin-top:1rem">
       L'inventaire est <strong>déclaratif</strong> : c'est le poste qui décrit son propre matériel. C'est une donnée
       d'exploitation (savoir quoi remplacer, qui manque de mémoire, quel disque sature) — <strong>pas une preuve</strong>.
       L'adresse réellement vue par la passerelle est conservée à côté de l'adresse déclarée pour permettre un recoupement.

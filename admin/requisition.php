@@ -407,7 +407,7 @@ require_once __DIR__ . '/inc/layout.php';
 $report = $hasQuery ? req_collect($db, $type, $val, $from, $to) : null;
 pf_header('Réquisition judiciaire', 'requisition.php');
 ?>
-<div class="ad-intro" style="background:linear-gradient(120deg,#3a1526,#1a1020);border:1px solid var(--line);border-radius:14px;padding:1.1rem 1.4rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+<div class="dir-intro" style="background:linear-gradient(120deg,#3a1526,#1a1020);border:1px solid var(--line);border-radius:14px;padding:1.1rem 1.4rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
   <span style="font-size:2rem">⚖️</span>
   <div style="flex:1;min-width:220px">
     <div style="font-size:1.15rem;font-weight:600;color:#fff">Réquisition judiciaire &amp; administrative</div>

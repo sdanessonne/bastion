@@ -171,7 +171,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     <p class="muted small" style="margin-top:0">Attribue toujours la même adresse IP à un appareil (repéré par son
     adresse MAC) — imprimantes, serveurs, bornes… L'appareil prend l'IP réservée à son prochain renouvellement de bail.</p>
 
-    <form method="post" class="ad-inline" style="margin-bottom:1rem" id="resvForm">
+    <form method="post" class="dir-inline" style="margin-bottom:1rem" id="resvForm">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="add">
       <input type="text" name="mac" id="resvMac" required placeholder="Adresse MAC (aa:bb:cc:dd:ee:ff)" list="livemac"
              style="min-width:210px;font-family:ui-monospace,monospace">

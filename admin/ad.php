@@ -48,7 +48,7 @@ $GPO_CATALOG = require __DIR__ . '/inc/gpo-catalog.php';
 // ── Jauge d'installation GPO : point de sondage (AJAX, lecture seule) ─────────
 // La console interroge cette route (?gpo_progress=<nonce>) pendant un déploiement lancé
 // en arrière-plan pour animer la barre. Le nonce nomme le fichier de progression écrit
-// par ad-ctl.sh. Aucun effet de bord, hormis vider le cache AD une fois le déploiement fini.
+// par dir-ctl.sh. Aucun effet de bord, hormis vider le cache AD une fois le déploiement fini.
 if (isset($_GET['gpo_progress'])) {
     header('Content-Type: application/json');
     $nonce = preg_replace('/[^a-f0-9]/', '', (string) $_GET['gpo_progress']);
@@ -509,7 +509,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $users = $computers = $groups = $ous = $gpos = $shares = [];
 if ($dcUp) {
     // Cache froid → rafraîchir les 6 listes EN PARALLÈLE en un seul appel (~1,5 s au lieu de ~9 s).
-    $wf = '/dev/shm/pf-ad-users.cache';
+    $wf = '/dev/shm/pf-dir-users.cache';
     if (!is_file($wf) || (time() - filemtime($wf)) >= AD_TTL) { shell_exec('sudo /usr/local/sbin/proxyfibre-ad warm 2>/dev/null'); }
     $users     = ad_lines_cached('users', 0, 'user', 'list');
     $computers = ad_lines_cached('computers', 0, 'computer', 'list');
@@ -697,20 +697,20 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   <code>provisioning/setup-ad.sh</code> sur la passerelle, puis rechargez cette page.</div>
 <?php else: ?>
 <style>
-  .ad-intro{background:linear-gradient(120deg,#1e3a5f,#152238);border:1px solid var(--line);border-radius:14px;
+  .dir-intro{background:linear-gradient(120deg,#1e3a5f,#152238);border:1px solid var(--line);border-radius:14px;
     padding:1.1rem 1.4rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
-  .ad-intro .dom{font-size:1.15rem;font-weight:600;color:#fff}
-  .ad-intro .desc{color:var(--muted);font-size:.9rem;flex:1;min-width:220px}
-  .ad-sec{margin-bottom:1.4rem}
-  .ad-sec .lead{color:var(--muted);font-size:.86rem;margin:.2rem 0 0}
-  .ad-help{font-size:.78rem;color:var(--muted)}
-  .ad-inline{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
-  .ad-inline input{flex:1;min-width:180px;padding:.55rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px}
+  .dir-intro .dom{font-size:1.15rem;font-weight:600;color:#fff}
+  .dir-intro .desc{color:var(--muted);font-size:.9rem;flex:1;min-width:220px}
+  .dir-sec{margin-bottom:1.4rem}
+  .dir-sec .lead{color:var(--muted);font-size:.86rem;margin:.2rem 0 0}
+  .dir-help{font-size:.78rem;color:var(--muted)}
+  .dir-inline{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+  .dir-inline input{flex:1;min-width:180px;padding:.55rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px}
   .chips{display:flex;flex-wrap:wrap;gap:.4rem}
   .chip{background:var(--bg);border:1px solid var(--line);border-radius:20px;padding:.25rem .7rem;font-size:.82rem;color:var(--text)}
 </style>
 
-<div class="ad-intro">
+<div class="dir-intro">
   <span style="font-size:2rem">🗄️</span>
   <div>
     <div class="dom">Domaine <?= e($curRealm) ?></div>
@@ -737,18 +737,18 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
 
 <!-- Onglets : la page Active Directory est vaste — on regroupe ses sections. -->
 <style>
-  .ad-tabs{display:flex;gap:.3rem;flex-wrap:wrap;margin:0 0 1.4rem;border-bottom:1px solid var(--line)}
-  .ad-tab{background:transparent;border:1px solid transparent;border-bottom:none;color:var(--muted);cursor:pointer;
+  .dir-tabs{display:flex;gap:.3rem;flex-wrap:wrap;margin:0 0 1.4rem;border-bottom:1px solid var(--line)}
+  .dir-tab{background:transparent;border:1px solid transparent;border-bottom:none;color:var(--muted);cursor:pointer;
           padding:.6rem 1.05rem;font-size:.9rem;border-radius:10px 10px 0 0;font-weight:500;white-space:nowrap}
-  .ad-tab:hover{color:var(--text);background:var(--bg)}
-  .ad-tab.active{color:#fff;background:var(--panel);border-color:var(--line);margin-bottom:-1px}
+  .dir-tab:hover{color:var(--text);background:var(--bg)}
+  .dir-tab.active{color:#fff;background:var(--panel);border-color:var(--line);margin-bottom:-1px}
 </style>
-<nav class="ad-tabs" role="tablist" aria-label="Sections Active Directory">
-  <button type="button" class="ad-tab" data-tab="ensemble">🌳 Vue d'ensemble</button>
-  <button type="button" class="ad-tab" data-tab="comptes">👮 Comptes &amp; groupes</button>
-  <button type="button" class="ad-tab" data-tab="postes">💻 Postes</button>
-  <button type="button" class="ad-tab" data-tab="partages">📁 Partages &amp; lecteurs</button>
-  <button type="button" class="ad-tab" data-tab="gpo">📋 Stratégies (GPO)</button>
+<nav class="dir-tabs" role="tablist" aria-label="Sections Active Directory">
+  <button type="button" class="dir-tab" data-tab="ensemble">🌳 Vue d'ensemble</button>
+  <button type="button" class="dir-tab" data-tab="comptes">👮 Comptes &amp; groupes</button>
+  <button type="button" class="dir-tab" data-tab="postes">💻 Postes</button>
+  <button type="button" class="dir-tab" data-tab="partages">📁 Partages &amp; lecteurs</button>
+  <button type="button" class="dir-tab" data-tab="gpo">📋 Stratégies (GPO)</button>
 </nav>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -761,14 +761,14 @@ document.addEventListener('DOMContentLoaded', function () {
     ['Dossiers partagés', 'partages'], ['Lecteurs réseau', 'partages'],
     ['Stratégies de groupe', 'gpo']
   ];
-  var secs = document.querySelectorAll('section.ad-sec');
+  var secs = document.querySelectorAll('section.dir-sec');
   secs.forEach(function (s) {
     var h = s.querySelector('.panel-head h2'); var t = h ? h.textContent : '';
     var tab = 'ensemble';
     for (var i = 0; i < map.length; i++) { if (t.indexOf(map[i][0]) >= 0) { tab = map[i][1]; break; } }
     s.setAttribute('data-adtab', tab);
   });
-  var tabs = document.querySelectorAll('.ad-tab');
+  var tabs = document.querySelectorAll('.dir-tab');
   function show(name) {
     secs.forEach(function (s) { s.style.display = (s.getAttribute('data-adtab') === name) ? '' : 'none'; });
     tabs.forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
@@ -780,7 +780,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('.kpi[data-tab]').forEach(function (k) {
     k.addEventListener('click', function () {
       show(k.dataset.tab);
-      document.querySelector('.ad-tabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelector('.dir-tabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 
@@ -817,7 +817,7 @@ document.addEventListener('DOMContentLoaded', function () {
   .tree details>summary:hover{background:var(--panel2)}
   .tree .leaf-muted{color:var(--muted)}
 </style>
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>🌳 Arborescence de l'annuaire</h2>
     <div style="display:flex;gap:.5rem">
       <button type="button" class="btn-sm" onclick="document.querySelectorAll('.tree details').forEach(d=>d.open=true)">Tout déplier</button>
@@ -873,12 +873,12 @@ document.addEventListener('DOMContentLoaded', function () {
 </section>
 
 <!-- 0. NOM DE DOMAINE -->
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>⚙️ Nom de domaine</h2></div>
   <div style="padding:1rem 1.2rem">
     <p class="lead" style="margin:0 0 .9rem">Domaine actuel : <strong><?= e($curRealm) ?></strong>
       (NetBIOS <?= e($curWg) ?>, DN <code><?= e($baseDN) ?></code>).</p>
-    <form method="post" class="ad-inline" style="margin-bottom:.5rem">
+    <form method="post" class="dir-inline" style="margin-bottom:.5rem">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="domain_save">
       <input type="text" name="realm" value="<?= e($wantRealm) ?>" placeholder="ex. POLICE.LOCAL" style="text-transform:uppercase">
       <input type="text" name="domain" value="<?= e($wantDom) ?>" placeholder="NetBIOS" style="max-width:160px;text-transform:uppercase">
@@ -893,13 +893,13 @@ document.addEventListener('DOMContentLoaded', function () {
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="reprovision">
       <button class="btn-sm btn-danger">🗑️ Recréer le domaine avec ce nom</button>
     </form>
-    <p class="ad-help" style="margin-top:.7rem">La recréation prend ~2 min (services redémarrés) ; rechargez la page ensuite.
+    <p class="dir-help" style="margin-top:.7rem">La recréation prend ~2 min (services redémarrés) ; rechargez la page ensuite.
     Les postes déjà joints devront être re-joints au nouveau domaine.</p>
   </div>
 </section>
 
 <!-- 0bis. ACTIVATION KMS -->
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>🔑 Activation Windows / Office (KMS)</h2>
     <?php $kmsUp = trim((string) shell_exec('systemctl is-active proxyfibre-kms 2>/dev/null')) === 'active'; ?>
     <span class="badge <?= $kmsUp ? 'on' : 'off' ?>">
@@ -913,14 +913,14 @@ document.addEventListener('DOMContentLoaded', function () {
 Office  :  cd "C:\Program Files\Microsoft Office\Office16"
            cscript ospp.vbs /sethst:192.168.182.1
            cscript ospp.vbs /act</pre>
-    <p class="ad-help" style="margin-top:.6rem">Utiliser les clés KMS génériques (GVLK) de Microsoft.
+    <p class="dir-help" style="margin-top:.6rem">Utiliser les clés KMS génériques (GVLK) de Microsoft.
     L'activation se renouvelle seule (180 jours). Serveur : <code>vlmcsd</code> sur le port 1688.</p>
     <?php $kmsGpo = in_array('Bastion — Activation Windows/Office', array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
     <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#14324f,#152238);padding:1rem 1.2rem;margin-top:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
       <span style="font-size:1.8rem">⚡</span>
       <div style="flex:1;min-width:240px">
         <div style="font-weight:600">Activation automatique à la jonction au domaine</div>
-        <div class="ad-help" style="margin:.2rem 0 0">Déploie une GPO (script de démarrage) + les enregistrements DNS
+        <div class="dir-help" style="margin:.2rem 0 0">Déploie une GPO (script de démarrage) + les enregistrements DNS
         d'auto-découverte <code>_vlmcs</code> : <strong>Windows et Office s'activent seuls</strong> contre le KMS Bastion
         dès qu'un poste est sur le domaine. Garde-fou : les postes déjà activés (OEM/numérique) ne sont pas touchés.</div>
       </div>
@@ -942,7 +942,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
 </section>
 
 <!-- Recalage de l'heure des postes au démarrage -->
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>🕒 Heure des postes du domaine</h2></div>
   <div style="padding:1rem 1.2rem">
     <?php $tsGpo = in_array('Bastion — Recaler l\'heure au démarrage', array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
@@ -950,7 +950,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
       <span style="font-size:1.8rem">🕒</span>
       <div style="flex:1;min-width:240px">
         <div style="font-weight:600">Recaler l'heure au démarrage</div>
-        <div class="ad-help" style="margin:.2rem 0 0">Déploie une GPO (script de démarrage) qui, à <strong>chaque démarrage</strong> d'un poste,
+        <div class="dir-help" style="margin:.2rem 0 0">Déploie une GPO (script de démarrage) qui, à <strong>chaque démarrage</strong> d'un poste,
         pointe l'horloge sur la passerelle et <strong>force une resynchronisation</strong> (correction d'écart illimitée).
         Indispensable pour les postes en <strong>machine virtuelle</strong> dont l'horloge se décale au boot — sinon Kerberos,
         les GPO et les <strong>lecteurs réseau</strong> échouent tant que l'heure est fausse.</div>
@@ -967,7 +967,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
 </section>
 
 <!-- 1. FONCTIONNAIRES → page fusionnée -->
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>👮 Fonctionnaires (<?= count($humanUsers) ?>)</h2>
     <a class="btn-sm" href="/users.php">Gérer les utilisateurs &amp; droits →</a></div>
   <p class="lead" style="padding:.2rem 1.2rem 1rem">La création et la gestion des comptes (accès Internet
@@ -977,7 +977,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
 </section>
 
 <!-- 2. ORDINATEURS -->
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>💻 Ordinateurs du domaine (<?= count($computers) ?>)</h2></div>
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0"><strong>Cliquez sur un poste</strong> pour voir le dernier
   fonctionnaire connecté et ajouter une description. Joindre un poste : DNS sur <code><?= e(explode('.', $baseDN)[0] === 'DC=bastion' ? '192.168.182.2' : '192.168.182.2') ?></code>,
@@ -1076,7 +1076,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
 </script>
 
 <!-- 3. DOSSIERS PARTAGÉS -->
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>📁 Dossiers partagés (<?= count($shares) ?>)</h2></div>
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0">Dossiers réseau accessibles depuis les postes via
   <code>\\192.168.182.2\NomDuPartage</code>. Les fichiers déposés sont analysés par l'antivirus.
@@ -1185,7 +1185,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
               </table>
               <button class="btn">Enregistrer les droits</button>
               <button type="button" class="btn-sm js-acl" data-share="<?= e($sh['name']) ?>">Annuler</button>
-              <p class="ad-help" style="margin:.6rem 0 0">
+              <p class="dir-help" style="margin:.6rem 0 0">
                 ⚠️ Un agent ajouté à un groupe doit <strong>fermer puis rouvrir sa session Windows</strong> pour que
                 le changement prenne effet : ses groupes sont figés à l'ouverture de session.<br>
                 Retirer un droit ne supprime aucun fichier ; les documents déjà déposés restent en place.
@@ -1197,7 +1197,7 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
         <?php endforeach; endif; ?>
       </tbody>
     </table>
-    <form method="post" class="ad-inline">
+    <form method="post" class="dir-inline">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="share_create">
       <input type="text" name="name" required placeholder="Nom du nouveau partage (ex. Brigade)" pattern="[A-Za-z0-9_\-]+" title="Lettres, chiffres, tiret et souligné uniquement">
       <button class="btn-sm">+ Créer le partage</button>
@@ -1237,7 +1237,7 @@ try {
 } catch (Throwable $e) {}
 $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['name'] ?? '', $gpos), true);
 ?>
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>💽 Lecteurs réseau (<?= count($drives) ?>)</h2>
     <form method="post" style="margin:0" onsubmit="this.querySelector('button').textContent='Déploiement…';this.querySelector('button').disabled=true">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="drives_deploy">
@@ -1248,7 +1248,7 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
   de session des agents (par GPO). Les chemins pointent vers les partages par le <strong>nom du serveur</strong>, ex.
   <code>\\<?= e($curDc) ?>\Commun</code> (et non <code>\\<?= e(strtolower($curRealm)) ?>\Commun</code> : un partage
   ordinaire n'est pas dans l'espace DFS du domaine → « Élément introuvable »).</p>
-  <div class="ad-help" style="margin:0 1.2rem .8rem;padding:.7rem .9rem;background:rgba(56,189,248,.06);border-radius:8px">
+  <div class="dir-help" style="margin:0 1.2rem .8rem;padding:.7rem .9rem;background:rgba(56,189,248,.06);border-radius:8px">
     <strong>Un poste affiche « Windows a tenté en vain de lire gpt.ini » ?</strong>
     Les permissions du SYSVOL sont désynchronisées (fréquent après création de GPO sur Samba).
     <form method="post" style="margin:.5rem 0 0" onsubmit="this.querySelector('button').textContent='Réparation…';this.querySelector('button').disabled=true">
@@ -1282,7 +1282,7 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
         <?php endforeach; endif; ?>
       </tbody>
     </table>
-    <form method="post" class="ad-inline" id="driveForm">
+    <form method="post" class="dir-inline" id="driveForm">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
       <input type="hidden" name="do" value="drive_add" id="driveDo">
       <input type="hidden" name="id" value="" id="driveId">
@@ -1306,7 +1306,7 @@ $drivesGpo = in_array('Bastion — Lecteurs réseau', array_map(fn($g) => $g['na
       <button class="btn-sm" id="driveSubmit">+ Ajouter</button>
       <button type="button" class="btn-sm" id="driveCancel" style="display:none" onclick="pfDriveReset()">Annuler</button>
     </form>
-    <?php if ($drivesGpo): ?><p class="ad-help" style="margin-top:.6rem"><span class="badge on">✓ GPO déployée</span>
+    <?php if ($drivesGpo): ?><p class="dir-help" style="margin-top:.6rem"><span class="badge on">✓ GPO déployée</span>
       Les lecteurs se montent à l'<strong>ouverture de session</strong> des agents (après <code>gpupdate</code> + reconnexion).</p><?php endif; ?>
   </div>
 </section>
@@ -1345,7 +1345,7 @@ try {
 } catch (Throwable $e) {}
 $lgHas = fn(string $l) => strpos($lgFlags, $l) !== false;
 ?>
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>🔐 Écran de connexion des postes</h2>
     <?php if ($lgGpo): ?><span class="badge on">✓ GPO déployée</span><?php endif; ?>
   </div>
@@ -1401,7 +1401,7 @@ $lgHas = fn(string $l) => strpos($lgFlags, $l) !== false;
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="photo_deploy">
         <button class="btn"><?= $phGpo ? '🔄 Actualiser la stratégie' : '🚀 Déployer sur les postes' ?></button>
       </form>
-      <p class="ad-help" style="margin:.8rem 0 0">
+      <p class="dir-help" style="margin:.8rem 0 0">
         Windows ne lit <strong>jamais</strong> la photo de l'annuaire pour l'image de compte : il faut
         l'écrire sur le poste, ce qui exige les droits administrateur. La stratégie utilise donc un
         script de <strong>démarrage</strong>, exécuté en tant que SYSTEM. C'est aussi ce qui permet à
@@ -1411,7 +1411,7 @@ $lgHas = fn(string $l) => strpos($lgFlags, $l) !== false;
       </p>
     </div>
 
-    <p class="ad-help" style="margin:.8rem 0 0">
+    <p class="dir-help" style="margin:.8rem 0 0">
       Le <strong>message</strong> et les <strong>masquages</strong> fonctionnent sur toutes les éditions de Windows.
       L'<strong>image de fond</strong> n'est appliquée nativement que par les éditions <strong>Entreprise</strong>
       et <strong>Éducation</strong> ; pour les éditions Famille et Professionnel, cochez la case de compatibilité
@@ -1436,7 +1436,7 @@ try {
 $wpPreview = $wpHas ? ('wallpaper-img.php?t=' . $wpTs) : '';
 $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 'Centrer', '22' => 'Étendre', 'tile' => 'Mosaïque'];
 ?>
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>🖼️ Fond d'écran des postes</h2>
     <?php if ($wpGpo): ?><span class="badge on">✓ GPO déployée</span><?php endif; ?>
   </div>
@@ -1462,7 +1462,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
           <?php endforeach; ?>
         </select></label>
       <div><button class="btn"<?= $dcUp ? '' : ' disabled' ?>>🖼️ Appliquer sur les postes</button></div>
-      <p class="ad-help" style="margin:0">S'applique à la prochaine <strong>ouverture de session</strong> des agents
+      <p class="dir-help" style="margin:0">S'applique à la prochaine <strong>ouverture de session</strong> des agents
       (ou après <code>gpupdate /force</code> + reconnexion). Remplace le fond précédent.</p>
     </form>
   </div>
@@ -1504,7 +1504,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
   .cat-scope{align-self:flex-start;font-size:.68rem;padding:.1rem .5rem;border-radius:20px;background:var(--panel2);color:var(--muted)}
   .cat-d{color:var(--muted);font-size:.82rem;line-height:1.5;margin:.1rem 0 .3rem;flex:1}
 </style>
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>📋 Stratégies de groupe (GPO) (<?= count($gpos) ?>)</h2></div>
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0"><strong>Cliquez sur une GPO</strong> pour savoir ce qu'elle
   fait. Les GPO appliquent automatiquement des règles aux postes (sécurité, mot de passe, restrictions…) ;
@@ -1527,7 +1527,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
     <div class="gpo-diag" id="gpo-diag">
       <div class="gpo-diag-head">
         <div><span style="font-size:1.3rem">🩺</span> <strong>Diagnostic des stratégies</strong>
-          <div class="ad-help" style="margin:.15rem 0 0">Vérifie que chaque GPO Bastion est <strong>liée</strong>, <strong>lisible par les postes</strong> (permissions SYSVOL) et <strong>complète</strong> — repère les stratégies qui ne s'appliquent pas.</div>
+          <div class="dir-help" style="margin:.15rem 0 0">Vérifie que chaque GPO Bastion est <strong>liée</strong>, <strong>lisible par les postes</strong> (permissions SYSVOL) et <strong>complète</strong> — repère les stratégies qui ne s'appliquent pas.</div>
         </div>
         <button type="button" class="btn-sm" id="gpo-diag-run">🩺 Lancer le diagnostic</button>
       </div>
@@ -1595,7 +1595,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
       <span style="font-size:1.8rem">🔐</span>
       <div style="flex:1;min-width:240px">
         <div style="font-weight:600">Certificat racine Bastion — confiance HTTPS des postes</div>
-        <div class="ad-help" style="margin:.2rem 0 0">Déploie l'autorité Bastion dans le magasin « Autorités racines de confiance »
+        <div class="dir-help" style="margin:.2rem 0 0">Déploie l'autorité Bastion dans le magasin « Autorités racines de confiance »
         de <strong>tous les postes du domaine</strong> (par GPO, dès qu'ils rejoignent le réseau AD). Les pages Bastion
         (console, portail, <strong>page de blocage</strong>) s'affichent alors sans avertissement de certificat.</div>
       </div>
@@ -1617,16 +1617,16 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
         <div style="flex:1;min-width:240px">
           <div style="font-weight:600">Chiffrement BitLocker des disques — clé dans l'Active Directory
             <?php if ($blGpo): ?><span class="badge on" style="margin-left:.4rem">✓ Déployé</span><?php endif; ?></div>
-          <div class="ad-help" style="margin:.2rem 0 0">Chiffre le disque système des postes et <strong>sauvegarde la clé de
+          <div class="dir-help" style="margin:.2rem 0 0">Chiffre le disque système des postes et <strong>sauvegarde la clé de
           récupération dans l'AD</strong> (visible sous chaque ordinateur ci-dessous). S'active au démarrage sur les postes
           dotés d'un <strong>TPM prêt</strong> (édition Pro/Entreprise) ; la clé est séquestrée <em>avant</em> le chiffrement.
           Les postes sans TPM ne sont pas touchés.</div>
-          <div class="ad-help" style="margin:.35rem 0 0;color:#eab308">⚠️ Opération à fort impact : <strong>testez d'abord sur un poste pilote</strong>.</div>
+          <div class="dir-help" style="margin:.35rem 0 0;color:#eab308">⚠️ Opération à fort impact : <strong>testez d'abord sur un poste pilote</strong>.</div>
         </div>
       </div>
       <form method="post" onsubmit="return blConfirm(this)" style="margin-top:.9rem;border-top:1px solid var(--line);padding-top:.8rem">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="bitlocker_deploy">
-        <div class="ad-help" style="margin-bottom:.45rem">Mode de déverrouillage au démarrage :</div>
+        <div class="dir-help" style="margin-bottom:.45rem">Mode de déverrouillage au démarrage :</div>
         <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem">
           <label class="bl-opt"><input type="radio" name="bl_mode" value="tpm" checked> <span><strong>TPM seul</strong> — démarrage transparent, aucun code. Recommandé pour les <strong>postes fixes</strong>.</span></label>
           <label class="bl-opt"><input type="radio" name="bl_mode" value="tpmpin_common"> <span><strong>TPM + PIN commun</strong> — un même code pour tout le parc, posé automatiquement. Un code est demandé à chaque démarrage.</span></label>
@@ -1635,7 +1635,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
         <div id="blpinrow" style="display:none;margin-bottom:.6rem">
           <input type="text" name="bl_pin" inputmode="numeric" pattern="\d{6,20}" maxlength="20" autocomplete="off" placeholder="PIN commun — 6 à 20 chiffres"
                  style="padding:.45rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;max-width:260px">
-          <div class="ad-help" style="color:#eab308;margin-top:.25rem">⚠️ Un PIN commun est <strong>lisible dans SYSVOL</strong> par les comptes du domaine — à réserver au « frein anti-vol opportuniste ».</div>
+          <div class="dir-help" style="color:#eab308;margin-top:.25rem">⚠️ Un PIN commun est <strong>lisible dans SYSVOL</strong> par les comptes du domaine — à réserver au « frein anti-vol opportuniste ».</div>
         </div>
         <button class="btn">🔐 <?= $blGpo ? 'Redéployer / changer de mode' : 'Déployer BitLocker' ?></button>
       </form>
@@ -1666,7 +1666,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
 
     <!-- Catalogue prêt à déployer -->
     <h3 style="font-size:.95rem;margin:.2rem 0 .3rem">📚 Catalogue de stratégies — déploiement en un clic (<?= count($GPO_CATALOG) ?>)</h3>
-    <p class="ad-help" style="margin:0 0 .8rem">Chaque modèle crée la GPO, la configure et la <strong>lie au domaine</strong>.
+    <p class="dir-help" style="margin:0 0 .8rem">Chaque modèle crée la GPO, la configure et la <strong>lie au domaine</strong>.
     Elle s'applique aux postes à leur prochaine actualisation (<code>gpupdate /force</code> ou redémarrage).</p>
     <?php
       $deployedNames = array_map(fn($g) => $g['name'] ?? '', $gpos);
@@ -1831,7 +1831,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
     </script>
 
     <h3 style="font-size:.95rem;margin:1.4rem 0 .3rem">GPO déployées sur le domaine (<?= count($gpos) ?>)</h3>
-    <p class="ad-help" style="margin:0 0 .8rem">Toutes les stratégies actuellement liées au domaine. Chaque carte indique
+    <p class="dir-help" style="margin:0 0 .8rem">Toutes les stratégies actuellement liées au domaine. Chaque carte indique
     sa <strong>portée</strong> (💻 ordinateur ou 👤 utilisateur) et son rôle. Cliquez une carte pour voir son identifiant
     et y ajouter une note.</p>
     <?php
@@ -1846,7 +1846,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
           'Bastion — Lecteurs réseau' => ['icon'=>'💽','scope'=>'Utilisateur','desc'=>"Connecte automatiquement les lecteurs réseau (partages) à l'ouverture de session."],
       ];
     ?>
-    <form method="post" class="ad-inline" style="margin-bottom:1rem">
+    <form method="post" class="dir-inline" style="margin-bottom:1rem">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_create">
       <input type="text" name="name" required placeholder="Créer une GPO vide (ex. Sécurité-Postes)">
       <button class="btn">＋ Créer la GPO</button>
@@ -1882,7 +1882,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
         <div class="gpo-body">
           <?php if ($note !== '' && $note !== $desc): ?><p class="expl"><strong>Note de l'administrateur :</strong><br><?= nl2br(e($note)) ?></p><?php endif; ?>
           <?php $linked = in_array($guid, $gpoLinked, true); ?>
-          <p class="ad-help">Identifiant : <code><?= e($g['guid'] ?? '—') ?></code> · État :
+          <p class="dir-help">Identifiant : <code><?= e($g['guid'] ?? '—') ?></code> · État :
             <strong style="color:<?= $linked ? '#4ade80' : '#eab308' ?>"><?= $linked ? 'active (liée au domaine)' : 'désactivée (déliée)' ?></strong></p>
           <?php if (!$builtin): ?>
             <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.7rem">
@@ -1900,7 +1900,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
                 <input type="hidden" name="guid" value="<?= e($g['guid'] ?? '') ?>"><button class="btn-sm btn-danger">🗑 Désinstaller</button></form>
             </div>
           <?php else: ?>
-            <p class="ad-help" style="margin-bottom:.7rem">🔒 Stratégie système Windows — ni désactivable ni supprimable depuis la console.</p>
+            <p class="dir-help" style="margin-bottom:.7rem">🔒 Stratégie système Windows — ni désactivable ni supprimable depuis la console.</p>
           <?php endif; ?>
           <?php if (!$builtin): $curF = $gpoWmi[$guid] ?? ''; ?>
             <form method="post" style="margin-bottom:.7rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
@@ -1958,7 +1958,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
   .sys-card .n{font-weight:600;font-size:.83rem}
   .sys-card .d{color:var(--muted);font-size:.76rem;line-height:1.4;margin-top:.15rem}
 </style>
-<section class="ad-sec panel">
+<section class="dir-sec panel">
   <div class="panel-head"><h2>🏷️ Groupes &amp; unités d'organisation</h2></div>
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0"><strong>Groupes</strong> : ensembles d'agents partageant
   des droits (ex. accès à un partage). <strong>Unités d'organisation (OU)</strong> : classement des comptes/postes
@@ -1967,7 +1967,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
     <!-- Colonne GROUPES -->
     <div>
       <h3 style="font-size:.9rem;margin:.2rem 0 .5rem">👮 Vos groupes métier (<?= count($customGroups) ?>)</h3>
-      <form method="post" class="ad-inline" style="margin-bottom:.7rem">
+      <form method="post" class="dir-inline" style="margin-bottom:.7rem">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="group_add">
         <input type="text" name="name" required placeholder="Ex. Brigade-VTT, Accueil, Commissariat-Evry…">
         <button class="btn-sm">＋ Groupe</button>
@@ -2004,7 +2004,7 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
     <!-- Colonne OU -->
     <div>
       <h3 style="font-size:.9rem;margin:.2rem 0 .5rem">🗂️ Unités d'organisation (<?= count($customOus) ?>)</h3>
-      <form method="post" class="ad-inline" style="margin-bottom:.7rem">
+      <form method="post" class="dir-inline" style="margin-bottom:.7rem">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="ou_create">
         <input type="text" name="name" required placeholder="Ex. Commissariat-Evry, Brigade-Nuit…">
         <button class="btn-sm">＋ OU</button>

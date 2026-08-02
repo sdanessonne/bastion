@@ -116,7 +116,7 @@ pf_header('Accès visiteur', 'visiteurs.php');
 <section class="panel">
   <div class="panel-head"><h2>🎟️ Créer des bons visiteur</h2></div>
   <div style="padding:1rem 1.2rem">
-    <p class="ad-help" style="margin-top:0">Des identifiants d'accès Internet <strong>temporaires</strong>, validés par le portail comme un compte agent,
+    <p class="dir-help" style="margin-top:0">Des identifiants d'accès Internet <strong>temporaires</strong>, validés par le portail comme un compte agent,
     mais <strong>supprimés automatiquement à l'échéance</strong> (et la session coupée). Idéal pour un intervenant ou un visiteur.</p>
     <form method="post" class="stack" style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-end">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="create">

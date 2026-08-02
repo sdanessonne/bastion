@@ -101,7 +101,7 @@ pf_header('Chiffrement des postes', 'chiffrement.php');
   <div class="panel-head"><h2>🔐 Postes du domaine (<?= $nTot ?>)</h2>
     <span class="badge <?= $blGpo ? 'on' : 'off' ?>"><?= $blGpo ? 'GPO de chiffrement active' : 'GPO de chiffrement non déployée' ?></span></div>
   <div style="padding:.4rem 1.2rem 1.2rem">
-    <p class="ad-help" style="margin:.6rem 0 1rem">Le chiffrement est déployé par la <strong>GPO « Bastion — Chiffrement BitLocker »</strong>.
+    <p class="dir-help" style="margin:.6rem 0 1rem">Le chiffrement est déployé par la <strong>GPO « Bastion — Chiffrement BitLocker »</strong>.
     Un poste <strong>installé par le réseau (PXE)</strong> et joint au domaine est chiffré <strong>au premier démarrage</strong>,
     sa clé remontant automatiquement ici. Réservez l'accès de cette page aux administrateurs habilités.</p>
     <div class="table-wrap"><table class="grid-table">

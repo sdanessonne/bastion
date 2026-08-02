@@ -244,7 +244,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <p class="muted small" style="margin:.2rem 0 .7rem">Un jeton par ordinateur : on voit lequel se sert (et quand), et on
       peut en révoquer un seul — poste volé ou remplacé — sans reconfigurer les autres. Le jeton n'ouvre que le dépôt
       de résultats et la base virale, <strong>rien d'autre</strong>.</p>
-      <form method="post" class="ad-inline" style="margin-bottom:.9rem">
+      <form method="post" class="dir-inline" style="margin-bottom:.9rem">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="station_token_add">
         <input type="text" name="label" required maxlength="96" placeholder="Nom du poste (ex. Accueil brigade)"
                style="flex:1;min-width:170px;padding:.5rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px">

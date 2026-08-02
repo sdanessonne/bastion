@@ -98,7 +98,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     <?php endif; ?>
 
     <h3 style="font-size:.95rem;margin:.4rem 0 .3rem">Isoler un poste</h3>
-    <form method="post" class="ad-inline" style="margin-bottom:1rem">
+    <form method="post" class="dir-inline" style="margin-bottom:1rem">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="block">
       <input type="text" name="ip" required placeholder="Adresse IP du poste" style="max-width:160px;font-family:ui-monospace,monospace">
       <input type="text" name="label" placeholder="Repère (poste, agent…)" maxlength="96" style="min-width:170px">
