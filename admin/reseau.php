@@ -46,8 +46,72 @@ if (isset($_GET['data'])) {
     exit;
 }
 
+/**
+ * ── Rôle physique des ports ──────────────────────────────────────────────────
+ * Rien, nulle part, ne disait quel port du boîtier portait le WAN et lequel
+ * portait le LAN. Lors du câblage du premier serveur, le réseau du service a été
+ * branché sur le port LAN : son profil s'est activé seul, dnsmasq a démarré, et un
+ * serveur DHCP a écouté quelques minutes sur un réseau de production. Aucun bail
+ * n'est parti, mais personne n'aurait pu s'en apercevoir depuis la console.
+ * Ces trois lignes coûtent peu et rendent l'erreur visible avant qu'elle nuise.
+ */
+function pf_ports_reseau(): array {
+    $conf = [];
+    foreach (@file('/etc/proxyfibre/net.env') ?: [] as $l) {
+        if (preg_match('/^\s*(WAN_IF|LAN_IF)\s*=\s*"?([^"\s]+)/', $l, $m)) $conf[$m[1]] = $m[2];
+    }
+    $roles = [($conf['WAN_IF'] ?? '') => 'WAN', ($conf['LAN_IF'] ?? '') => 'LAN'];
+    $out = [];
+    foreach (glob('/sys/class/net/*') ?: [] as $p) {
+        $if = basename($p);
+        if ($if === 'lo' || str_starts_with($if, 'veth')) continue;
+        $lien = trim((string) @file_get_contents("$p/carrier"));   // « 1 » = câble détecté
+        $deb  = trim((string) @file_get_contents("$p/speed"));
+        $ips  = [];
+        foreach (explode("\n", (string) shell_exec('ip -4 -br addr show ' . escapeshellarg($if) . ' 2>/dev/null')) as $l) {
+            if (preg_match_all('/\d+\.\d+\.\d+\.\d+\/\d+/', $l, $mm)) $ips = $mm[0];
+        }
+        $out[] = [
+            'if'    => $if,
+            'role'  => $roles[$if] ?? '',
+            'lien'  => $lien === '1',
+            'debit' => ($deb > 0) ? (int) $deb : 0,
+            'ips'   => $ips,
+        ];
+    }
+    usort($out, fn($a, $b) => [$b['role'] === 'WAN', $b['role'] === 'LAN'] <=> [$a['role'] === 'WAN', $a['role'] === 'LAN']);
+    return $out;
+}
+$pf_ports = pf_ports_reseau();
+
 pf_header('Supervision réseau', 'reseau.php');
 ?>
+<section class="panel">
+  <div class="panel-head"><h2>🔌 Ports réseau</h2></div>
+  <table class="tbl">
+    <thead><tr><th>Rôle</th><th>Interface</th><th>Câble</th><th>Adresse</th><th>Lien</th></tr></thead>
+    <tbody>
+    <?php foreach ($pf_ports as $p): ?>
+      <tr>
+        <td><?= $p['role'] === 'WAN' ? '<b>WAN</b> — Internet'
+              : ($p['role'] === 'LAN' ? '<b>LAN</b> — postes' : '<span class="muted">—</span>') ?></td>
+        <td><code><?= htmlspecialchars($p['if']) ?></code></td>
+        <td><?= $p['lien'] ? '<span class="badge ok">branché</span>'
+                           : '<span class="badge warn">aucun câble</span>' ?></td>
+        <td><?= $p['ips'] ? htmlspecialchars(implode(' · ', $p['ips'])) : '<span class="muted">—</span>' ?></td>
+        <td><?= $p['debit'] ? $p['debit'] . ' Mb/s' : '<span class="muted">—</span>' ?></td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  <p class="muted small" style="margin:.7rem 0 0">
+    Le port <b>LAN</b> distribue les adresses <code>DHCP</code> et intercepte le DNS des postes.
+    Il doit aller sur le <b>switch isolé du parc</b>, jamais sur un réseau déjà équipé d'un serveur
+    DHCP : deux serveurs sur le même câble rendent les postes injoignables, et la panne est
+    difficile à imputer. Le port <b>WAN</b> est celui qui va vers Internet.
+  </p>
+</section>
+<?php ?>
 <style>
   .net-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem;margin-bottom:1rem}
   .net-kpi{border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:.9rem 1.1rem}
