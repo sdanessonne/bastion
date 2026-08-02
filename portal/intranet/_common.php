@@ -318,8 +318,25 @@ function intranet_head(string $title, string $active = ''): void {
     <div class="ttl"><?= e_(intranet_setting('intranet_title', 'Intranet')) ?></div>
     <div class="sp"></div>
     <button class="themebtn" id="themeBtn" aria-label="Changer de thème" title="Thème clair / sombre">🌓</button>
-    <a class="act" href="/portal/account.php">Mon compte</a>
-    <a class="act" href="/portal/logout.php">Se déconnecter</a>
+    <?php
+    // ── L'EN-TÊTE DIT L'ÉTAT RÉEL DE LA SESSION ────────────────────────────
+    // Il affichait « Mon compte » et « Se déconnecter » en toutes circonstances.
+    // Or l'intranet est servi PAR la passerelle : il reste consultable sans être
+    // authentifié — c'est voulu, un agent doit pouvoir joindre l'assistance même
+    // sans accès Internet. Résultat, on cliquait sur « Mon compte » pour s'entendre
+    // répondre « Vous n'êtes pas connecté », sans avoir jamais été prévenu.
+    // Le portail SAIT si la session est ouverte ; autant le dire.
+    $_u = intranet_user();
+    ?>
+    <?php if (!empty($_u['auth'])): ?>
+      <?php if (!empty($_u['user'])): ?>
+        <span class="act" style="opacity:.75" title="Session ouverte">👤 <?= e_($_u['user']) ?></span>
+      <?php endif; ?>
+      <a class="act" href="/portal/account.php">Mon compte</a>
+      <a class="act" href="/portal/logout.php">Se déconnecter</a>
+    <?php else: ?>
+      <a class="act" href="/portal/fas.php">Se connecter</a>
+    <?php endif; ?>
   </header>
   <script>window.__intranet={newsMax:<?= (int) $newsMax ?>,active:<?= json_encode($active) ?>};</script>
   <nav class="menu">
@@ -334,9 +351,27 @@ function intranet_head(string $title, string $active = ''): void {
     <a href="/portal/intranet.php" class="<?= $active === 'home' ? 'on' : '' ?>"><span class="i">🏠</span>Accueil</a>
     <a href="/portal/intranet/annuaire.php" class="<?= $active === 'annuaire' ? 'on' : '' ?>"><span class="i">👥</span>Annuaire</a>
     <a href="/portal/intranet/assistance.php" class="<?= $active === 'assistance' ? 'on' : '' ?>"><span class="i">🛟</span>Aide</a>
-    <a href="/portal/account.php"><span class="i">👤</span>Compte</a>
+    <?php if (!empty($_u['auth'])): ?>
+      <a href="/portal/account.php"><span class="i">👤</span>Compte</a>
+    <?php else: ?>
+      <a href="/portal/fas.php"><span class="i">🔑</span>Connexion</a>
+    <?php endif; ?>
   </nav>
   <main>
+    <?php if (empty($_u['auth'])): ?>
+      <!-- Ni alarmiste ni muet : l'intranet fonctionne, c'est l'accès Internet qui
+           manque. On dit lequel des deux, et où aller pour l'obtenir. -->
+      <div style="display:flex;align-items:center;gap:.7rem;background:#2a2412;border:1px solid #a16207;
+                  border-radius:12px;padding:.7rem .9rem;margin-bottom:1.1rem;font-size:.88rem">
+        <span style="font-size:1.2rem">🔒</span>
+        <div style="flex:1;line-height:1.4">
+          Vous consultez l'intranet <strong>sans être identifié</strong> : l'annuaire, l'assistance
+          et la documentation restent accessibles, mais l'accès à Internet est fermé.
+        </div>
+        <a href="/portal/fas.php" style="flex:none;background:var(--accent);color:#052536;font-weight:600;
+           padding:.45rem .9rem;border-radius:9px;white-space:nowrap">S'identifier</a>
+      </div>
+    <?php endif; ?>
     <div id="pwaBanner" style="display:none;align-items:center;gap:.7rem;background:#152a45;border:1px solid var(--accent);border-radius:12px;padding:.7rem .9rem;margin-bottom:1.1rem">
       <img src="/portal/assets/icon-192.png" alt="" style="width:34px;height:34px;border-radius:8px;flex:none">
       <div style="flex:1;font-size:.85rem;line-height:1.35"><strong style="color:#fff">Installer l'application</strong><br><span class="muted" id="pwaHint">Accédez à l'intranet en un geste depuis votre écran d'accueil.</span></div>
