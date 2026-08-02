@@ -9,9 +9,21 @@
 # Usage : sudo ./setup-ad.sh
 set -euo pipefail
 
-DNS_IP="192.168.182.2"           # IP dédiée au DNS du contrôleur de domaine
-GW_IP="192.168.182.1"            # dnsmasq (portail captif)
-LAN_IF="enp0s8"
+# ── D'où viennent ces valeurs ────────────────────────────────────────────────
+# LAN_IF valait « enp0s8 » en dur : le nom de l'interface de la VM de développement.
+# Sur toute autre machine — un serveur physique nomme les siennes enp1s0/enp2s0 —
+# l'adresse du contrôleur de domaine était posée sur une interface INEXISTANTE.
+# L'erreur était avalée par le « || true » qui suit, l'unité systemd échouait en
+# silence, et Samba se liait à une adresse absente. Un annuaire mort, sans un mot.
+# config.env porte déjà la bonne valeur : c'est lui qui décide, ici comme ailleurs.
+_ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -r "$_ICI/config.env" ] && . "$_ICI/config.env"
+LAN_IF="${LAN_IF:-enp0s8}"
+GW_IP="${LAN_IP:-192.168.182.1}"   # dnsmasq (portail captif)
+# Le DNS du domaine prend l'adresse suivante sur le même réseau : .1 est la
+# passerelle, .2 l'annuaire. Déduite de GW_IP pour rester cohérente si le plan
+# d'adressage change dans config.env.
+DNS_IP="$(printf '%s' "$GW_IP" | sed 's/\.[0-9]*$//').2"
 DC_HOST="dc"
 
 # ── Nom de domaine : priorité env AD_REALM/AD_DOMAIN, puis réglages base
