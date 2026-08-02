@@ -40,9 +40,27 @@ function intranet_user(): array {
     // pf_nds_client() encaisse les refus de ndsctl : auparavant, le message d'erreur
     // était mis en cache et l'agent paraissait déconnecté pendant une minute entière.
     $x = pf_nds_client($ip, 60);
-    if ($x !== null) {
-        $auth = ($x['state'] ?? '') === 'Authenticated';
-        if (!empty($x['custom']) && ($d = base64_decode($x['custom'], true)) && preg_match('/user=([^,]+)/', $d, $m)) { $u = $m[1]; }
+    $auth = $x !== null && ($x['state'] ?? '') === 'Authenticated';
+
+    // ── CACHE ASYMÉTRIQUE, ET LA RAISON EST CONCRÈTE ────────────────────────
+    // Le cache de 60 s économise un appel lent à ndsctl. Mais il gardait AUSSI les
+    // réponses négatives : un agent qui venait de s'identifier voyait l'intranet
+    // continuer à le déclarer « non identifié » pendant une minute entière, et
+    // recommençait à se connecter en croyant avoir échoué. Constaté sur la
+    // passerelle, portail authentifié et bandeau toujours affiché.
+    //
+    // Les deux erreurs ne coûtent pas la même chose. Un « authentifié » périmé dure
+    // au plus 60 s après une déconnexion — sans conséquence, le pare-feu ayant déjà
+    // coupé l'accès. Un « non authentifié » périmé, lui, tombe précisément au moment
+    // où l'agent vient d'agir. On ne met donc en cache QUE les réponses positives.
+    if (!$auth) {
+        $x = pf_nds_client($ip, 0);   // 0 = on redemande à OpenNDS, sans se fier au cache
+        $auth = $x !== null && ($x['state'] ?? '') === 'Authenticated';
+    }
+
+    if ($x !== null && !empty($x['custom'])
+        && ($d = base64_decode($x['custom'], true)) && preg_match('/user=([^,]+)/', $d, $m)) {
+        $u = $m[1];
     }
     return $c = ['user' => $u, 'auth' => $auth];
 }

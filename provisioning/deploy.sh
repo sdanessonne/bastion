@@ -261,7 +261,13 @@ chgrp www-data /etc/proxyfibre/portal.env
 DEBIAN_FRONTEND=noninteractive apt-get install -y conntrack >/dev/null 2>&1 || true
 install -m755 "${REPO_DIR}/services/scripts/deauth.sh" /usr/local/sbin/proxyfibre-deauth
 cat > /etc/sudoers.d/proxyfibre-portal <<'SUD'
-www-data ALL=(root) NOPASSWD: /usr/bin/ndsctl json, /usr/bin/ndsctl deauth *
+# « ndsctl json * » et pas seulement « ndsctl json ». La regle sans joker
+# n'autorisait que la commande NUE : l'appel reel, « ndsctl json <ip> », etait
+# refuse par sudo. Le portail ne recevait donc rien et concluait que PERSONNE
+# n'etait authentifie -- pour tous les agents, en permanence. Un commentaire du
+# code decrivait deja le symptome (« l'agent paraissait deconnecte ») sans que
+# la cause, la regle sudo, ait ete trouvee.
+www-data ALL=(root) NOPASSWD: /usr/bin/ndsctl json, /usr/bin/ndsctl json *, /usr/bin/ndsctl deauth *
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-deauth *
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-portal
