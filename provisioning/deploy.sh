@@ -451,6 +451,8 @@ systemctl daemon-reload
 systemctl enable --now proxyfibre-updatecheck.timer >/dev/null 2>&1 || true
 # Mesure de la ligne Internet : la passerelle ne peut pas connaître sa capacité autrement.
 install -m755 "${REPO_DIR}/services/scripts/speedtest-wan.sh" /usr/local/sbin/proxyfibre-speedtest
+# Diagnostic de lenteur : lecture seule, ne modifie rien.
+install -m755 "${REPO_DIR}/services/scripts/perf-check.sh" /usr/local/sbin/proxyfibre-perf-check
 # Dépôt Git de Bastion : renseigné depuis la console (Système → Mise à jour de Bastion).
 # 600 : le fichier peut contenir un jeton d'accès à un dépôt privé.
 [ -f /etc/proxyfibre/update.env ] || printf 'GIT_REPO=""\nGIT_BRANCH="main"\nGIT_TOKEN=""\n' > /etc/proxyfibre/update.env

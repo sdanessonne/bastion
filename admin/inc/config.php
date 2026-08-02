@@ -6,6 +6,11 @@
  */
 declare(strict_types=1);
 
+// Chronomètre de la console. Placé ICI parce que config.php est le seul fichier
+// que TOUTES les pages incluent : mesurer ailleurs laisserait des pages muettes,
+// et ce sont précisément celles-là qu'on soupçonnerait ensuite sans preuve.
+require_once __DIR__ . '/perf.php';
+
 const BASTION_VERSION = '1.0';
 
 // Aligne l'horloge PHP sur le fuseau du système (= celui de MariaDB), pour que les
