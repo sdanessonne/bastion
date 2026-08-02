@@ -28,8 +28,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['do'] ?? '') === 'w
     // Bornes de la norme 802.11 : hostapd refuserait de démarrer hors de celles-ci,
     // et le point d'accès disparaîtrait — souvent en emportant l'accès de celui qui
     // vient de valider. On refuse donc AVANT d'écrire, pas après.
+    // Réseau ouvert : demandé explicitement, et jamais par défaut. On exige aussi que
+    // la case « j'ai compris » soit cochée — un réseau sans phrase sur une antenne
+    // pontée avec l'annuaire n'est pas une préférence d'affichage.
+    $ouvert = !empty($_POST['wifi_open']);
+    $dejaOuvert = !empty($wifi['ouvert']);
     if (strlen($ssid) < 1 || strlen($ssid) > 32) {
         $wifi_flash = ['Le nom du réseau doit faire 1 à 32 caractères.', 'err'];
+    } elseif ($ouvert && !$dejaOuvert && empty($_POST['wifi_open_ok'])) {
+        $wifi_flash = ['Réseau ouvert : cochez la confirmation pour appliquer.', 'err'];
+    } elseif (!$ouvert && $psk === '' && $dejaOuvert) {
+        $wifi_flash = ['Pour repasser en réseau protégé, indiquez une phrase secrète.', 'err'];
     } elseif ($psk !== '' && (strlen($psk) < 8 || strlen($psk) > 63)) {
         $wifi_flash = ['La phrase secrète doit faire 8 à 63 caractères (norme WPA2).', 'err'];
     } elseif (preg_match('/[\x00-\x1F\x7F]/', $ssid . $psk)) {
@@ -40,6 +49,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['do'] ?? '') === 'w
         $up = $db->prepare('INSERT INTO pf_settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)');
         $up->execute(['wifi_ssid', $ssid]);
         $up->execute(['wifi_channel', (string) $canal]);
+        $up->execute(['wifi_open', $ouvert ? '1' : '0']);
         // Phrase laissée vide = inchangée : on ne force pas à la retaper pour
         // renommer le réseau, et elle n'est jamais réaffichée dans la page.
         if ($psk !== '') $up->execute(['wifi_psk', $psk]);
@@ -47,7 +57,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['do'] ?? '') === 'w
         if (stripos($out, 'ECHEC') !== false || $out === '') {
             $wifi_flash = ['Le point d’accès n’a pas redémarré. ' . htmlspecialchars($out), 'err'];
         } else {
-            audit('wifi.config', 'SSID ' . $ssid . ' · canal ' . $canal . ($psk !== '' ? ' · phrase renouvelée' : ''));
+            audit('wifi.config', 'SSID ' . $ssid . ' · canal ' . $canal
+                . ($ouvert ? ' · RESEAU OUVERT (sans chiffrement)' : ' · WPA2')
+                . ($psk !== '' ? ' · phrase renouvelée' : ''));
             $wifi_flash = [$out, 'ok'];
         }
     }
@@ -276,7 +288,8 @@ pf_header('Supervision réseau', 'reseau.php');
       </label>
       <label>Phrase secrète
         <input name="wifi_psk" type="password" minlength="8" maxlength="63" autocomplete="new-password"
-               placeholder="inchangée si laissée vide">
+               placeholder="<?= !empty($wifi['ouvert']) ? 'réseau ouvert — aucune phrase' : 'inchangée si laissée vide' ?>"
+               <?= !empty($wifi['ouvert']) ? 'disabled' : '' ?> id="pskfield">
       </label>
       <label>Canal
         <select name="wifi_channel">
@@ -285,7 +298,37 @@ pf_header('Supervision réseau', 'reseau.php');
           <?php endfor; ?>
         </select>
       </label>
-      <div><button class="btn" type="submit">Appliquer</button></div>
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+        <button class="btn" type="submit">Appliquer</button>
+        <a class="btn" href="wifi-fiche.php" target="_blank" rel="noopener"
+           style="background:var(--panel2);color:var(--text);text-decoration:none;display:inline-block"
+           title="Fiche PDF avec le QR de connexion, à afficher ou à remettre">📄 Fiche PDF</a>
+      </div>
+
+      <!-- Réseau ouvert : hors de la grille, sur toute la largeur, avec ce qu'il faut
+           lire avant de cocher. Un tel choix ne se glisse pas entre deux champs. -->
+      <div style="grid-column:1/-1;border:1px solid var(--line);border-left:3px solid #eab308;
+                  border-radius:10px;padding:.75rem .9rem;margin-top:.3rem">
+        <label style="display:flex;gap:.5rem;align-items:flex-start;font-size:.9rem;color:var(--text)">
+          <input type="checkbox" name="wifi_open" value="1" id="wopen" <?= !empty($wifi['ouvert']) ? 'checked' : '' ?>
+                 onchange="document.getElementById('pskfield').disabled=this.checked;document.getElementById('wopenbox').hidden=!this.checked||<?= !empty($wifi['ouvert']) ? 'true' : 'false' ?>">
+          <span><b>Réseau ouvert</b> — aucune phrase secrète. Les agents se connectent
+          directement, puis s’identifient sur le portail captif.</span>
+        </label>
+        <div id="wopenbox" hidden style="margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line)">
+          <p class="muted small" style="margin:0 0 .5rem;max-width:70ch">
+            Sans phrase, <b>le lien radio n’est pas chiffré</b> : tout ce qui ne passe pas
+            en HTTPS se lit avec n’importe quel portable à portée. Et sur cette passerelle
+            l’antenne est <b>pontée avec le réseau des postes</b> : un terminal obtient une
+            adresse et atteint le contrôleur de domaine <b>avant</b> de s’authentifier. Le
+            portail bloque la sortie vers Internet, pas les machines locales.
+          </p>
+          <label style="display:flex;gap:.5rem;align-items:center;font-size:.85rem;color:var(--text)">
+            <input type="checkbox" name="wifi_open_ok" value="1">
+            <span>J’ai lu ce que cela expose et je l’applique en connaissance de cause.</span>
+          </label>
+        </div>
+      </div>
     </form>
     <!-- ── Spectre 2,4 GHz ─────────────────────────────────────────────────
          Choisir un canal « au hasard parmi ceux qui semblent libres » ne marche pas

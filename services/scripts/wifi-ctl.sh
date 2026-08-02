@@ -19,6 +19,7 @@ case "${1:-}" in
     SSID=$(reglage wifi_ssid)
     PSK=$(reglage wifi_psk)
     CANAL=$(reglage wifi_channel)
+    OUVERT=$(reglage wifi_open)
     [ -n "$SSID" ] || { echo "aucun SSID enregistre"; exit 1; }
 
     # REVALIDATION côté serveur. La page a déjà contrôlé, mais une validation qui
@@ -26,9 +27,20 @@ case "${1:-}" in
     # distrait, pas le système. Les bornes viennent de la norme 802.11 elle-même —
     # hostapd refuserait de démarrer, et le point d'accès disparaîtrait sans un mot.
     LS=$(printf '%s' "$SSID" | wc -c)
-    LP=$(printf '%s' "$PSK"  | wc -c)
     [ "$LS" -ge 1 ] && [ "$LS" -le 32 ] || { echo "SSID hors bornes (1 a 32 caracteres)"; exit 1; }
-    [ "$LP" -ge 8 ] && [ "$LP" -le 63 ] || { echo "phrase secrete hors bornes (8 a 63 caracteres)"; exit 1; }
+    if [ "$OUVERT" = "1" ]; then
+        # Réseau OUVERT : aucune phrase. Le lien radio n'est alors pas chiffré — tout
+        # ce qui n'est pas en HTTPS circule en clair et se lit avec n'importe quel
+        # portable à portée. C'est le fonctionnement normal d'un portail captif public,
+        # mais ici l'antenne est pontée avec le LAN : les postes et le contrôleur de
+        # domaine sont sur le même segment. Le portail bloque la sortie vers Internet,
+        # pas l'accès aux machines locales. Le choix se fait en connaissance de cause,
+        # depuis la console, avec l'avertissement affiché.
+        PSK=""
+    else
+        LP=$(printf '%s' "$PSK" | wc -c)
+        [ "$LP" -ge 8 ] && [ "$LP" -le 63 ] || { echo "phrase secrete hors bornes (8 a 63 caracteres)"; exit 1; }
+    fi
     # Ni saut de ligne ni guillemet : on écrit un fichier de configuration clé=valeur.
     printf '%s' "$SSID$PSK" | grep -q '[[:cntrl:]]' && { echo "caractere de controle refuse"; exit 1; }
     case "$CANAL" in ''|*[!0-9]*) CANAL=6 ;; esac
@@ -57,10 +69,18 @@ case "${1:-}" in
       echo "wmm_enabled=1"
       echo "auth_algs=1"
       echo "ignore_broadcast_ssid=0"
-      echo "wpa=2"
-      echo "wpa_key_mgmt=WPA-PSK"
-      echo "rsn_pairwise=CCMP"
-      echo "wpa_passphrase=$PSK"
+      if [ "$OUVERT" = "1" ]; then
+        echo "# Reseau OUVERT : aucune ligne wpa*. hostapd emet alors sans chiffrement."
+        # ap_isolate empêche au moins les terminaux de se parler entre eux : sur un
+        # réseau ouvert, c'est le minimum. Cela ne les empêche PAS d'atteindre la
+        # passerelle et le contrôleur de domaine, qui ne sont pas des clients Wi-Fi.
+        echo "ap_isolate=1"
+      else
+        echo "wpa=2"
+        echo "wpa_key_mgmt=WPA-PSK"
+        echo "rsn_pairwise=CCMP"
+        echo "wpa_passphrase=$PSK"
+      fi
     } > "$tmp"
     install -m600 -o root -g root "$tmp" "$CONF"
     rm -f "$tmp"
@@ -70,7 +90,11 @@ case "${1:-}" in
     # un site, et l'administrateur — souvent connecté PAR ce Wi-Fi — n'aurait plus
     # aucun moyen de revenir en arrière.
     if systemctl restart hostapd >/dev/null 2>&1 && sleep 3 && systemctl is-active --quiet hostapd; then
-        echo "point d acces applique : $SSID (canal $CANAL)"
+        if [ "$OUVERT" = "1" ]; then
+            echo "point d acces applique : $SSID (canal $CANAL) — RESEAU OUVERT, sans chiffrement"
+        else
+            echo "point d acces applique : $SSID (canal $CANAL)"
+        fi
     else
         echo "ECHEC : hostapd n a pas demarre avec cette configuration."
         systemctl status hostapd --no-pager -n 5 2>&1 | tail -4
@@ -86,8 +110,12 @@ case "${1:-}" in
     ACTIF=$(systemctl is-active hostapd 2>/dev/null)
     # Nombre de terminaux associés — un chiffre concret vaut mieux qu'un voyant vert.
     CLIENTS=$(iw dev "$WIF" station dump 2>/dev/null | grep -c '^Station')
-    printf '{"ssid":"%s","canal":"%s","interface":"%s","pont":"%s","actif":"%s","clients":%s}\n' \
-        "$SSID" "$CANAL" "$WIF" "$PONT" "$ACTIF" "${CLIENTS:-0}"
+    # Lu DANS LE FICHIER EN VIGUEUR, pas dans la base : c'est l'état réellement diffusé
+    # qui compte. Un réglage enregistré mais non appliqué afficherait « protégé » sur
+    # une antenne qui émet en clair — le pire des affichages.
+    OUVERT=0; grep -q '^wpa=' "$CONF" 2>/dev/null || OUVERT=1
+    printf '{"ssid":"%s","canal":"%s","interface":"%s","pont":"%s","actif":"%s","clients":%s,"ouvert":%s}\n' \
+        "$SSID" "$CANAL" "$WIF" "$PONT" "$ACTIF" "${CLIENTS:-0}" "$OUVERT"
     ;;
 
   scan)
