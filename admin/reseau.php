@@ -132,6 +132,13 @@ function pf_ports_reseau(): array {
     return $out;
 }
 $pf_ports = pf_ports_reseau();
+// Le nom de l'interface LAN, relu ici : c'est lui qui désigne la carte à présenter
+// comme « réseau des postes ». Sur cette passerelle c'est un pont ; ailleurs ce sera
+// une carte ordinaire. La présentation ne doit dépendre ni de l'un ni de l'autre.
+$pf_lan_if = '';
+foreach (@file('/etc/proxyfibre/net.env') ?: [] as $l) {
+    if (preg_match('/^\s*LAN_IF\s*=\s*"?([^"\s]+)/', $l, $m)) $pf_lan_if = $m[1];
+}
 
 // L'état du point d'accès est lu APRÈS la sortie du point d'entrée JSON : cette page
 // se sonde toutes les deux secondes pour le débit, et un « sudo » par sondage serait
@@ -142,44 +149,120 @@ pf_header('Supervision réseau', 'reseau.php');
 ?>
 <section class="panel">
   <div class="panel-head"><h2>🔌 Ports réseau</h2></div>
-  <table class="tbl">
-    <thead><tr><th>Rôle</th><th>Interface</th><th>Câble</th><th>Adresse</th><th>Lien</th></tr></thead>
-    <tbody>
-    <?php foreach ($pf_ports as $p): ?>
-      <tr>
-        <td><?= $p['role'] === 'WAN' ? '<b>WAN</b> — Internet'
-              : ($p['role'] === 'LAN' ? '<b>LAN</b> — postes' : '<span class="muted">—</span>') ?></td>
-        <td>
-          <code><?= htmlspecialchars($p['if']) ?></code>
-          <?php if ($p['sansfil']): ?><span class="muted small">· Wi-Fi</span><?php endif; ?>
-          <?php if ($p['pont']): ?><br><span class="muted small">membre de <code><?= htmlspecialchars($p['pont']) ?></code></span><?php endif; ?>
-        </td>
-        <td><?= $p['sansfil']
-              ? ($p['lien'] ? '<span class="badge ok">radio active</span>' : '<span class="badge warn">radio inactive</span>')
-              : ($p['lien'] ? '<span class="badge ok">branché</span>' : '<span class="badge warn">aucun câble</span>') ?></td>
-        <td><?= $p['ips'] ? htmlspecialchars(implode(' · ', $p['ips'])) : '<span class="muted">—</span>' ?></td>
-        <td><?= $p['debit'] ? $p['debit'] . ' Mb/s' : '<span class="muted">—</span>' ?></td>
-      </tr>
-    <?php endforeach; ?>
-    </tbody>
-  </table>
-  <?php if (!empty($wifi['interface'])): ?>
-  <div style="border-top:1px solid var(--line);margin-top:1rem;padding-top:1rem">
-    <h3 style="margin:0 0 .6rem;font-size:.95rem">📶 Point d’accès Wi-Fi</h3>
-    <?php if ($wifi_flash): ?>
-      <div class="flash <?= $wifi_flash[1] === 'ok' ? 'ok' : 'err' ?>" role="alert"><?= htmlspecialchars($wifi_flash[0]) ?></div>
-    <?php endif; ?>
-    <p class="muted small" style="margin:0 0 .8rem">
-      État : <b><?= $wifi['actif'] === 'active' ? 'en service' : htmlspecialchars((string) $wifi['actif']) ?></b>
-      · <?= (int) ($wifi['clients'] ?? 0) ?> terminal(aux) connecté(s)
-      <?= !empty($wifi['pont']) ? '· relié au LAN par <code>' . htmlspecialchars($wifi['pont']) . '</code>' : '' ?>
+  <div style="padding:1.1rem 1.2rem">
+    <?php
+    // Présentation PAR RÔLE et non par interface. Le tableau plat précédent alignait
+    // trois lignes « LAN » — le pont et ses deux membres — annonçait « câble branché »
+    // sur une interface virtuelle qui n'a pas de port, et entassait deux adresses dans
+    // une cellule. Un pont n'est pas un port : le présenter comme tel embrouille.
+    $parNom = [];
+    foreach ($pf_ports as $p) $parNom[$p['if']] = $p;
+    $wan = null; $lan = null; $libres = [];
+    foreach ($pf_ports as $p) {
+        if ($p['role'] === 'WAN' && !$p['pont'])      { $wan = $p; }
+        elseif ($p['if'] === ($pf_lan_if ?? ''))       { $lan = $p; }
+        elseif ($p['role'] === '' && !$p['pont'])      { $libres[] = $p; }
+    }
+    if (!$lan) foreach ($pf_ports as $p) if ($p['role'] === 'LAN' && !$p['pont']) { $lan = $p; break; }
+    $membres = array_values(array_filter($pf_ports, fn($p) => $lan && $p['pont'] === $lan['if']));
+
+    $etatLien = static function (array $p): string {
+        if ($p['sansfil']) return $p['lien']
+            ? '<span class="badge on">radio active</span>'
+            : '<span class="badge warn">radio inactive</span>';
+        return $p['lien']
+            ? '<span class="badge on">câble branché</span>'
+            : '<span class="badge warn">aucun câble</span>';
+    };
+    ?>
+
+    <div style="display:grid;gap:.9rem">
+
+      <?php if ($wan): ?>
+      <div style="border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:.8rem 1rem;background:var(--bg)">
+        <div style="display:flex;justify-content:space-between;gap:.8rem;flex-wrap:wrap;align-items:baseline">
+          <b>WAN — accès Internet</b>
+          <span class="muted small"><code><?= e($wan['if']) ?></code><?= $wan['debit'] ? ' · ' . $wan['debit'] . ' Mb/s' : '' ?></span>
+        </div>
+        <div style="margin-top:.45rem;display:flex;gap:.9rem;flex-wrap:wrap;align-items:center">
+          <?= $etatLien($wan) ?>
+          <span><?= $wan['ips'] ? e(implode(' · ', $wan['ips'])) : '<span class="muted">aucune adresse</span>' ?></span>
+        </div>
+      </div>
+      <?php endif; ?>
+
+      <?php if ($lan): ?>
+      <div style="border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:10px;padding:.8rem 1rem;background:var(--bg)">
+        <div style="display:flex;justify-content:space-between;gap:.8rem;flex-wrap:wrap;align-items:baseline">
+          <b>LAN — réseau des postes</b>
+          <span class="muted small"><code><?= e($lan['if']) ?></code><?= $membres ? ' · pont' : '' ?></span>
+        </div>
+        <div style="margin-top:.45rem">
+          <?php foreach ($lan['ips'] as $i => $ip): ?>
+            <span><?= e($ip) ?></span>
+            <span class="muted small"><?= $i === 0 ? '(passerelle, DHCP, DNS)' : '(annuaire)' ?></span><?= $i < count($lan['ips']) - 1 ? '<br>' : '' ?>
+          <?php endforeach; ?>
+          <?php if (!$lan['ips']): ?><span class="muted">aucune adresse — le LAN est inactif</span><?php endif; ?>
+        </div>
+        <?php if ($membres): ?>
+          <div style="margin-top:.7rem;padding-top:.6rem;border-top:1px dashed var(--line)">
+            <div class="muted small" style="margin-bottom:.4rem">Ce réseau réunit :</div>
+            <?php foreach ($membres as $m): ?>
+              <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;margin:.25rem 0">
+                <code style="min-width:9rem"><?= e($m['if']) ?></code>
+                <?= $etatLien($m) ?>
+                <span class="muted small">
+                  <?= $m['sansfil'] ? 'point d’accès Wi-Fi' : 'port filaire' ?>
+                  <?= (!$m['sansfil'] && $m['debit']) ? ' · ' . $m['debit'] . ' Mb/s' : '' ?>
+                </span>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
+
+      <?php if ($libres): ?>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:.8rem 1rem;background:var(--bg)">
+        <div class="muted small" style="margin-bottom:.35rem">Ports sans rôle attribué</div>
+        <?php foreach ($libres as $p): ?>
+          <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;margin:.25rem 0">
+            <code style="min-width:9rem"><?= e($p['if']) ?></code>
+            <?= $etatLien($p) ?>
+            <span class="muted small"><?= $p['ips'] ? e(implode(' · ', $p['ips'])) : '' ?></span>
+          </div>
+        <?php endforeach; ?>
+      </div>
+      <?php endif; ?>
+
+    </div>
+
+    <p class="muted small" style="margin:1rem 0 0;max-width:70ch">
+      Le réseau <b>LAN</b> distribue les adresses <code>DHCP</code> et intercepte le DNS
+      des postes. Il doit aller sur le <b>switch isolé du parc</b>, jamais sur un réseau
+      déjà équipé d’un serveur DHCP : deux serveurs sur le même câble rendent les postes
+      injoignables, et la panne est difficile à imputer.
     </p>
-    <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.8rem;align-items:end">
+  </div>
+</section>
+
+<?php if (!empty($wifi['interface'])): ?>
+<section class="panel">
+  <div class="panel-head"><h2>📶 Point d’accès Wi-Fi</h2></div>
+  <div style="padding:1.1rem 1.2rem">
+    <?php if ($wifi_flash): ?>
+      <div class="flash <?= $wifi_flash[1] === 'ok' ? 'ok' : 'err' ?>" role="alert" style="margin-bottom:.9rem"><?= e($wifi_flash[0]) ?></div>
+    <?php endif; ?>
+    <p class="muted small" style="margin:0 0 1rem">
+      État : <b><?= $wifi['actif'] === 'active' ? 'en service' : e((string) $wifi['actif']) ?></b>
+      · <?= (int) ($wifi['clients'] ?? 0) ?> terminal(aux) connecté(s)
+      <?= !empty($wifi['pont']) ? '· relié au LAN par <code>' . e($wifi['pont']) . '</code>' : '' ?>
+    </p>
+    <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.9rem;align-items:end;max-width:820px">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
       <input type="hidden" name="do" value="wifi">
       <label>Nom du réseau (SSID)
-        <input name="wifi_ssid" maxlength="32" required
-               value="<?= htmlspecialchars((string) ($wifi['ssid'] ?? '')) ?>">
+        <input name="wifi_ssid" maxlength="32" required value="<?= e((string) ($wifi['ssid'] ?? '')) ?>">
       </label>
       <label>Phrase secrète
         <input name="wifi_psk" type="password" minlength="8" maxlength="63" autocomplete="new-password"
@@ -192,23 +275,17 @@ pf_header('Supervision réseau', 'reseau.php');
           <?php endfor; ?>
         </select>
       </label>
-      <button class="btn" type="submit">Appliquer</button>
+      <div><button class="btn" type="submit">Appliquer</button></div>
     </form>
-    <p class="muted small" style="margin:.7rem 0 0">
-      Le réseau se coupe une seconde à l’application, le temps du redémarrage — les
-      terminaux connectés se reconnectent seuls, sauf si la phrase a changé.
-      La phrase protège le lien radio ; l’identification de l’agent se fait ensuite
-      sur le portail, comme sur le câble.
+    <p class="muted small" style="margin:.9rem 0 0;max-width:70ch">
+      Le réseau se coupe une seconde à l’application, le temps du redémarrage : les
+      terminaux connectés se reconnectent seuls, sauf si la phrase a changé. Cette phrase
+      protège le lien radio — l’identification de l’agent se fait ensuite sur le portail,
+      exactement comme sur le câble.
     </p>
   </div>
-  <?php endif; ?>
-  <p class="muted small" style="margin:.7rem 0 0">
-    Le port <b>LAN</b> distribue les adresses <code>DHCP</code> et intercepte le DNS des postes.
-    Il doit aller sur le <b>switch isolé du parc</b>, jamais sur un réseau déjà équipé d'un serveur
-    DHCP : deux serveurs sur le même câble rendent les postes injoignables, et la panne est
-    difficile à imputer. Le port <b>WAN</b> est celui qui va vers Internet.
-  </p>
 </section>
+<?php endif; ?>
 <?php ?>
 <style>
   .net-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem;margin-bottom:1rem}
