@@ -125,6 +125,42 @@ if [ -f /srv/pxe/iso/win11.iso ]; then
   mountpoint -q /srv/pxe/mnt/win11 || mount -o loop,ro /srv/pxe/iso/win11.iso /srv/pxe/mnt/win11 2>/dev/null || true
   grep -q "/srv/pxe/mnt/win11" /etc/fstab 2>/dev/null || \
     echo "/srv/pxe/iso/win11.iso /srv/pxe/mnt/win11 udf,iso9660 loop,ro,nofail 0 0" >> /etc/fstab
+  # ── Fichiers d'amorçage Windows servis par iPXE ─────────────────────────────
+  # menu.php sert quatre fichiers pour démarrer WinPE :
+  #     {base}/win11/bootmgr  ·  BCD  ·  boot.sdi  ·  boot.wim
+  # Aucun n'était produit par ce script. Sur la première passerelle ils avaient été
+  # posés à la main, et personne ne s'en souvenait : sur une installation neuve, le
+  # menu PXE s'affichait, l'entrée Windows existait, et le poste ne démarrait pas —
+  # sans que rien n'indique quel fichier manquait.
+  # Ils sont tous DANS l'ISO qu'on vient de monter. On les recopie donc, plutôt que
+  # de les supposer présents. Recopie et non lien : injecter_menu() modifie boot.wim.
+  ISOM=/srv/pxe/mnt/win11
+  WINB=/var/www/html/boot/win11
+  if [ -f "$ISOM/sources/boot.wim" ]; then
+    mkdir -p "$WINB"
+    # Le nom du BCD change de casse selon le média (bcd en UDF, BCD ailleurs).
+    BCD_SRC="$ISOM/boot/bcd"; [ -f "$BCD_SRC" ] || BCD_SRC="$ISOM/boot/BCD"
+    poser() {  # source, destination — ne recopie que si absent ou de taille differente
+      [ -f "$1" ] || { echo "[PXE] ATTENTION : $1 introuvable dans l'ISO"; return 1; }
+      if [ ! -f "$2" ] || [ "$(stat -c%s "$1")" != "$(stat -c%s "$2")" ]; then
+        cp -f "$1" "$2" && chmod u+w "$2"
+        echo "[PXE]   $(basename "$2") posé ($(du -h "$2" | cut -f1))"
+      fi
+    }
+    poser "$ISOM/bootmgr"           "$WINB/bootmgr"
+    poser "$BCD_SRC"                "$WINB/BCD"
+    poser "$ISOM/boot/boot.sdi"     "$WINB/boot.sdi"
+    poser "$ISOM/sources/boot.wim"  "$WINB/boot.wim"
+    chown -R www-data:www-data "$WINB" 2>/dev/null || true
+    # wimboot est le chargeur iPXE qui enchaîne ces quatre fichiers. Il ne vient PAS
+    # de Microsoft : c'est une brique du projet iPXE, à fournir séparément.
+    [ -f /var/www/html/boot/wimboot ] || cat <<'WBEOF'
+[PXE] wimboot ABSENT — le demarrage de Windows par le reseau ne fonctionnera pas.
+      C'est le chargeur iPXE qui enchaine bootmgr/BCD/boot.sdi/boot.wim.
+      A poser dans /var/www/html/boot/wimboot (projet iPXE, hors depot Bastion).
+WBEOF
+  fi
+
   # Samba peut ne pas être encore installé : il arrive avec setup-ad.sh, qui n'est
   # pas un prérequis de ce script. Sans ce garde-fou, la redirection « >> » vers un
   # répertoire inexistant faisait mourir setup-pxe.sh EN PLEIN MILIEU, avec pour
