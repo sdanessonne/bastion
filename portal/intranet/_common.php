@@ -322,12 +322,39 @@ function intranet_head(string $title, string $active = ''): void {
     .reveal{opacity:0;transform:translateY(16px)}
     .reveal.in{opacity:1;transform:none;transition:opacity .5s ease,transform .5s ease}
     @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none}.hero{animation:none}}
+    /* ---- Tiroir de navigation (téléphone) ---- */
+    .burger{display:none;background:transparent;border:1px solid var(--line);color:var(--text);
+      width:38px;height:38px;border-radius:10px;cursor:pointer;font-size:1.1rem;line-height:1;
+      align-items:center;justify-content:center;flex:none}
+    .burger:active{transform:scale(.94)}
+    .drawer-ov{position:fixed;inset:0;background:rgba(3,8,18,.6);backdrop-filter:blur(2px);
+      opacity:0;pointer-events:none;transition:opacity .22s ease;z-index:60}
+    .drawer-ov.open{opacity:1;pointer-events:auto}
+    .drawer{position:fixed;top:0;bottom:0;left:0;width:min(78vw,320px);z-index:61;
+      background:#0d1728;border-right:1px solid var(--line);
+      transform:translateX(-100%);transition:transform .26s cubic-bezier(.16,1,.3,1);
+      display:flex;flex-direction:column;padding:calc(.9rem + env(safe-area-inset-top,0)) 0 1rem}
+    .drawer.open{transform:none}
+    .drawer .dh{display:flex;align-items:center;gap:.6rem;padding:.2rem 1.1rem 1rem;
+      border-bottom:1px solid var(--line);margin-bottom:.5rem}
+    .drawer .dh img{width:30px;height:30px;border-radius:8px}
+    .drawer .dh .t{font-weight:700}
+    .drawer a{display:flex;align-items:center;gap:.7rem;padding:.85rem 1.1rem;color:var(--text);
+      text-decoration:none;font-size:.95rem;border-left:3px solid transparent}
+    .drawer a:active{background:rgba(56,189,248,.1)}
+    .drawer a.on{border-left-color:var(--accent);color:var(--accent);background:rgba(56,189,248,.07)}
+    .drawer .sep{height:1px;background:var(--line);margin:.6rem 1.1rem}
+    @media(prefers-reduced-motion:reduce){.drawer,.drawer-ov{transition:none}}
+
     /* ---- Web-app mobile : barre d'onglets + responsive ---- */
     .tabbar{display:none}
     @media(max-width:760px){
       header.top{padding:.7rem 1rem;top:env(safe-area-inset-top,0)}
       header.top .ttl{font-size:1rem}
-      nav.menu{top:calc(53px + env(safe-area-inset-top,0));padding:.35rem .7rem}
+      /* Le menu horizontal disparaît : il débordait latéralement et volait de la
+         hauteur d'écran là où elle est le plus rare. Son contenu passe au tiroir. */
+      nav.menu{display:none}
+      .burger{display:flex}
       main{padding:1.1rem 1rem calc(74px + env(safe-area-inset-bottom,0))}
       h1{font-size:1.3rem}
       .card{padding:1.1rem;border-radius:12px}
@@ -361,6 +388,8 @@ function intranet_head(string $title, string $active = ''): void {
   <div class="bg" aria-hidden="true"><div class="aurora"></div><span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span><div class="grid"></div></div>
   <canvas id="fx" aria-hidden="true"></canvas>
   <header class="top">
+    <button class="burger" id="burger" aria-label="Ouvrir le menu" aria-expanded="false"
+            aria-controls="drawer">☰</button>
     <img src="/portal/assets/bastion-icon.svg" alt="">
     <div class="ttl"><?= e_(intranet_setting('intranet_title', 'Intranet')) ?></div>
     <div class="sp"></div>
@@ -401,6 +430,27 @@ function intranet_head(string $title, string $active = ''): void {
     <a href="/portal/intranet/annuaire.php" class="<?= $active === 'annuaire' ? 'on' : '' ?>">Annuaire</a>
     <a href="/portal/intranet/assistance.php" class="<?= $active === 'assistance' ? 'on' : '' ?>">Assistance</a>
   </nav>
+  <div class="drawer-ov" id="drawerOv" hidden></div>
+  <nav class="drawer" id="drawer" aria-label="Navigation" hidden>
+    <div class="dh">
+      <img src="/portal/assets/bastion-icon.svg" alt="">
+      <span class="t"><?= e_(intranet_setting('intranet_title', 'Intranet')) ?></span>
+    </div>
+    <a href="/portal/intranet.php" class="<?= $active === 'home' ? 'on' : '' ?>"><span>🏠</span>Accueil</a>
+    <?php foreach ($menu as $p): ?>
+      <a href="/portal/intranet/page.php?slug=<?= urlencode($p['slug']) ?>" class="<?= $active === $p['slug'] ? 'on' : '' ?>"><span>📄</span><?= e_($p['title']) ?></a>
+    <?php endforeach; ?>
+    <a href="/portal/intranet/annuaire.php" class="<?= $active === 'annuaire' ? 'on' : '' ?>"><span>👥</span>Annuaire</a>
+    <a href="/portal/intranet/assistance.php" class="<?= $active === 'assistance' ? 'on' : '' ?>"><span>🛟</span>Assistance</a>
+    <div class="sep"></div>
+    <?php if (!empty($_u['auth'])): ?>
+      <a href="/portal/account.php"><span>👤</span>Mon compte</a>
+      <a href="/portal/logout.php"><span>🚪</span>Se déconnecter</a>
+    <?php else: ?>
+      <a href="/portal/fas.php"><span>🔑</span>Se connecter</a>
+    <?php endif; ?>
+  </nav>
+
   <nav class="tabbar">
     <a href="/portal/intranet.php" class="<?= $active === 'home' ? 'on' : '' ?>"><span class="i">🏠</span>Accueil</a>
     <a href="/portal/intranet/annuaire.php" class="<?= $active === 'annuaire' ? 'on' : '' ?>"><span class="i">👥</span>Annuaire</a>
@@ -481,6 +531,38 @@ if ('serviceWorker' in navigator && window.__pwaSecure) {
               + "puis R\u00e9glages \u2192 G\u00e9n\u00e9ral \u2192 Informations \u2192 Confiance certificats." : "");
     b.style.display = 'flex';
   }
+})();
+(function () {
+  var b = document.getElementById('burger'), d = document.getElementById('drawer'),
+      ov = document.getElementById('drawerOv');
+  if (!b || !d || !ov) { return; }
+  // « hidden » est retiré à l'ouverture et remis à la fermeture : un tiroir hors
+  // écran mais présent dans le document reste atteignable au clavier et lu par les
+  // lecteurs d'écran — l'utilisateur tabule alors dans un menu qu'il ne voit pas.
+  function ouvrir() {
+    d.hidden = false; ov.hidden = false;
+    requestAnimationFrame(function () { d.classList.add('open'); ov.classList.add('open'); });
+    b.setAttribute('aria-expanded', 'true');
+    document.body.style.overflow = 'hidden';
+  }
+  function fermer() {
+    d.classList.remove('open'); ov.classList.remove('open');
+    b.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+    setTimeout(function () { d.hidden = true; ov.hidden = true; }, 280);
+  }
+  b.addEventListener('click', function () {
+    d.classList.contains('open') ? fermer() : ouvrir();
+  });
+  ov.addEventListener('click', fermer);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && d.classList.contains('open')) { fermer(); b.focus(); }
+  });
+  // Retour par le bouton « Précédent » : le navigateur restaure la page telle
+  // quelle, tiroir ouvert compris, et le défilement du corps resterait bloqué.
+  window.addEventListener('pageshow', function () {
+    if (d.classList.contains('open')) { fermer(); }
+  });
 })();
 (function(){
   var tb=document.getElementById('themeBtn');
