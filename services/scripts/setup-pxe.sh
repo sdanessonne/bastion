@@ -154,11 +154,28 @@ if [ -f /srv/pxe/iso/win11.iso ]; then
     chown -R www-data:www-data "$WINB" 2>/dev/null || true
     # wimboot est le chargeur iPXE qui enchaîne ces quatre fichiers. Il ne vient PAS
     # de Microsoft : c'est une brique du projet iPXE, à fournir séparément.
-    [ -f /var/www/html/boot/wimboot ] || cat <<'WBEOF'
-[PXE] wimboot ABSENT — le demarrage de Windows par le reseau ne fonctionnera pas.
-      C'est le chargeur iPXE qui enchaine bootmgr/BCD/boot.sdi/boot.wim.
-      A poser dans /var/www/html/boot/wimboot (projet iPXE, hors depot Bastion).
-WBEOF
+    # On le récupère, comme on récupère déjà netboot.tar.gz chez Debian. Le laisser
+    # « à poser à la main » revenait à faire buter chaque nouvelle installation sur
+    # le même mur, à la dernière étape, une fois tout le reste en place.
+    WB=/var/www/html/boot/wimboot
+    if [ ! -s "$WB" ]; then
+      echo "[PXE] wimboot absent — récupération depuis le projet iPXE…"
+      if curl -fsSL --max-time 90 -o /tmp/pf-wimboot \
+           "${WIMBOOT_URL:-https://github.com/ipxe/wimboot/releases/latest/download/wimboot}" 2>/dev/null \
+         && [ -s /tmp/pf-wimboot ] && head -c2 /tmp/pf-wimboot | grep -q 'MZ'; then
+        # Le contrôle « MZ » n'est pas cosmétique : un portail captif ou un proxy
+        # d'entreprise renvoie une page HTML avec un code 200. Sans lui, on installait
+        # un fichier de taille plausible, et le PXE échouait sans rien dire.
+        install -m644 /tmp/pf-wimboot "$WB"
+        echo "[PXE]   wimboot posé ($(du -h "$WB" | cut -f1))"
+      else
+        echo "[PXE] ATTENTION : wimboot n'a pas pu être récupéré."
+        echo "      Sans lui, AUCUN poste ne démarrera Windows par le réseau —"
+        echo "      tout le reste de la chaîne est pourtant en place."
+        echo "      Le poser à la main dans $WB (projet iPXE)."
+      fi
+      rm -f /tmp/pf-wimboot 2>/dev/null || true
+    fi
   fi
 
   # Samba peut ne pas être encore installé : il arrive avec setup-ad.sh, qui n'est
