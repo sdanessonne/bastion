@@ -160,11 +160,33 @@ $wifi = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wifi st
 // Le balayage n'est PAS fait au chargement : il oblige la carte à quitter son canal
 // quelques centaines de millisecondes, ce qui donne un hoquet aux terminaux connectés.
 // Payer cela à chaque affichage de page serait absurde. Il se déclenche à la demande.
-$spectre = null;
+// ── TROIS ÉTATS, ET NON DEUX ────────────────────────────────────────────────
+// « $spectre === null » servait à la fois pour « pas encore lancé » et pour
+// « échec ». Conséquence observée : l'analyse échouait (la règle sudoers ne
+// couvrait pas « scan »), et la page répondait calmement « l'analyse n'est pas
+// lancée automatiquement » — comme si l'on n'avait rien demandé. On cliquait,
+// rien ne se passait, et le texte affirmait que c'était normal.
+$spectre  = null;   // résultat exploitable
+$scanFait = false;  // l'analyse a-t-elle été DEMANDÉE ?
+$scanErr  = '';     // pourquoi elle n'a rien donné
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['do'] ?? '') === 'wifiscan') {
     csrf_check();
-    $spectre = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wifi scan 2>/dev/null'), true) ?: null;
-    if (function_exists('audit')) audit('wifi.scan', 'analyse du spectre 2,4 GHz');
+    $scanFait = true;
+    // La sortie d'erreur est CAPTURÉE : « 2>/dev/null » jetait précisément le
+    // message qui explique l'échec — un refus de sudo, une carte occupée, un
+    // pilote qui ne sait pas balayer en mode point d'accès.
+    $brut = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wifi scan 2>&1'));
+    $j = json_decode($brut, true);
+    if (is_array($j) && !empty($j['canaux'])) {
+        $spectre = $j;
+    } else {
+        $scanErr = $brut !== '' ? $brut : "aucune réponse de la carte sans fil";
+    }
+    if (function_exists('audit')) {
+        audit('wifi.scan', $spectre ? 'analyse du spectre 2,4 GHz'
+                                    : 'analyse du spectre ÉCHOUÉE — ' . mb_substr($scanErr, 0, 120));
+    }
 }
 
 pf_header('Supervision réseau', 'reseau.php');
@@ -345,7 +367,14 @@ pf_header('Supervision réseau', 'reseau.php');
         </form>
       </div>
 
-      <?php if ($spectre === null): ?>
+      <?php if ($spectre === null && $scanFait): ?>
+        <div class="err" style="margin:.7rem 0 0;max-width:75ch">
+          <strong>L’analyse n’a rien donné.</strong>
+          Le motif exact est repris ci-dessous — sans lui, il faudrait deviner entre une carte
+          occupée, un pilote incapable de balayer en mode point d’accès, et un droit manquant.
+          <div class="mono small" style="margin-top:.5rem;white-space:pre-wrap;opacity:.9"><?= e(mb_substr($scanErr, 0, 400)) ?></div>
+        </div>
+      <?php elseif ($spectre === null): ?>
         <p class="muted small" style="margin:.7rem 0 0;max-width:70ch">
           L’analyse n’est pas lancée automatiquement : elle oblige la carte à quitter son
           canal une fraction de seconde, ce qui donne un hoquet aux terminaux connectés.

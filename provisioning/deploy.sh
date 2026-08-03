@@ -488,7 +488,7 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-blacklist check, /usr/l
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-blacklist
 cat > /etc/sudoers.d/proxyfibre-wifi <<'SUD'
-www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-wifi apply, /usr/local/sbin/proxyfibre-wifi state
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-wifi apply, /usr/local/sbin/proxyfibre-wifi state, /usr/local/sbin/proxyfibre-wifi scan
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-wifi
 
