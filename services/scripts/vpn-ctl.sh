@@ -204,6 +204,13 @@ down)
     # L'intention est effacée EN PREMIER : si la minuterie se déclenchait entre
     # l'arrêt et l'effacement, elle remonterait le tunnel qu'on vient tout juste
     # de couper — et l'administrateur verrait son action annulée sans comprendre.
+    # Toute disparition du marqueur est tracée. Motif : lors de la mise au point,
+    # il a disparu DEUX FOIS sans qu'on puisse dire pourquoi — puis le mécanisme
+    # s'est révélé fiable sur trois essais consécutifs. Une anomalie qu'on ne
+    # sait pas expliquer et qui ne se reproduit plus reste une anomalie ; si elle
+    # revient, cette ligne dira quand, et le seul endroit du code qui efface ce
+    # fichier sera alors confirmé ou mis hors de cause.
+    [ -f "$VOULU" ] && logger -t bastion-vpn "arret demande : marqueur d'intention retire" 2>/dev/null
     rm -f "$VOULU"
     # Les règles sont retirées AVANT l'interface. Dans l'ordre inverse, il
     # existerait un instant où le tunnel est mort et le verrou déjà levé : le
