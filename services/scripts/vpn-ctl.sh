@@ -148,6 +148,25 @@ import)
     # wg-quick et on pose nous-mêmes la route dans une table dédiée.
     grep -q '^\s*Table\s*=' "$CONF" || sed -i '/^\[Interface\]/a Table = off' "$CONF"
 
+    # ── LA LIGNE « DNS = » EST RETIRÉE, ET C'EST IMPORTANT ───────────────────
+    # Proton place « DNS = 10.2.0.1 » dans ses configurations. wg-quick
+    # l'interprète comme un ordre de RÉÉCRIRE LE RÉSOLVEUR DU SYSTÈME : il
+    # remplacerait /etc/resolv.conf pour la machine entière.
+    #
+    # Sur cette passerelle, c'est dnsmasq qui résout pour tout le commissariat,
+    # avec le filtrage de contenu et le walled garden. Laisser wg-quick prendre
+    # la main casserait la résolution de TOUS les postes — y compris ceux qui
+    # n'ont rien à voir avec le tunnel — et le filtrage avec elle. Et si
+    # « resolvconf » est absent, wg-quick échoue simplement au montage, sans
+    # que le message dise pourquoi.
+    #
+    # Conséquence assumée, déjà documentée dans la console : les postes du
+    # groupe résolvent par le résolveur local. Le tunnel masque la connexion,
+    # pas la résolution du nom.
+    if grep -qi '^\s*DNS\s*=' "$CONF"; then
+        sed -i 's/^\s*DNS\s*=/# DNS (neutralisé par Bastion : dnsmasq reste le résolveur) =/I' "$CONF"
+    fi
+
     # Le fichier déposé par la console est EFFACÉ tout de suite. Il contient la
     # clé privée du tunnel ; le laisser dans un répertoire accessible au serveur
     # web reviendrait à conserver une seconde copie du secret, au même endroit
