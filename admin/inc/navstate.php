@@ -56,6 +56,25 @@ if (!function_exists('nav_badges')) {
             }
         } catch (Throwable $e) { /* une alerte illisible ne doit pas casser le menu */ }
 
+        // ── LES MISES A JOUR NE SONT PAS UNE ALERTE ──────────────────────
+        // Elles meritent une pastille, PAS un courriel : sys_alerts() alimente
+        // aussi le surveillant, et prevenir a chaque lot de correctifs
+        // produirait un bruit qui finirait par faire ignorer les vraies
+        // alertes. Le signal reste donc dans la console.
+        try {
+            $m = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-maj state 2>/dev/null'), true) ?: [];
+            if (!empty($m['connu'])) {
+                $n = (int) ($m['apt'] ?? 0) + (int) ($m['git'] ?? 0);
+                if ($n > 0 && !isset($out['systeme.php'])) {
+                    $out['systeme.php'] = [
+                        'lvl' => ((int) ($m['secu'] ?? 0) > 0) ? 'danger' : 'warn',
+                        'txt' => $n . ' mise(s) a jour en attente'
+                              . ((int) ($m['secu'] ?? 0) > 0 ? ', dont ' . (int) $m['secu'] . ' de securite' : ''),
+                    ];
+                }
+            }
+        } catch (Throwable $e) { /* sans effet sur le menu */ }
+
         @file_put_contents($cacheF, json_encode($out));
         return $memo = $out;
     }

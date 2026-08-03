@@ -149,6 +149,23 @@ $resBlock = function (string $key, string $icon, string $label, int $pct, string
   .res-top span{font-weight:500} .res-top strong{font-size:1.35rem}
   .bar{height:9px;background:var(--bg);border-radius:6px;overflow:hidden}
   .bar .fill{height:100%;border-radius:6px;transition:width .5s ease}
+  .maj-bar{height:12px;background:var(--bg);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .maj-fill{height:100%;border-radius:6px;transition:width .6s cubic-bezier(.16,1,.3,1)}
+  /* Bandes en mouvement : le déplacement se perçoit sans distinguer les couleurs,
+     ce qu'un simple aplat rouge ne garantit pas. */
+  .maj-anim{background-image:linear-gradient(45deg,rgba(255,255,255,.22) 25%,transparent 25%,
+    transparent 50%,rgba(255,255,255,.22) 50%,rgba(255,255,255,.22) 75%,transparent 75%,transparent);
+    background-size:1.1rem 1.1rem;animation:majDefile 1s linear infinite}
+  @keyframes majDefile{from{background-position:0 0}to{background-position:1.1rem 0}}
+  /* Réglage système « animations réduites » : certains troubles vestibulaires
+     rendent ces mouvements réellement pénibles. L'information passe alors par un
+     liseré, pas par le mouvement. */
+  @media(prefers-reduced-motion:reduce){
+    .maj-anim{animation:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
+    .maj-fill{transition:none}
+  }
+  .maj-txt{margin-top:.7rem;font-size:.87rem;color:var(--muted);line-height:1.65}
+  .maj-txt strong{color:var(--text)}
   .wan-l{display:flex;gap:.9rem;align-items:flex-start;padding:.8rem 1rem;border-radius:11px;
     background:var(--bg);border:1px solid var(--line)}
   .wan-l.wan-ok{border-color:rgba(74,222,128,.35);background:rgba(74,222,128,.06)}
@@ -169,6 +186,20 @@ $resBlock = function (string $key, string $icon, string $label, int $pct, string
 // Interroger un service distant pendant le rendu ajouterait deux attentes
 // réseau à l'affichage du tableau de bord, pour une information de confort.
 $wan = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wanip state 2>/dev/null'), true) ?: [];
+
+// ── MISES À JOUR EN ATTENTE ──────────────────────────────────────────────────
+// Elles n'apparaissaient que dans la page Système, qu'on ouvre rarement : une
+// correction de sécurité pouvait attendre des semaines sans que rien ne le
+// rappelle. Le tableau de bord, lui, est ouvert tous les jours.
+// Lecture d'un cache alimenté par la minuterie — interroger apt à chaque
+// affichage ajouterait une attente pour un simple compteur.
+$maj      = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-maj state 2>/dev/null'), true) ?: [];
+$majApt   = (int) ($maj['apt'] ?? 0);
+$majSec   = (int) ($maj['secu'] ?? 0);
+$majGit   = (int) ($maj['git'] ?? 0);
+$majBoot  = !empty($maj['reboot']);
+$majConnu = !empty($maj['connu']);
+$majTotal = $majApt + $majGit;
 $wanDirect = trim((string) ($wan['direct'] ?? ''));
 $wanVpn    = trim((string) ($wan['vpn'] ?? ''));
 $wanAge    = (int) ($wan['age'] ?? -1);
@@ -180,6 +211,56 @@ try {
     }
 } catch (Throwable $e) { /* colonne absente sur une installation antérieure */ }
 ?>
+<section class="panel">
+  <div class="panel-head"><h2>⬆️ Mises à jour</h2>
+    <span class="muted small"><?php
+      if (!$majConnu)        { echo 'jamais vérifiées'; }
+      elseif ($majTotal === 0) { echo 'à jour'; }
+      else                   { echo $majTotal . ' en attente'; }
+    ?></span></div>
+  <div style="padding:1.1rem 1.3rem">
+    <?php
+    // ── LA JAUGE DIT CE QU'ELLE SAIT, PAS PLUS ────────────────────────────
+    // Quand rien n'est en attente, elle est pleine et verte : un état atteint.
+    // Quand des mises à jour attendent, on ne peut PAS afficher un pourcentage
+    // — « 40 % à jour » ne voudrait rien dire. La barre est alors ANIMÉE et
+    // incomplète : le mouvement signale qu'une action reste à faire, sans
+    // prétendre mesurer ce qui ne se mesure pas.
+    if (!$majConnu)        { $mCoul = 'var(--muted)'; $mLarg = 12; $mAnim = false; }
+    elseif ($majTotal === 0) { $mCoul = '#4ade80';     $mLarg = 100; $mAnim = false; }
+    elseif ($majSec > 0)   { $mCoul = '#f87171';       $mLarg = 55;  $mAnim = true; }
+    else                   { $mCoul = '#eab308';       $mLarg = 55;  $mAnim = true; }
+    ?>
+    <div class="maj-bar"><div class="maj-fill<?= $mAnim ? ' maj-anim' : '' ?>"
+         style="width:<?= $mLarg ?>%;background:<?= $mCoul ?>"></div></div>
+
+    <div class="maj-txt">
+      <?php if (!$majConnu): ?>
+        <strong>Jamais vérifiées.</strong> Le relevé n'a pas encore eu lieu, ou la minuterie ne
+        tourne pas. Un compteur à zéro serait trompeur : on ne sait pas, on le dit.
+      <?php elseif ($majTotal === 0): ?>
+        <strong>Système et Bastion à jour.</strong> Rien à appliquer.
+      <?php else: ?>
+        <strong>
+          <?php if ($majApt): ?><?= $majApt ?> paquet<?= $majApt > 1 ? 's' : '' ?> système<?php endif; ?>
+          <?= $majApt && $majGit ? ' · ' : '' ?>
+          <?php if ($majGit): ?><?= $majGit ?> correctif<?= $majGit > 1 ? 's' : '' ?> Bastion<?php endif; ?>
+        </strong>
+        <?php if ($majSec > 0): ?>
+          — dont <strong style="color:#f87171"><?= $majSec ?> de sécurité</strong>, à appliquer sans attendre.
+        <?php endif; ?>
+      <?php endif; ?>
+      <?php if ($majBoot): ?>
+        <br>⚠ Un <strong>redémarrage</strong> reste nécessaire pour terminer une mise à jour précédente
+        — à planifier hors service, le réseau sera coupé.
+      <?php endif; ?>
+    </div>
+    <?php if ($majTotal > 0 || $majBoot || !$majConnu): ?>
+      <p style="margin:.9rem 0 0"><a class="btn-sm" href="/systeme.php">Ouvrir la page Système</a></p>
+    <?php endif; ?>
+  </div>
+</section>
+
 <section class="panel">
   <div class="panel-head"><h2>🌍 Adresse vue de l'extérieur</h2>
     <span class="muted small"><?php

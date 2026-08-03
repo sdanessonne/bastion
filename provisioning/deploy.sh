@@ -766,9 +766,14 @@ install -m755 "${REPO_DIR}/services/scripts/metrics-sample.php" /usr/local/sbin/
 # déjà, elle tourne à la bonne cadence, et cela évite une tâche planifiée de plus
 # à surveiller. Le script sort tout de suite si le tunnel n'est pas établi — il
 # n'interroge alors qu'une seule fois l'extérieur, pas deux.
-printf '%s\n%s\n' \
+# Les mises à jour sont relevées toutes les 10 minutes et non chaque minute :
+# elles ne changent pas d'une minute à l'autre, et « apt » relit tout son cache à
+# chaque appel — inutile de le lui demander soixante fois par heure sur une
+# machine modeste.
+printf '%s\n%s\n%s\n' \
   '* * * * * root php /usr/local/sbin/proxyfibre-metrics-sample >/dev/null 2>&1' \
   '* * * * * root /usr/local/sbin/proxyfibre-wanip refresh >/dev/null 2>&1' \
+  '*/10 * * * * root /usr/local/sbin/proxyfibre-maj refresh >/dev/null 2>&1' \
   > /etc/cron.d/proxyfibre-metrics
 install -m755 "${REPO_DIR}/services/scripts/backup-ctl.sh" /usr/local/sbin/proxyfibre-backup
 # Cachet électronique des fiches d'habilitation (autorité de signature locale).
