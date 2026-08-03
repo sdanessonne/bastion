@@ -141,6 +141,29 @@ else
   done
 fi
 
+# ── 4 quater) La chaîne d'alerte par courriel est-elle réellement debout ? ───
+# Une adresse enregistrée et rien qui part, c'est le pire cas : on cesse de
+# surveiller soi-même en croyant être prévenu. Ce contrôle a une seconde raison
+# d'être — lors de la mise au point, le binaire msmtp a été REMPLACÉ par un
+# script qui avalait les messages en rapportant un succès. La console affichait
+# vert, le journal d'audit aussi, et rien ne partait. Un exécutable qui n'en est
+# plus un ne se voit que si on le regarde.
+h "Alertes par courriel"
+DEST_AL=$(mysql -N -B radius -e "SELECT v FROM pf_settings WHERE k='alert_email' LIMIT 1;" 2>/dev/null)
+if [ -z "$DEST_AL" ]; then
+    wn "aucune adresse de notification — les anomalies restent au journal système"
+elif [ ! -x /usr/sbin/sendmail ]; then
+    ko "adresse renseignée ($DEST_AL) mais AUCUN agent de messagerie : rien ne part"
+elif ! file -L /usr/sbin/sendmail 2>/dev/null | grep -q 'ELF'; then
+    ko "/usr/sbin/sendmail n'est pas un exécutable — messages avalés en silence"
+else
+    et=$(/usr/local/sbin/proxyfibre-mail state 2>/dev/null)
+    case "$et" in
+        *'"configure":true'*) ok "envoi possible vers $DEST_AL" ;;
+        *) ko "adresse renseignée ($DEST_AL) mais relais SMTP non configuré" ;;
+    esac
+fi
+
 # ── 4 ter) OPcache : le code est-il recompilé à chaque affichage ? ───────────
 # Une régression ici ne casse rien : la console fonctionne, elle est seulement
 # deux à trois fois plus lente. Personne ne l'attribuerait à une extension PHP —
