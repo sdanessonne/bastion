@@ -105,7 +105,7 @@ Write-Host ("  protocoles proposes : " + [Net.ServicePointManager]::SecurityProt
 $cb = [Net.ServicePointManager]::ServerCertificateValidationCallback
 [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 try {
-    $r = Invoke-WebRequest -Uri "https://192.168.182.1:8443/api.php?action=poste.photo&user=$login" `
+    $r = Invoke-WebRequest -Uri "https://192.168.182.1:2443/api.php?action=poste.photo&user=$login" `
          -Headers @{ Authorization = "Bearer $tok" } -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
     Write-Host ("  HTTP {0} - {1} octets recus" -f $r.StatusCode, $r.RawContentLength) -ForegroundColor Green
 } catch {

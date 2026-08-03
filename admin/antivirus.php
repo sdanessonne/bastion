@@ -308,7 +308,7 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
         <summary>Configuration d'un poste — <code>station.json</code></summary>
         <div class="fold-body">
 <pre style="font-size:.75rem;overflow-x:auto;background:rgba(0,0,0,.25);padding:.6rem;border-radius:6px;margin:.3rem 0 0">{
-  "Passerelle": "https://<?= e($lanIp ?: '192.168.182.1') ?>:8443",
+  "Passerelle": "https://<?= e($lanIp ?: '192.168.182.1') ?>:2443",
   "Jeton": "&lt;le jeton de la station&gt;",
   "Kiosque": true,
   "BoutonEteindre": true,

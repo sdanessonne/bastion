@@ -64,6 +64,20 @@ try { $expectPoste = (string) $db->query("SELECT v FROM pf_settings WHERE k='inv
 catch (Throwable $e) { }
 $estPoste = $expectPoste !== '' && $given !== '' && hash_equals($expectPoste, $given);
 
+// ── POINT D'ENTRÉE DU RÉSEAU DES POSTES ──────────────────────────────────────
+// La console est volontairement interdite depuis le réseau des postes (le vhost 8443
+// porte « Require not ip 192.168.182.0/24 »). Les postes doivent pourtant atteindre
+// CE fichier — sans quoi l'inventaire et la vignette de l'écran de connexion ne
+// remontent jamais, ce qui a été le cas jusqu'ici, en silence.
+//
+// Il est donc publié aussi sur le port du portail (2443), déjà joignable par les
+// postes. Apache marque alors la requête, et sur ce chemin SEULES les actions à
+// jeton sont servies : la branche « administrateur connecté » est refusée, même si
+// un cookie de session valide accompagnait l'appel — les cookies ne distinguent pas
+// les ports, un administrateur connecté à la console en enverrait un sans le savoir.
+$viaPostes = ($_SERVER['BASTION_API_POSTE'] ?? '') === '1';
+if ($viaPostes) { $estAdmin = false; }
+
 if (!$estAdmin && !$estStation && !$estPoste) { jout(['error' => 'unauthorized'], 401); }
 
 // Traçabilité : un jeton par-station note sa dernière activité (quand, IP, poste). La console

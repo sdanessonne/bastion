@@ -49,7 +49,7 @@ try {
     try {
         # « ${GW} » et non « $GW » : suivi de « : », PowerShell interprète le nom comme un
         # qualificateur de portée et la variable se résout à vide - l'adresse serait fausse.
-        Invoke-WebRequest -Uri "https://${GW}:8443/api.php?action=poste.photo&user=$login" `
+        Invoke-WebRequest -Uri "https://${GW}:2443/api.php?action=poste.photo&user=$login" `
             -Headers @{ Authorization = "Bearer $TOKEN" } -OutFile $tmp -UseBasicParsing `
             -TimeoutSec 30 -ErrorAction Stop
     } finally { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $cb }

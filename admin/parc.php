@@ -25,9 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do = $_POST['do'] ?? '';
     if ($do === 'deploy') {
-        // L'URL doit être joignable PAR LES POSTES : « la première adresse globale de la
-        // machine » désignait en réalité le WAN. On demande l'adresse du réseau des postes.
-        $url = 'https://' . pf_lan_ip() . ':8443/api.php?action=poste.inventaire';
+        // L'URL doit être joignable PAR LES POSTES, et ce n'est pas celle de la console :
+        // le vhost 8443 leur est volontairement interdit. « api.php » est republié sur le
+        // port du portail (2443), le seul que les postes atteignent — voir le commentaire
+        // dans services/apache/portal-ssl.conf. L'adresse, elle, vient de la configuration :
+        // « la première adresse globale de la machine » désignait en réalité le WAN.
+        $url = 'https://' . pf_lan_ip() . ':2443/api.php?action=poste.inventaire';
         $out = ad('gpo', 'inventaire', $url, parc_token($db));
         $err = stripos($out, 'ERROR') !== false;
         audit('parc.deploy', $err ? 'echec' : $url);

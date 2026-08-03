@@ -96,7 +96,7 @@ function Poser-Photo($login, $sid) {
         # Delai court : ce script s'execute AVANT l'ecran de connexion. Mieux vaut renoncer
         # pour un agent que faire attendre tout le poste ; la tache d'ouverture de session
         # rattrapera. La passerelle a deja repondu a la sonde, 8 s sont largement suffisantes.
-        Invoke-WebRequest -Uri "https://${GW}:8443/api.php?action=poste.photo&user=$login" `
+        Invoke-WebRequest -Uri "https://${GW}:2443/api.php?action=poste.photo&user=$login" `
             -Headers @{ Authorization = "Bearer $TOKEN" } -OutFile $tmp -UseBasicParsing `
             -TimeoutSec 8 -ErrorAction Stop
     } catch {
