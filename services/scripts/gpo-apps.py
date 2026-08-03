@@ -31,7 +31,7 @@ def copy_ntacl(src, dst):
     except Exception:
         pass
 
-def ps1(apps):
+def ps1(apps, retraits=()):
     """Construit le script PowerShell d'installation."""
     lines = [
         "$ErrorActionPreference = 'SilentlyContinue'",
@@ -85,6 +85,74 @@ def ps1(apps):
         "    Note ($a.marker + ' : ECHEC — ' + $_.Exception.Message)",
         "  }",
         "}",
+    ]
+
+    # ── RETRAITS ─────────────────────────────────────────────────────────────
+    # Une application décochée dans la console doit DISPARAÎTRE des postes, sinon
+    # « désactivé » ne veut rien dire pour le parc : le script cessait simplement de
+    # l'installer et elle restait en place partout où elle l'était déjà.
+    #
+    # Règle absolue : on ne désinstalle QUE si le marqueur posé par Bastion est présent.
+    # Il prouve que c'est NOUS qui avons installé ce logiciel. Sans cette condition, une
+    # application homonyme installée par le service informatique ou livrée avec l'image
+    # du poste serait retirée sans que personne ne l'ait demandé.
+    lines += [
+        "",
+        "$retraits = @(",
+    ]
+    for i, r in enumerate(retraits):
+        marker = str(r.get('marker', '')).replace("'", "")
+        nom = str(r.get('nom', '')).replace("'", "''")
+        virgule = ',' if i < len(retraits) - 1 else ''
+        lines.append("  @{ marker='%s'; nom='%s' }%s" % (marker, nom, virgule))
+    lines += [
+        ")",
+        "foreach ($d in $retraits) {",
+        "  if (-not (Get-ItemProperty -Path $base -Name $d.marker -ErrorAction SilentlyContinue)) { continue }",
+        "  # Le marqueur existe : Bastion a installe ce logiciel, il peut le retirer.",
+        "  $u = $null",
+        "  foreach ($rc in @('HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',",
+        "                    'HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*')) {",
+        "    $u = Get-ItemProperty $rc -ErrorAction SilentlyContinue |",
+        "         Where-Object { $_.DisplayName -and $_.DisplayName -like ('*' + $d.nom + '*') } |",
+        "         Select-Object -First 1",
+        "    if ($u) { break }",
+        "  }",
+        "  if (-not $u) {",
+        "    # Absent des programmes installes : deja retire a la main. On efface le marqueur,",
+        "    # sinon le poste rechercherait ce logiciel a chaque demarrage, indefiniment.",
+        "    Remove-ItemProperty -Path $base -Name $d.marker -ErrorAction SilentlyContinue",
+        "    Note ($d.marker + ' (' + $d.nom + ') : deja absent, marqueur efface'); continue",
+        "  }",
+        "  # « QuietUninstallString » est la commande SILENCIEUSE fournie par l'editeur. A",
+        "  # defaut, seul MSI garantit un retrait sans interface : « /I{GUID} » devient",
+        "  # « /X{GUID} », plus « /qn /norestart ». Pour un .exe sans commande silencieuse,",
+        "  # on NE lance rien : une fenetre d'assistant surgissant au demarrage d'un poste",
+        "  # bloquerait la session sans que personne ne comprenne pourquoi.",
+        "  $cmd = $u.QuietUninstallString",
+        "  if (-not $cmd -and $u.UninstallString -match 'msiexec') {",
+        "    $cmd = ($u.UninstallString -replace '/I\\{', '/X{') + ' /qn /norestart'",
+        "  }",
+        "  if (-not $cmd) {",
+        "    Note ($d.marker + ' (' + $d.nom + ') : AUCUNE desinstallation silencieuse fournie par l editeur — a retirer a la main')",
+        "    continue",
+        "  }",
+        "  try {",
+        "    Note ($d.marker + ' (' + $d.nom + ') : desinstallation en cours')",
+        "    $p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmd -Wait -PassThru -WindowStyle Hidden",
+        "    if ($p.ExitCode -eq 0 -or $p.ExitCode -eq 3010 -or $p.ExitCode -eq 1605) {",
+        "      # 1605 = « ce produit n'est pas installe » : le resultat voulu est atteint.",
+        "      Remove-ItemProperty -Path $base -Name $d.marker -ErrorAction SilentlyContinue",
+        "      Note ($d.marker + ' : DESINSTALLE (code ' + $p.ExitCode + ')')",
+        "    } else {",
+        "      # Le marqueur est CONSERVE : la prochaine execution reessaiera. L'effacer",
+        "      # ferait oublier au poste qu'il reste un logiciel a retirer.",
+        "      Note ($d.marker + ' : ECHEC desinstallation, code ' + $p.ExitCode)",
+        "    }",
+        "  } catch {",
+        "    Note ($d.marker + ' : ECHEC — ' + $_.Exception.Message)",
+        "  }",
+        "}",
         "Note '--- Fin ---'",
     ]
     return "\r\n".join(lines) + "\r\n"
@@ -93,6 +161,8 @@ def main():
     guid = sys.argv[1]
     cfg = json.load(open(sys.argv[2], 'rb'))
     apps = cfg.get('apps', [])
+    # Applications décochées : à retirer des postes où Bastion les avait installées.
+    retraits = cfg.get('retraits', [])
 
     realm = subprocess.run(['testparm', '-s', '--parameter-name=realm'], capture_output=True, text=True).stdout.strip().lower()
     base_dn = ','.join('DC=' + p for p in realm.split('.'))
@@ -114,7 +184,7 @@ def main():
     # 1) PowerShell d'installation. Écrit par psfile : marque d'ordre d'octets UTF-8 +
     #    caractères sûrs. Sans cela, un simple tiret cadratin dans un message rendait
     #    le fichier inanalysable par PowerShell 5.1 (voir services/scripts/psfile.py).
-    p_ps1 = psfile.ecrire_ps1(os.path.join(startup, 'bastion-apps.ps1'), ps1(apps))
+    p_ps1 = psfile.ecrire_ps1(os.path.join(startup, 'bastion-apps.ps1'), ps1(apps, retraits))
     # 2) Lanceur .cmd (contourne la politique d'exécution PowerShell) : ASCII, sans marque.
     p_cmd = psfile.ecrire_cmd(os.path.join(startup, 'bastion-apps.cmd'),
                               '@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass '

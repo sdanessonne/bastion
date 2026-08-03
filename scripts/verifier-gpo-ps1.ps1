@@ -35,6 +35,10 @@ $cas = @(
     @{ f = 'gpo-apps.py'; a = "[]";                                                                   s = 'aucune appli' }
     @{ f = 'gpo-apps.py'; a = "[{'marker':'Firefox','url':'https://x/f.msi','args':'/qn','msi':True}]"; s = 'une appli' }
     @{ f = 'gpo-apps.py'; a = "[{'marker':'A','url':'https://x/a.msi','args':'/qn','msi':True}, {'marker':'B','url':'https://x/b.exe','args':'/S','msi':False}]"; s = 'deux applis' }
+    # Même piège du côté des RETRAITS : la virgule de fin ne se manifeste qu'au dernier élément.
+    @{ f = 'gpo-apps.py'; a = "[], []";                                                          s = 'aucun retrait' }
+    @{ f = 'gpo-apps.py'; a = "[], [{'marker':'app1','nom':'VLC media player'}]";                s = 'un retrait' }
+    @{ f = 'gpo-apps.py'; a = "[], [{'marker':'app1','nom':'VLC'}, {'marker':'app2','nom':'L\'outil de l\'agent'}]"; s = 'deux retraits, apostrophes' }
 )
 
 $py = (Get-Command python -ErrorAction SilentlyContinue)

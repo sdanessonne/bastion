@@ -109,13 +109,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'msi'    => $ext === 'msi',
                 ];
             }
+            // ── RETRAITS ────────────────────────────────────────────────────
+            // Décocher une application la retirait simplement de la liste : le script
+            // cessait de l'installer, et elle restait en place sur tous les postes qui
+            // l'avaient déjà. « Désactivé » ne voulait donc rien dire pour le parc.
+            //
+            // On transmet désormais aussi ce qui NE doit PLUS être là. Le poste ne
+            // désinstalle que si le marqueur posé par Bastion existe dans son registre :
+            // un logiciel installé par quelqu'un d'autre, ou avant Bastion, n'est jamais
+            // touché. C'est ce marqueur qui distingue « nous l'avons mis » de « il était
+            // déjà là », et c'est la seule garantie qui compte ici.
+            $retraits = [];
+            foreach ($db->query('SELECT id,name FROM pf_apps WHERE deployed=0') as $r) {
+                $retraits[] = ['marker' => 'app' . (int) $r['id'], 'nom' => (string) $r['name']];
+            }
             $tmp = tempnam(sys_get_temp_dir(), 'apps');
-            file_put_contents($tmp, json_encode(['gw' => $gw, 'apps' => $apps], JSON_UNESCAPED_SLASHES));
+            file_put_contents($tmp, json_encode(['gw' => $gw, 'apps' => $apps, 'retraits' => $retraits],
+                                                JSON_UNESCAPED_SLASHES));
             $out = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-ad gpo appstore ' . escapeshellarg($tmp) . ' 2>&1'));
             @unlink($tmp);
             $ok = strpos($out, 'applications deployees') !== false;
-            $flash = [$ok ? count($apps) . ' application(s) déployée(s) via la GPO « Bastion — Applications ». '
-                . 'Elles s\'installeront au prochain démarrage des postes.' : 'Échec : ' . $out, $ok ? 'ok' : 'err'];
+            $msg = count($apps) . ' application(s) déployée(s) via la GPO « Bastion — Applications ». '
+                 . 'Elles s\'installeront au prochain démarrage des postes.';
+            if ($retraits) {
+                $msg .= ' ' . count($retraits) . ' désactivée(s) seront désinstallées des postes '
+                      . 'où Bastion les avait installées — les autres ne sont pas touchées.';
+            }
+            $flash = [$ok ? $msg : 'Échec : ' . $out, $ok ? 'ok' : 'err'];
         }
     }
 }
