@@ -27,6 +27,24 @@ if [ ! -f "$SECRETS" ]; then
     echo "  Première fabrication : les secrets sont demandés une seule fois, puis conservés"
     echo "  dans $SECRETS (permissions 600, HORS DÉPÔT — ils ne partiront jamais sur Git)."
     echo
+    # ── SANS TERMINAL, LES SECRETS SONT ENGENDRÉS ────────────────────────────
+    # Lancé depuis une console d'administration à distance ou une chaîne
+    # d'intégration, il n'y a personne pour répondre : le script attendait
+    # indéfiniment une saisie, et la fabrication paraissait figée sans raison.
+    #
+    # On engendre alors des secrets solides plutôt que d'en imposer un par
+    # défaut — un mot de passe inscrit dans le code serait connu de quiconque lit
+    # le dépôt, et toutes les passerelles ainsi installées seraient ouvertes.
+    # Ils sont écrits dans le fichier de secrets, en 600, et affichés UNE FOIS à
+    # la fin de la fabrication : celui qui lance l'outil doit pouvoir les relever.
+    if [ ! -t 0 ]; then
+        _mdp="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+        _luks="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+        _dep="${DEPOT:-$DEPOT_DEFAUT}"
+        echo "  Aucun terminal : secrets engendrés automatiquement."
+        echo "  Ils seront rappelés en fin de fabrication et conservés dans $SECRETS."
+        ENGENDRES=1
+    else
     printf "  Mot de passe du compte d'administration (proxyfibre) : "; read -rs _mdp; echo
     [ -n "$_mdp" ] || { echo "  ERREUR : mot de passe vide."; exit 1; }
     printf "  Phrase secrète du disque chiffré (Entrée = identique) : "; read -rs _luks; echo
@@ -50,6 +68,7 @@ if [ ! -f "$SECRETS" ]; then
             echo "  affiché en clair à l'écran. Considérez-le comme divulgué et changez-le."
             exit 1 ;;
     esac
+    fi   # fin de la saisie interactive
     umask 077
     {   echo "# Bastion — secrets de fabrication de l'ISO. FICHIER NON VERSIONNÉ."
         echo "# Conservez-le en lieu sûr ; supprimez-le si vous n'en avez plus besoin."
@@ -59,6 +78,20 @@ if [ ! -f "$SECRETS" ]; then
         printf 'DEPOT=%q\n'       "$_dep"
     } > "$SECRETS"
     chmod 600 "$SECRETS"
+    # Les secrets engendrés sont rappelés A L'ECRAN, une fois : sans cela ils
+    # existeraient uniquement dans un fichier que personne ne penserait à ouvrir,
+    # et la passerelle installée serait inaccessible. C'est aussi pour cela qu'on
+    # les affiche APRES les avoir ecrits : afficher d'abord et echouer ensuite
+    # laisserait croire qu'ils sont enregistres alors qu'ils ne le sont pas.
+    if [ "${ENGENDRES:-0}" = "1" ]; then
+        echo
+        echo "  ┌─ SECRETS ENGENDRES — relevez-les MAINTENANT ────────────────────"
+        echo "  │  Compte d'administration : $_mdp"
+        echo "  │  Disque chiffre (LUKS)   : $_luks"
+        echo "  │  Conserves dans : $SECRETS (600)"
+        echo "  └─ Ils sont aussi INSCRITS EN CLAIR DANS L'ISO : traitez-la comme une cle."
+        echo
+    fi
     unset _mdp _luks _dep
     echo "  → Secrets enregistrés."
 fi
