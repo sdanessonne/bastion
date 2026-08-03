@@ -44,7 +44,7 @@ $REGLAGES = [
         'quoi'   => "Firefox résout les noms par un serveur distant en HTTPS, hors de vue de la passerelle. "
                   . "Tout le filtrage de Bastion repose sur le DNS local : sans ce réglage, le navigateur le "
                   . "contourne intégralement — et la console continue d'afficher un filtrage actif.",
-        'defaut' => true, 'poids' => 'essentiel',
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'essentiel',
         'reg'    => [
             [FF_KEY . '\\DNSOverHTTPS', 'Enabled', 'REG_DWORD', 0],
             [FF_KEY . '\\DNSOverHTTPS', 'Locked',  'REG_DWORD', 1],
@@ -55,7 +55,7 @@ $REGLAGES = [
         'quoi'   => "Firefox utilise son propre magasin de certificats et ignore celui de Windows. Sans ce "
                   . "réglage, le portail et la console affichent un avertissement de sécurité à chaque visite — "
                   . "et les agents prennent l'habitude de passer outre les avertissements.",
-        'defaut' => true, 'poids' => 'essentiel',
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'essentiel',
         'reg'    => [[FF_KEY . '\\Certificates', 'ImportEnterpriseRoots', 'REG_DWORD', 1]],
     ],
     'prive' => [
@@ -63,32 +63,32 @@ $REGLAGES = [
         'quoi'   => "La navigation privée n'échappe pas à la journalisation de la passerelle — celle-ci voit le "
                   . "trafic quoi qu'il arrive. Elle efface en revanche l'historique local, ce qui complique une "
                   . "vérification sur poste.",
-        'defaut' => true, 'poids' => 'recommandé',
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
         'reg'    => [[FF_KEY, 'DisablePrivateBrowsing', 'REG_DWORD', 1]],
     ],
     'telemetrie' => [
         'titre'  => 'Couper la télémétrie',
         'quoi'   => "Firefox transmet des données d'usage à Mozilla. Sur un poste de commissariat, ces envois "
                   . "sortent du périmètre sans nécessité.",
-        'defaut' => true, 'poids' => 'recommandé',
-        'reg'    => [
-            [FF_KEY, 'DisableTelemetry', 'REG_DWORD', 1],
-            [FF_KEY, 'DisablePocket',    'REG_DWORD', 1],
-        ],
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        // Pocket était posé ici : ce n'est pas de la télémétrie, et l'administrateur qui
+        // décochait « télémétrie » réactivait Pocket sans le vouloir. C'est désormais un
+        // réglage à part entière.
+        'reg'    => [[FF_KEY, 'DisableTelemetry', 'REG_DWORD', 1]],
     ],
     'compte' => [
         'titre'  => 'Désactiver le compte Firefox et la synchronisation',
         'quoi'   => "La synchronisation copie l'historique, les marque-pages et les mots de passe vers les "
                   . "serveurs de Mozilla, sous un compte personnel. Les données du service partiraient sur un "
                   . "compte privé.",
-        'defaut' => true, 'poids' => 'recommandé',
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
         'reg'    => [[FF_KEY, 'DisableFirefoxAccounts', 'REG_DWORD', 1]],
     ],
     'motsdepasse' => [
         'titre'  => 'Ne pas proposer d\'enregistrer les mots de passe',
         'quoi'   => "Sur un poste partagé, un mot de passe enregistré par un agent reste disponible au suivant. "
                   . "Firefox les protège mal en l'absence de mot de passe principal.",
-        'defaut' => true, 'poids' => 'recommandé',
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
         'reg'    => [[FF_KEY, 'OfferToSaveLogins', 'REG_DWORD', 0]],
     ],
     'extensions' => [
@@ -96,16 +96,139 @@ $REGLAGES = [
         'quoi'   => "Une extension voit TOUT ce que voit le navigateur : contenu des pages, formulaires, mots de "
                   . "passe saisis. Sur des postes qui consultent des fichiers de procédure, c'est le point "
                   . "d'entrée le plus simple.",
-        'defaut' => true, 'poids' => 'recommandé',
+        'cat' => 'Verrouillage du navigateur', 'defaut' => true, 'poids' => 'recommandé',
         'reg'    => [[FF_KEY . '\\InstallAddonsPermission', 'Default', 'REG_DWORD', 0]],
     ],
     'maj' => [
         'titre'  => 'Laisser Firefox se mettre à jour',
         'quoi'   => "Un navigateur non à jour est la faille la plus exploitée. Décochez seulement si un "
                   . "logiciel métier impose une version figée — et sachez alors ce que vous acceptez.",
-        'defaut' => true, 'poids' => 'recommandé',
+        'cat' => 'Verrouillage du navigateur', 'defaut' => true, 'poids' => 'recommandé',
         'reg'    => [[FF_KEY, 'DisableAppUpdate', 'REG_DWORD', 0]],
     ],
+
+    // ── Filtrage & vie privée ────────────────────────────────────────────────
+    'etudes' => [
+        'titre'  => 'Refuser les études Mozilla',
+        'quoi'   => "Firefox accepte par défaut que Mozilla lui pousse du code expérimental à distance, sans "
+                  . "que l'administrateur en soit informé. Sur un poste de service, du code non prévu qui "
+                  . "arrive tout seul n'est pas acceptable.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'DisableFirefoxStudies', 'REG_DWORD', 1]],
+    ],
+    'pocket' => [
+        'titre'  => 'Désactiver Pocket',
+        'quoi'   => "Pocket enregistre les articles mis de côté chez un prestataire tiers. Ce qu'un agent "
+                  . "consulte dans le cadre du service n'a rien à y faire.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'DisablePocket', 'REG_DWORD', 1]],
+    ],
+    'formulaires' => [
+        'titre'  => "Ne pas mémoriser les saisies de formulaire",
+        'quoi'   => "Firefox complète les champs avec ce qui a été tapé avant — noms, numéros, références "
+                  . "d'affaire. Sur un poste partagé, l'agent suivant voit apparaître les saisies du précédent.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'DisableFormHistory', 'REG_DWORD', 1]],
+    ],
+    'reveler' => [
+        'titre'  => "Interdire l'affichage en clair des mots de passe enregistrés",
+        'quoi'   => "Le gestionnaire de Firefox révèle un mot de passe enregistré d'un simple clic. Sur un "
+                  . "poste laissé déverrouillé quelques minutes, cela suffit.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'DisablePasswordReveal', 'REG_DWORD', 1]],
+    ],
+    'suggestions' => [
+        'titre'  => 'Supprimer les suggestions et nouveautés Mozilla',
+        'quoi'   => "Bandeaux « nouveautés », recommandations d'extensions, écrans de bienvenue après chaque "
+                  . "mise à jour : autant de sollicitations commerciales sur un poste de service, et autant "
+                  . "d'occasions de cliquer sur autre chose que son travail.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [
+            [FF_KEY . '\\UserMessaging', 'WhatsNew',                 'REG_DWORD', 0],
+            [FF_KEY . '\\UserMessaging', 'ExtensionRecommendations', 'REG_DWORD', 0],
+            [FF_KEY . '\\UserMessaging', 'FeatureRecommendations',   'REG_DWORD', 0],
+            [FF_KEY . '\\UserMessaging', 'MoreFromMozilla',          'REG_DWORD', 0],
+            [FF_KEY . '\\UserMessaging', 'SkipOnboarding',           'REG_DWORD', 1],
+        ],
+    ],
+
+    // ── Verrouillage du navigateur ───────────────────────────────────────────
+    'aboutconfig' => [
+        'titre'  => 'Bloquer about:config',
+        'quoi'   => "C'est la page qui donne accès à toutes les préférences internes. Les réglages posés par "
+                  . "stratégie y résistent, mais tout le reste s'y défait — proxy, sécurité TLS, téléchargements.",
+        'cat' => 'Verrouillage du navigateur', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'BlockAboutConfig', 'REG_DWORD', 1]],
+    ],
+    'moderesolu' => [
+        'titre'  => 'Interdire le mode sans échec',
+        'quoi'   => "Le mode sans échec démarre Firefox sans les extensions ni les personnalisations. C'est le "
+                  . "premier réflexe de qui cherche à retrouver un navigateur « comme avant ».",
+        'cat' => 'Verrouillage du navigateur', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'DisableSafeMode', 'REG_DWORD', 1]],
+    ],
+    'profil' => [
+        'titre'  => "Interdire l'import et la réinitialisation du profil",
+        'quoi'   => "Réinitialiser le profil recrée un Firefox neuf ; importer celui d'un autre navigateur y "
+                  . "verse des marque-pages et des mots de passe venus d'ailleurs. Les deux contournent la "
+                  . "configuration du service.",
+        'cat' => 'Verrouillage du navigateur', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [
+            [FF_KEY, 'DisableProfileImport',  'REG_DWORD', 1],
+            [FF_KEY, 'DisableProfileRefresh', 'REG_DWORD', 1],
+        ],
+    ],
+    'devtools' => [
+        'titre'  => 'Désactiver les outils de développement',
+        'quoi'   => "Ils permettent de lire et de modifier n'importe quelle page, y compris les formulaires de "
+                  . "la console. Utile à un informaticien, sans usage pour un agent — mais laissez-les si vous "
+                  . "dépannez vous-même l'intranet depuis un poste du domaine.",
+        'cat' => 'Verrouillage du navigateur', 'defaut' => false, 'poids' => 'facultatif',
+        'reg'    => [[FF_KEY, 'DisableDeveloperTools', 'REG_DWORD', 1]],
+    ],
+
+    // ── Présentation ─────────────────────────────────────────────────────────
+    'pagesmozilla' => [
+        'titre'  => 'Supprimer les pages et marque-pages Mozilla',
+        'quoi'   => "À la première ouverture et après chaque mise à jour, Firefox affiche ses propres pages et "
+                  . "installe ses marque-pages. Sur un parc, cela revient à accueillir chaque agent par une "
+                  . "publicité plutôt que par l'intranet.",
+        'cat' => 'Présentation', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [
+            [FF_KEY, 'OverrideFirstRunPage',   'REG_SZ', 'about:blank'],
+            [FF_KEY, 'OverridePostUpdatePage', 'REG_SZ', 'about:blank'],
+            [FF_KEY, 'NoDefaultBookmarks',     'REG_DWORD', 1],
+        ],
+    ],
+    'langue' => [
+        'titre'  => "Imposer l'interface en français",
+        'quoi'   => "Sans cela, la langue suit celle de l'installation, qui varie d'un poste à l'autre selon "
+                  . "l'image utilisée. Une consigne écrite ne correspond alors plus à ce que l'agent voit.",
+        'cat' => 'Présentation', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'RequestedLocales', 'REG_SZ', 'fr-FR']],
+    ],
+    'navigateurdefaut' => [
+        'titre'  => 'Ne plus demander « navigateur par défaut »',
+        'quoi'   => "La question revient à chaque démarrage tant qu'on n'y répond pas, et la réponse ne regarde "
+                  . "pas l'agent : c'est un choix de parc.",
+        'cat' => 'Présentation', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'DontCheckDefaultBrowser', 'REG_DWORD', 1]],
+    ],
+    'boutonaccueil' => [
+        'titre'  => 'Afficher le bouton Accueil',
+        'quoi'   => "Avec une page d'accueil imposée, le bouton y ramène l'agent en un clic. Sans lui, elle "
+                  . "n'est atteignable qu'en ouvrant un nouvel onglet.",
+        'cat' => 'Présentation', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'ShowHomeButton', 'REG_DWORD', 1]],
+    ],
+    'barremarquepages' => [
+        'titre'  => 'Toujours afficher la barre de marque-pages',
+        'quoi'   => "Pratique si vous publiez des raccourcis vers les applications métier. Affaire de goût : "
+                  . "la barre occupe une ligne d'écran.",
+        'cat' => 'Présentation', 'defaut' => false, 'poids' => 'facultatif',
+        'reg'    => [[FF_KEY, 'DisplayBookmarksToolbar', 'REG_SZ', 'always']],
+    ],
+
 ];
 
 // ── Réglages enregistrés ────────────────────────────────────────────────────
@@ -197,6 +320,11 @@ pf_header('Firefox', 'firefox.php');
   .ff-tag{font-size:.68rem;text-transform:uppercase;letter-spacing:.6px;padding:.1rem .45rem;
           border-radius:20px;margin-left:.5rem;vertical-align:middle}
   .ff-tag.e{background:rgba(248,113,113,.2);color:#f87171}
+  .ff-tag:not(.e):not(.n){background:rgba(148,163,184,.16);color:var(--muted)}
+  .ff-tag.n{background:rgba(56,189,248,.18);color:#7dd3fc}
+  .ff-cat{font-size:.82rem;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);
+          margin:1.5rem 0 .6rem;padding-bottom:.35rem;border-bottom:1px solid var(--line)}
+  .ff-cat:first-of-type{margin-top:.2rem}
 </style>
 
 <?php if ($flash): ?>
@@ -224,14 +352,46 @@ pf_header('Firefox', 'firefox.php');
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
       <input type="hidden" name="do" value="deployer">
 
-      <?php foreach ($REGLAGES as $k => $r): $ess = $r['poids'] === 'essentiel'; ?>
-        <label class="ff-r<?= $ess ? ' ff-ess' : '' ?>">
-          <input type="checkbox" name="r[]" value="<?= e($k) ?>" <?= in_array($k, $coche, true) ? 'checked' : '' ?>>
-          <span>
-            <span class="t"><?= e($r['titre']) ?><?php if ($ess): ?><span class="ff-tag e">essentiel</span><?php endif; ?></span>
-            <span class="d"><?= e($r['quoi']) ?></span>
-          </span>
-        </label>
+      <?php
+      // Groupé par thème : la liste est passée de huit à vingt-deux réglages, et une
+      // colonne de vingt-deux cases à cocher ne se lit plus — on ne sait plus ce qu'on
+      // a déjà examiné. L'ordre des catégories suit celui du tableau.
+      $parCat = [];
+      foreach ($REGLAGES as $k => $r) { $parCat[$r['cat'] ?? 'Autres'][$k] = $r; }
+
+      // Réglages recommandés qui ne sont PAS dans le déploiement en cours. Après une
+      // mise à jour de Bastion, les nouveaux arrivent décochés — c'est voulu, rien ne
+      // doit changer sur le domaine sans décision. Mais noyés parmi une vingtaine de
+      // cases, ils passeraient inaperçus : on les compte et on les marque.
+      $nouveaux = $deploye !== ''
+          ? array_keys(array_filter($REGLAGES, fn($r, $k) => $r['defaut'] && !in_array($k, $coche, true),
+                                    ARRAY_FILTER_USE_BOTH))
+          : [];
+      ?>
+      <?php if ($nouveaux): ?>
+        <p class="flash" style="background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.35);
+           border-radius:10px;padding:.7rem .9rem;font-size:.87rem;margin:0 0 1rem">
+          <strong><?= count($nouveaux) ?> réglage<?= count($nouveaux) > 1 ? 's' : '' ?> recommandé<?= count($nouveaux) > 1 ? 's' : '' ?></strong>
+          ne <?= count($nouveaux) > 1 ? 'sont' : 'est' ?> pas dans le déploiement actuel — repérable<?= count($nouveaux) > 1 ? 's' : '' ?>
+          ci-dessous par l’étiquette « non déployé ». Cochez ce que vous voulez appliquer, puis redéployez.
+        </p>
+      <?php endif; ?>
+      <?php foreach ($parCat as $cat => $items): ?>
+        <h3 class="ff-cat"><?= e($cat) ?>
+          <span class="muted small">(<?= count($items) ?>)</span></h3>
+        <?php foreach ($items as $k => $r): $ess = $r['poids'] === 'essentiel'; ?>
+          <label class="ff-r<?= $ess ? ' ff-ess' : '' ?>">
+            <input type="checkbox" name="r[]" value="<?= e($k) ?>" <?= in_array($k, $coche, true) ? 'checked' : '' ?>>
+            <span>
+              <span class="t"><?= e($r['titre']) ?>
+                <?php if ($ess): ?><span class="ff-tag e">essentiel</span>
+                <?php elseif (($r['poids'] ?? '') === 'facultatif'): ?><span class="ff-tag">facultatif</span>
+                <?php endif; ?>
+                <?php if (in_array($k, $nouveaux, true)): ?><span class="ff-tag n">non déployé</span><?php endif; ?></span>
+              <span class="d"><?= e($r['quoi']) ?></span>
+            </span>
+          </label>
+        <?php endforeach; ?>
       <?php endforeach; ?>
 
       <label class="field" style="margin:1rem 0 0;max-width:34rem">Page d'accueil imposée
