@@ -205,6 +205,23 @@ StartLimitBurst=5
 [Service]
 Restart=always
 RestartSec=5
+# ── LE VERROU FANTÔME QUI COUPE INTERNET ─────────────────────────────────────
+# CONSTATÉ EN PRODUCTION le 03/08/2026 : après un redémarrage, OpenNDS a refusé
+# de repartir en boucle avec « openNDS is already running, status [ 1 ] », alors
+# qu'AUCUN processus ne tournait. L'instance précédente était sortie sans
+# effacer sa socket de commande /tmp/ndsctl.sock ; la nouvelle la voyait, se
+# croyait en double et abandonnait.
+#
+# Ce blocage ne se répare pas tout seul : la socket ne disparaît jamais, chaque
+# tentative échoue à l'identique, et au bout de 5 échecs systemd renonce. Le
+# repli sur panne — voulu — laisse alors le trafic LAN vers Internet COUPÉ pour
+# tout le service, jusqu'à intervention humaine. Une socket oubliée de 0 octet
+# privait donc le commissariat d'Internet.
+#
+# La socket n'est retirée QUE si aucun processus opennds ne tourne : l'effacer
+# sans vérifier détruirait le canal de commande d'une instance bien vivante, et
+# « ndsctl » ne répondrait plus — panne plus difficile encore à diagnostiquer.
+ExecStartPre=/bin/sh -c 'pgrep -x opennds >/dev/null || rm -f /tmp/ndsctl.sock'
 # Le trafic LAN->WAN n'est autorisé QU'APRÈS confirmation du démarrage du portail,
 # et recoupé dès son arrêt — y compris un arrêt volontaire depuis la console.
 # Si le portail échoue 5 fois en 5 min, systemd renonce : le repli RESTE actif.
