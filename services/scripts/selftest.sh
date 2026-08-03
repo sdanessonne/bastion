@@ -88,6 +88,31 @@ else
   done
 fi
 
+# ── 4 ter) Le mot de passe d'installation est-il encore valide ? ─────────────
+# Le fichier /etc/proxyfibre/admin-pass.env contient EN CLAIR le mot de passe
+# engendré à l'installation. S'il ouvre encore la console, c'est qu'il n'a jamais
+# été changé — or il a pu être communiqué, imprimé, envoyé par courriel.
+# Ce contrôle a une seconde utilité : le déploiement REMETTAIT ce mot de passe à
+# chaque exécution, annulant en silence celui qu'on avait choisi. Si ce défaut
+# réapparaissait, ce contrôle repasserait au rouge.
+h "Mot de passe de la console"
+PASSF=/etc/proxyfibre/admin-pass.env
+if [ ! -r "$PASSF" ]; then
+    ok "aucun mot de passe d'installation conservé"
+else
+    # La comparaison se fait par password_verify, jamais en affichant la valeur.
+    ADMP=$(sed -n 's/^ADMIN_PASS="\(.*\)"$/\1/p' "$PASSF" 2>/dev/null | head -1)
+    ADMH=$(mysql -N -B radius -e "SELECT password_hash FROM pf_admins WHERE username='admin' LIMIT 1;" 2>/dev/null)
+    if [ -z "$ADMP" ] || [ -z "$ADMH" ]; then
+        wn "comparaison impossible (fichier ou compte illisible)"
+    elif PF_P="$ADMP" PF_H="$ADMH" php -r 'exit(password_verify(getenv("PF_P"), getenv("PF_H")) ? 0 : 1);' 2>/dev/null; then
+        ko "le mot de passe D'INSTALLATION ouvre encore la console — jamais changé"
+        echo "     → sudo proxyfibre-admin-passwd     (la saisie n'est pas affichée)"
+    else
+        ok "le mot de passe a été changé depuis l'installation"
+    fi
+fi
+
 # ── 4 bis) La racine du portail mène AU PORTAIL ──────────────────────────────
 # Le vhost du portail a pour racine /var/www/html, où Debian laisse son
 # « Apache2 Debian Default Page ». Rien ne signalait le problème : Apache

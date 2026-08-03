@@ -387,7 +387,22 @@ mysql "${DB_NAME}" -e "ALTER TABLE pf_admins ADD COLUMN IF NOT EXISTS avatar MED
 # php-gd est indispensable au ré-encodage des photos (installations déjà en service).
 dpkg -s php-gd >/dev/null 2>&1 || apt-get install -y php-gd >/dev/null 2>&1 || true
 ADMIN_HASH="$(PF_AP="$ADMIN_PASS" php -r "echo password_hash(getenv('PF_AP'), PASSWORD_DEFAULT);")"
-mysql "${DB_NAME}" -e "INSERT INTO pf_admins (username,password_hash) VALUES ('${ADMIN_USER}','${ADMIN_HASH}') ON DUPLICATE KEY UPDATE password_hash='${ADMIN_HASH}';"
+# ── LE DÉPLOIEMENT NE TOUCHE PLUS À UN MOT DE PASSE EXISTANT ─────────────────
+# CONSTATÉ EN PRODUCTION : cette ligne portait « ON DUPLICATE KEY UPDATE
+# password_hash=... ». Chaque déploiement RÉÉCRIVAIT donc le condensat avec le mot
+# de passe d'installation, annulant en silence celui que l'administrateur avait
+# choisi dans la console.
+#
+# Le résultat est le pire possible : le mot de passe d'origine — celui qui figure
+# en clair dans /etc/proxyfibre/admin-pass.env, celui qu'on a pu communiquer à
+# l'installation, celui qui traîne dans un courriel — REDEVIENT valide après
+# chaque mise à jour. L'administrateur croit l'avoir changé, la console le lui a
+# confirmé, et il redevient bon sans que rien ne l'annonce.
+#
+# Le compte n'est donc plus créé qu'en son ABSENCE. Réinitialiser un mot de passe
+# oublié reste possible, mais doit être un acte délibéré — « proxyfibre-admin-passwd » —
+# et non l'effet de bord d'un déploiement.
+mysql "${DB_NAME}" -e "INSERT INTO pf_admins (username,password_hash) VALUES ('${ADMIN_USER}','${ADMIN_HASH}') ON DUPLICATE KEY UPDATE username=username;"
 # Jetons d'API, générés une seule fois chacun (INSERT IGNORE : un redéploiement ne les
 # change pas, sans quoi tous les postes déjà configurés perdraient l'accès).
 #   api_token     : serveur central — ouvre TOUTE l'API.
@@ -552,6 +567,9 @@ dpkg -s ieee-data >/dev/null 2>&1 ||   DEBIAN_FRONTEND=noninteractive apt-get in
 
 # Diagnostic de lenteur : lecture seule, ne modifie rien.
 install -m755 "${REPO_DIR}/services/scripts/perf-check.sh" /usr/local/sbin/proxyfibre-perf-check
+# Reinitialisation deliberee du mot de passe de la console : le deploiement ne le
+# reecrit plus, il fallait donc un vrai chemin de secours.
+install -m755 "${REPO_DIR}/services/scripts/admin-passwd.sh" /usr/local/sbin/proxyfibre-admin-passwd
 
 # ── OPcache : PHP ne recompile plus le code à chaque affichage ───────────────
 # Sans lui, les 1,1 Mo de code de la console sont relus, analysés et recompilés
