@@ -23,7 +23,51 @@ $SVCS = [
 ];
 
 $flash = null;
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'mailtest') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'smtp') {
+    csrf_check();
+    // ── LE MOT DE PASSE NE PASSE PAS PAR LA LIGNE DE COMMANDE ────────────────
+    // Un mot de passe en argument est lisible par n'importe qui dans « ps » le
+    // temps de l'exécution, et il atterrit dans les journaux d'audit du système.
+    // Les valeurs sont donc écrites sur l'ENTRÉE STANDARD du script, dans un
+    // tuyau que seuls les deux processus partagent.
+    $champs = [
+        'host' => trim((string) ($_POST['smtp_host'] ?? '')),
+        'port' => trim((string) ($_POST['smtp_port'] ?? '587')),
+        'from' => trim((string) ($_POST['smtp_from'] ?? '')),
+        'user' => trim((string) ($_POST['smtp_user'] ?? '')),
+        'tls'  => ($_POST['smtp_tls'] ?? 'starttls') === 'ssl' ? 'ssl' : 'starttls',
+    ];
+    $mdp = (string) ($_POST['smtp_pass'] ?? '');
+
+    if ($champs['host'] === '' || !filter_var($champs['from'], FILTER_VALIDATE_EMAIL)) {
+        $flash = ["Serveur et adresse d'expédition sont obligatoires.", 'err'];
+    } else {
+        $lignes = '';
+        foreach ($champs as $k => $v) { $lignes .= $k . '=' . str_replace("\n", '', $v) . "\n"; }
+        // Champ laissé vide = on garde le mot de passe déjà enregistré. Sans
+        // cela, corriger un simple numéro de port obligerait à le ressaisir, et
+        // l'oublier écraserait en silence une configuration qui fonctionnait.
+        $lignes .= $mdp !== '' ? 'pass=' . str_replace("\n", '', $mdp) . "\n" : "keeppass=1\n";
+
+        $p = proc_open('sudo /usr/local/sbin/proxyfibre-mail config 2>&1',
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $tuyaux);
+        $r = '';
+        if (is_resource($p)) {
+            fwrite($tuyaux[0], $lignes);
+            fclose($tuyaux[0]);
+            $r = trim((string) stream_get_contents($tuyaux[1]));
+            fclose($tuyaux[1]); fclose($tuyaux[2]);
+            proc_close($p);
+        }
+        $ok = strpos($r, 'OK:') === 0;
+        // Le journal d'audit retient le SERVEUR et l'expéditeur, jamais le mot
+        // de passe : tracer qui a changé le relais est utile, le recopier non.
+        audit('alerte.smtp', ($ok ? 'relais enregistré — ' : 'ÉCHEC — ')
+            . $champs['host'] . ':' . $champs['port'] . ' · ' . $champs['from']);
+        $flash = [$ok ? "Relais enregistré. Envoyez un message de test pour le vérifier réellement."
+                      : ($r !== '' ? $r : 'Échec inconnu.'), $ok ? 'ok' : 'err'];
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'mailtest') {
     csrf_check();
     // ── LE SEUL CONTRÔLE QUI VAILLE ──────────────────────────────────────────
     // Un relais accepté par la configuration peut refuser à l'usage : mot de
@@ -246,6 +290,55 @@ $mailRelai = trim((string) ($mailEtat['host'] ?? ''));
         Un test réel reste la seule preuve : le relais peut refuser à l'usage.
       </div>
     <?php endif; ?>
+
+    <details style="margin:.9rem 0 0" <?= $mailPret ? '' : 'open' ?>>
+      <summary style="cursor:pointer;font-weight:600;font-size:.92rem">
+        ⚙️ Serveur d'envoi (SMTP)
+        <span class="muted small" style="font-weight:400">
+          <?= $mailPret ? '— configuré : ' . e($mailRelai) : '— à renseigner, sans quoi rien ne part' ?>
+        </span>
+      </summary>
+      <form method="post" style="margin:.8rem 0 0;display:grid;gap:.7rem;
+                                 grid-template-columns:repeat(auto-fit,minmax(190px,1fr));align-items:end">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="do" value="smtp">
+        <label class="field" style="margin:0">Serveur
+          <input name="smtp_host" value="<?= e($mailRelai) ?>" placeholder="smtp.exemple.fr" required>
+        </label>
+        <label class="field" style="margin:0">Port
+          <input name="smtp_port" type="number" min="1" max="65535"
+                 value="<?= e((string) ($mailEtat['port'] ?? '587')) ?>">
+        </label>
+        <label class="field" style="margin:0">Chiffrement
+          <select name="smtp_tls">
+            <option value="starttls">STARTTLS (port 587)</option>
+            <option value="ssl" <?= ((string) ($mailEtat['tls'] ?? '')) === 'ssl' ? 'selected' : '' ?>>SSL/TLS direct (port 465)</option>
+          </select>
+        </label>
+        <label class="field" style="margin:0">Adresse d'expédition
+          <input name="smtp_from" type="email" value="<?= e((string) ($mailEtat['from'] ?? '')) ?>"
+                 placeholder="bastion@exemple.fr" required>
+        </label>
+        <label class="field" style="margin:0">Identifiant
+          <input name="smtp_user" value="<?= e((string) ($mailEtat['user'] ?? '')) ?>"
+                 placeholder="(vide = l'adresse d'expédition)">
+        </label>
+        <label class="field" style="margin:0">Mot de passe
+          <input name="smtp_pass" type="password" autocomplete="new-password"
+                 placeholder="<?= $mailPret ? 'inchangé si laissé vide' : 'requis' ?>">
+        </label>
+        <div><button class="btn">Enregistrer le relais</button></div>
+      </form>
+      <p class="hint" style="margin:.6rem 0 0">
+        Le mot de passe n'est <strong>jamais réaffiché</strong> : laissez le champ vide pour conserver celui
+        déjà enregistré. Il est écrit dans <code>/etc/msmtprc</code>, en lecture pour le seul compte root,
+        et transmis par l'entrée standard — jamais en ligne de commande, où il serait visible dans
+        <code>ps</code> et dans les journaux du système.<br>
+        Pour une messagerie grand public (Gmail, Outlook…), utilisez un <strong>mot de passe
+        d'application</strong>, jamais celui du compte. Et pour des alertes de sécurité d'une passerelle,
+        une adresse institutionnelle vaut mieux qu'une boîte personnelle.
+      </p>
+    </details>
 
     <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.8rem 0 0">
       <form method="post" style="margin:0">

@@ -41,10 +41,19 @@ case "${1:-state}" in
 state)
     mta=false;  [ -x /usr/sbin/sendmail ] && mta=true
     conf=false; relais_ok && conf=true
+    # Tous les champs SAUF le mot de passe : le formulaire de la console doit
+    # pouvoir se repréremplir, mais un secret qu'on réaffiche est un secret qu'on
+    # laisse traîner dans le HTML, dans le cache du navigateur et dans son
+    # gestionnaire de mots de passe.
     host=$(sed -n 's/^\s*host\s\+\(\S\+\).*/\1/p' "$MSMTPRC" 2>/dev/null | head -1)
     from=$(sed -n 's/^\s*from\s\+\(\S\+\).*/\1/p' "$MSMTPRC" 2>/dev/null | head -1)
-    printf '{"mta":%s,"configure":%s,"host":"%s","from":"%s"}\n' \
-        "$mta" "$conf" "$(json_esc "${host:-}")" "$(json_esc "${from:-}")"
+    port=$(sed -n 's/^\s*port\s\+\(\S\+\).*/\1/p' "$MSMTPRC" 2>/dev/null | head -1)
+    user=$(sed -n 's/^\s*user\s\+\(\S\+\).*/\1/p' "$MSMTPRC" 2>/dev/null | head -1)
+    tls=starttls
+    grep -qE '^\s*tls_starttls\s+off' "$MSMTPRC" 2>/dev/null && tls=ssl
+    printf '{"mta":%s,"configure":%s,"host":"%s","from":"%s","port":"%s","user":"%s","tls":"%s"}\n' \
+        "$mta" "$conf" "$(json_esc "${host:-}")" "$(json_esc "${from:-}")" \
+        "$(json_esc "${port:-587}")" "$(json_esc "${user:-}")" "$tls"
     ;;
 
 test)
@@ -77,6 +86,73 @@ test)
     fi
     ;;
 
+config)
+    # ── LES VALEURS ARRIVENT PAR L'ENTRÉE STANDARD, JAMAIS EN ARGUMENT ───────
+    # Un mot de passe passé en argument est lisible par tout le monde dans « ps »
+    # le temps de l'exécution, et il se retrouve dans l'historique du shell comme
+    # dans les journaux d'audit du système. Il transite donc par un tuyau, que
+    # seuls le processus appelant et celui-ci partagent.
+    #
+    # Format attendu, une paire par ligne : host=… port=… from=… user=… pass=… tls=…
+    host=""; port="587"; from=""; user=""; pass=""; tls="starttls"; garder=0
+    while IFS= read -r ligne; do
+        cle=${ligne%%=*}; val=${ligne#*=}
+        case "$cle" in
+            host) host="$val" ;;  port) port="$val" ;;  from) from="$val" ;;
+            user) user="$val" ;;  pass) pass="$val" ;;  tls)  tls="$val"  ;;
+            keeppass) garder=1 ;;
+        esac
+    done
+
+    printf '%s' "$host" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo "ECHEC: nom de serveur invalide"; exit 2; }
+    printf '%s' "$port" | grep -Eq '^[0-9]{1,5}$'      || { echo "ECHEC: port invalide"; exit 2; }
+    printf '%s' "$from" | grep -Eq '^[A-Za-z0-9._%%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' \
+        || { echo "ECHEC: adresse d'expedition invalide"; exit 2; }
+    [ -n "$user" ] || user="$from"
+
+    # Conservation du mot de passe existant : sans cela, modifier le seul numéro
+    # de port obligerait à ressaisir le mot de passe, et l'oublier écraserait
+    # silencieusement une configuration qui marchait.
+    if [ "$garder" = "1" ] || [ -z "$pass" ]; then
+        anc=$(sed -n 's/^\s*password\s\+\(.*\)$/\1/p' "$MSMTPRC" 2>/dev/null | head -1)
+        if [ -n "${anc:-}" ] && [ "$anc" != "A_REMPLACER" ]; then
+            pass="$anc"
+        elif [ -z "$pass" ]; then
+            echo "ECHEC: mot de passe requis (aucun enregistre)"; exit 2
+        fi
+    fi
+
+    case "$tls" in
+        ssl)  ligne_tls="tls_starttls  off" ;;
+        *)    ligne_tls="tls_starttls  on"  ;;
+    esac
+
+    # Écriture par un fichier temporaire en 600 PUIS déplacement : créer le
+    # fichier définitif avant d'en restreindre les droits laisserait le mot de
+    # passe lisible pendant l'intervalle.
+    tmp=$(mktemp /etc/msmtprc.XXXXXX) || { echo "ECHEC: fichier temporaire"; exit 3; }
+    chmod 600 "$tmp"
+    {
+        printf '# Bastion — relais d envoi des alertes.\n'
+        printf '# Ecrit par la console (Services > Surveillance et alertes).\n'
+        printf '# Le mot de passe est en clair : ce fichier doit rester en 600 root:root.\n\n'
+        printf 'defaults\nauth           on\ntls            on\n'
+        printf 'tls_trust_file /etc/ssl/certs/ca-certificates.crt\n'
+        printf 'logfile        /var/log/msmtp.log\n\n'
+        printf 'account        alertes\n'
+        printf 'host           %s\n' "$host"
+        printf 'port           %s\n' "$port"
+        printf '%s\n' "$ligne_tls"
+        printf 'from           %s\n' "$from"
+        printf 'user           %s\n' "$user"
+        printf 'password       %s\n' "$pass"
+        printf '\naccount default : alertes\n'
+    } > "$tmp"
+    mv -f "$tmp" "$MSMTPRC" && chmod 600 "$MSMTPRC"
+    touch /var/log/msmtp.log 2>/dev/null && chmod 640 /var/log/msmtp.log 2>/dev/null
+    echo "OK: relais enregistre ($host:$port)"
+    ;;
+
 *)
-    echo "usage: mail-ctl.sh state|test <adresse>" >&2; exit 2 ;;
+    echo "usage: mail-ctl.sh state|test <adresse>|config (valeurs sur l'entree standard)" >&2; exit 2 ;;
 esac

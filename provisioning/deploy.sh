@@ -506,7 +506,7 @@ install -d -m 0750 -o www-data -g root /run/bastion
 printf 'd /run/bastion 0750 www-data root -
 ' > /usr/lib/tmpfiles.d/bastion.conf
 cat > /etc/sudoers.d/proxyfibre-vpn <<'SUD'
-www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-mail state, /usr/local/sbin/proxyfibre-mail test *, /usr/local/sbin/proxyfibre-wanip state, /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-mail state, /usr/local/sbin/proxyfibre-mail test *, /usr/local/sbin/proxyfibre-mail config, /usr/local/sbin/proxyfibre-wanip state, /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-vpn
 
