@@ -390,6 +390,25 @@ echouer() {
 
 n "démarrage du déploiement initial"
 
+# ── DIRE QUE CA TRAVAILLE ───────────────────────────────────────────────────
+# L'installation dure 20 a 40 minutes, pendant lesquelles l'ecran n'affichait
+# qu'une invite Debian nue. Le client ne pouvait pas distinguer « en cours » de
+# « bloque » -- et redemarrer a ce moment laisse un systeme a moitie deploye.
+cat > /etc/issue <<ATTENTE
+
+  ================================================================
+    BASTION  --  installation en cours, NE PAS ETEINDRE
+  ================================================================
+
+    Le deploiement prend 20 a 40 minutes selon la ligne Internet.
+    Cet ecran changera tout seul lorsque ce sera termine.
+
+    Suivi : tail -f \$L
+
+  \n \l
+
+ATTENTE
+
 if [ ! -d "\$R" ]; then
     n "code absent du disque — le support ne l'a pas déposé ; tentative de récupération"
     git clone --depth 1 '$DEPOT' "\$R" >> "\$L" 2>&1 || n "git clone impossible (dépôt privé ?)"
@@ -408,7 +427,41 @@ else
 fi
 
 bash "\$R/services/scripts/import-media.sh" auto >> "\$L" 2>&1 || n "import des médias : rien à faire"
-n "déploiement terminé"
+
+# ── CONTROLER AVANT DE DECLARER TERMINE ─────────────────────────────────────
+# deploy.sh peut rendre 0 sans que le portail reponde. Annoncer « operationnel »
+# sur cette seule base, c'est certifier un travail qu'on n'a pas regarde.
+IP=\$(sed -n 's/^LAN_IP=//p' /etc/proxyfibre/net.env 2>/dev/null | tr -d '\"' | head -1)
+[ -n "\$IP" ] || IP=\$(hostname -I 2>/dev/null | awk '{print \$1}')
+CODE=\$(curl -sk -o /dev/null -w '%{http_code}' --max-time 20 "https://127.0.0.1:2443/portal/fas.php" 2>/dev/null)
+if [ "\$CODE" != "200" ]; then
+    echouer "le portail ne repond pas (code \${CODE:-aucun})"
+fi
+
+# ── DIRE AU CLIENT QUE C'EST PRET, ET OU ALLER ──────────────────────────────
+# Sans ce bloc, l'ecran affichait une invite Debian nue : rien n'indiquait que
+# l'installation etait finie, ni a quelle adresse se connecter. Le client
+# n'avait aucun moyen de savoir s'il devait attendre ou agir.
+# Le mot de passe n'y figure PAS : cet ecran est visible de quiconque passe
+# devant la machine. Il a ete remis avec la cle.
+cat > /etc/issue <<ISSUE
+
+  ================================================================
+    BASTION  --  passerelle operationnelle
+  ================================================================
+
+    Interface d'administration :  https://\$IP:8443/
+    Portail des agents         :  https://\$IP:2443/portal/fas.php
+
+    Compte : admin
+    Mot de passe : celui remis avec la cle d'installation.
+
+    Journal de l'installation : \$L
+
+  \n \l
+
+ISSUE
+n "déploiement terminé — portail en 200, adresses affichées sur la console"
 systemctl disable bastion-init.service >/dev/null 2>&1
 exit 0
 INITEOF
