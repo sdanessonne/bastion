@@ -29,6 +29,7 @@ $cas = @(
     @{ f = 'gpo-kms.py';       a = "'192.168.182.1', True" }
     @{ f = 'gpo-kms.py';       a = "'192.168.182.1', False"; s = 'sans-montee' }
     @{ f = 'gpo-timesync.py';  a = "'192.168.182.1'" }
+    @{ f = 'gpo-numlock.py';   a = "" }
     # Trois tailles de liste pour les applications : c'est la VIRGULE de fin qui avait
     # rendu le script inanalysable, et elle ne se manifeste qu'au dernier élément.
     @{ f = 'gpo-apps.py'; a = "[]";                                                                   s = 'aucune appli' }

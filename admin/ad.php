@@ -246,6 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = ad('gpo', 'activation', '192.168.182.1', empty($_POST['monter']) ? '0' : '1');
             break;
         case 'timesync_deploy': $out = ad('gpo', 'timesync'); break;
+        case 'numlock_deploy': $out = ad('gpo', 'numlock'); break;
         case 'sysvol_reset': $out = ad('gpo', 'sysvolreset', ''); break;
         case 'bitlocker_deploy':
             $blm = (string) ($_POST['bl_mode'] ?? 'tpm');
@@ -962,6 +963,33 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
       <form method="post" onsubmit="return confirm('Déployer le recalage de l\'heure au démarrage sur tous les postes du domaine ?')">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="timesync_deploy">
         <button class="btn">🕒 Déployer</button>
+      </form>
+      <?php endif; ?>
+    </div>
+  </div>
+</section>
+
+<!-- Pavé numérique actif dès l'écran de connexion -->
+<section class="dir-sec panel">
+  <div class="panel-head"><h2>🔢 Clavier des postes du domaine</h2></div>
+  <div style="padding:1rem 1.2rem">
+    <?php $nlGpo = in_array('Bastion — Verrouillage numérique', array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
+    <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#14324f,#152238);padding:1rem 1.2rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <span style="font-size:1.8rem">🔢</span>
+      <div style="flex:1;min-width:240px">
+        <div style="font-weight:600">Verrouillage numérique au démarrage</div>
+        <div class="dir-help" style="margin:.2rem 0 0">Active le <strong>pavé numérique</strong> dès l'écran de connexion,
+        puis dans la session de chaque agent — plus besoin d'y penser pour saisir un matricule ou un mot de passe chiffré.
+        Désactive aussi le <strong>démarrage rapide</strong> de Windows : sans cela il restaure l'état du pavé de la session
+        précédente et le réglage ne tient qu'un démarrage sur deux.
+        <br><span class="muted">Prend effet au prochain démarrage du poste. Le réglage reste posé si la stratégie est retirée
+        (c'est une valeur de profil, pas une stratégie révocable).</span></div>
+      </div>
+      <?php if ($nlGpo): ?><span class="badge on">✓ Déployée</span>
+      <?php else: ?>
+      <form method="post" onsubmit="return confirm('Activer le pavé numérique au démarrage sur tous les postes du domaine ?')">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="numlock_deploy">
+        <button class="btn">🔢 Déployer</button>
       </form>
       <?php endif; ?>
     </div>

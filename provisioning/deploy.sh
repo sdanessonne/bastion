@@ -760,6 +760,7 @@ install -m755 "${REPO_DIR}/services/scripts/gpo-apply.py"  /usr/local/sbin/proxy
 install -m755 "${REPO_DIR}/services/scripts/gpo-apps.py"   /usr/local/sbin/proxyfibre-gpo-apps
 install -m755 "${REPO_DIR}/services/scripts/gpo-kms.py"    /usr/local/sbin/proxyfibre-gpo-kms
 install -m755 "${REPO_DIR}/services/scripts/gpo-drives.py" /usr/local/sbin/proxyfibre-gpo-drives
+install -m755 "${REPO_DIR}/services/scripts/gpo-numlock.py" /usr/local/sbin/proxyfibre-gpo-numlock
 # Store d'applications : dossier des installeurs (servi sur 2080) + limites d'upload PHP.
 install -d -o www-data -g www-data -m 755 /var/www/html/apps
 PHPCONF="$(ls -d /etc/php/*/apache2/conf.d 2>/dev/null | head -1)"
