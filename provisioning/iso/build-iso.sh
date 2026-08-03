@@ -2,8 +2,12 @@
 # Bastion — © 2026 Mickaël MONESTIER (Mle 110.480). Tous droits réservés. Voir LICENCE.txt.
 #
 # Fabrique l'ISO d'installation MUETTE de Bastion : Debian netinst + préréglage + amorçage
-# automatique. Le poste installe Debian sur un disque CHIFFRÉ, puis déploie Bastion depuis
-# le dépôt Git, sans aucune question.
+# automatique. Le poste installe Debian, puis deploie Bastion depuis le depot Git, sans
+# aucune question.
+#
+# Le disque n'est PAS chiffre par defaut : un disque chiffre reclame une phrase secrete a
+# CHAQUE demarrage, donc la passerelle ne se releve pas seule apres une coupure de courant.
+# « CHIFFRER=1 ./build-iso.sh » retablit le chiffrement pour qui accepte cette contrainte.
 #
 # ── OÙ SONT LES SECRETS ──────────────────────────────────────────────────────
 # Ils ne sont PAS dans le dépôt. Ils vivent dans « iso-secrets.env », à côté de ce script,
@@ -19,6 +23,20 @@ set -euo pipefail
 ICI=$(cd "$(dirname "$0")" && pwd)
 SECRETS="$ICI/iso-secrets.env"
 SORTIE="${SORTIE:-$ICI/bastion-installation.iso}"
+
+# ── CHIFFREMENT DU DISQUE : NON PAR DÉFAUT ──────────────────────────────────
+# Il protège contre le vol du disque, mais interdit tout redémarrage sans
+# intervention humaine : la passerelle attend une phrase secrète au démarrage.
+# Sur un équipement réseau censé se relever seul après une coupure, c'est
+# généralement le mauvais compromis. « CHIFFRER=1 ./build-iso.sh » le rétablit.
+if [ "${CHIFFRER:-0}" = "1" ]; then
+    PRESEED="$ICI/preseed-crypto.cfg"
+    echo "→ Disque CHIFFRÉ (LUKS) : ce serveur demandera une phrase à CHAQUE démarrage."
+else
+    PRESEED="$ICI/preseed.cfg"
+    echo "→ Disque non chiffré : le serveur redémarre seul après une coupure."
+fi
+[ -f "$PRESEED" ] || { echo "ERREUR : préréglage introuvable ($PRESEED)"; exit 1; }
 DEPOT_DEFAUT="https://github.com/sdanessonne/bastion.git"
 
 # ── Secrets (hors dépôt) ────────────────────────────────────────────────────
@@ -172,7 +190,7 @@ sed -e "s|__MDP_BASTION__|$(esc "$MDP_BASTION")|g" \
     -e "s|__MDP_ROOT__|$(esc "${MDP_ROOT:-$MDP_BASTION}")|g" \
     -e "s|__LUKS__|$(esc "$LUKS")|g" \
     -e "s|__DEPOT__|$(esc "$DEPOT")|g" \
-    "$ICI/preseed.cfg" > "$TRAV/preseed.cfg"
+    "$PRESEED" > "$TRAV/preseed.cfg"
 
 # Le préréglage est glissé DANS l'initrd de l'installateur : c'est la seule méthode qui
 # fonctionne sans aucune question, y compris avant la configuration réseau.
