@@ -200,11 +200,26 @@ mkdir -p /etc/systemd/system/opennds.service.d
 cat > /etc/systemd/system/opennds.service.d/bastion-failclose.conf <<'UNIT'
 [Unit]
 StartLimitIntervalSec=300
-StartLimitBurst=5
+# 10 tentatives, comme l'unité d'origine. Notre surcouche descendait à 5 : trop
+# peu, puisque les premières échouent forcément (voir RestartSec ci-dessous) et
+# qu'au bout du compte systemd renonçait, laissant le repli actif — Internet
+# coupé pour tout le service jusqu'à intervention humaine.
+StartLimitBurst=10
 
 [Service]
 Restart=always
-RestartSec=5
+# ── 20 s, ET PAS 5 : LA VALEUR D'ORIGINE ÉTAIT DÉLIBÉRÉE ─────────────────────
+# L'unité fournie par le paquet prévoit RestartSec=20. Notre surcouche l'avait
+# ramenée à 5 « pour rétablir plus vite », sans voir qu'OpenNDS ne PEUT PAS
+# repartir aussi tôt : il refuse avec « openNDS is already running » pendant une
+# vingtaine de secondes après son arrêt, même lorsque plus aucun processus ne
+# tourne. MESURÉ sur la passerelle : échecs à 5 s d'intervalle, succès à la
+# 22e seconde.
+#
+# Chaque échec déclenche ExecStopPost, donc recoupe le trafic LAN vers Internet.
+# Réessayer trop tôt ne rétablissait donc rien : cela prolongeait la coupure en
+# la ponctuant d'échecs, et épuisait le budget de tentatives.
+RestartSec=20
 # ── LE VERROU FANTÔME QUI COUPE INTERNET ─────────────────────────────────────
 # CONSTATÉ EN PRODUCTION le 03/08/2026 : après un redémarrage, OpenNDS a refusé
 # de repartir en boucle avec « openNDS is already running, status [ 1 ] », alors
