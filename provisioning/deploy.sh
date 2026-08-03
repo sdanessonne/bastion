@@ -506,7 +506,7 @@ install -d -m 0750 -o www-data -g root /run/bastion
 printf 'd /run/bastion 0750 www-data root -
 ' > /usr/lib/tmpfiles.d/bastion.conf
 cat > /etc/sudoers.d/proxyfibre-vpn <<'SUD'
-www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-wanip state, /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-mail state, /usr/local/sbin/proxyfibre-mail test *, /usr/local/sbin/proxyfibre-wanip state, /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-vpn
 
@@ -540,6 +540,46 @@ install -m755 "${REPO_DIR}/services/scripts/vpn-ctl.sh" /usr/local/sbin/proxyfib
 # d'une page. Deux attentes reseau au milieu du tableau de bord rendraient la
 # console lente pour une information de confort.
 install -m755 "${REPO_DIR}/services/scripts/wanip.sh" /usr/local/sbin/proxyfibre-wanip
+
+# ── Envoi des alertes par courriel ───────────────────────────────────────────
+# CONSTATE : une adresse de notification etait enregistree, le surveillant
+# tournait, il detectait les anomalies -- et AUCUN courriel ne pouvait partir,
+# faute d'agent de transport. Le portail est tombe, Internet a ete coupe pour
+# tout le service, et pas un message n'est parti.
+# msmtp-mta est leger (pas de serveur en ecoute, juste un relais sortant), ce qui
+# convient a une passerelle : elle ne doit RECEVOIR aucun courriel.
+dpkg -s msmtp-mta >/dev/null 2>&1 ||   DEBIAN_FRONTEND=noninteractive apt-get install -y msmtp-mta >/dev/null 2>&1 || true
+install -m755 "${REPO_DIR}/services/scripts/mail-ctl.sh" /usr/local/sbin/proxyfibre-mail
+
+# Modele de configuration. Les identifiants NE SONT PAS ecrits ici : le fichier
+# porte des valeurs a remplacer, et « proxyfibre-mail state » refuse de declarer
+# le relais configure tant qu'elles y sont. Un modele pris pour une configuration
+# valide donnerait une alerte silencieuse de plus.
+if [ ! -f /etc/msmtprc ]; then
+  cat > /etc/msmtprc <<'MSMTP'
+# Bastion — relais d'envoi des alertes.
+# A COMPLETER par l'administrateur, puis : chmod 600 /etc/msmtprc
+# Le mot de passe est en clair dans ce fichier : il doit rester lisible du seul
+# compte root. Pour Gmail, utiliser un MOT DE PASSE D'APPLICATION, jamais le mot
+# de passe du compte.
+defaults
+auth           on
+tls            on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        /var/log/msmtp.log
+
+account        alertes
+host           A_REMPLACER.exemple.fr
+port           587
+from           A_REMPLACER@exemple.fr
+user           A_REMPLACER@exemple.fr
+password       A_REMPLACER
+
+account default : alertes
+MSMTP
+  chmod 600 /etc/msmtprc
+  touch /var/log/msmtp.log && chmod 640 /var/log/msmtp.log
+fi
 
 # Le verrou doit être RÉÉVALUÉ en permanence : si le tunnel tombe en cours de
 # journée, le routage reprendrait la route normale et le groupe sortirait EN

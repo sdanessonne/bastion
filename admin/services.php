@@ -3,6 +3,7 @@
 /** Bastion Admin — état et pilotage des services système (liste blanche). */
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
+require_once __DIR__ . '/inc/audit.php';
 
 // Services gérés : unit systemd => [nom, rôle, type].
 //   type 'daemon'  : service permanent (état = actif/inactif)
@@ -22,7 +23,25 @@ $SVCS = [
 ];
 
 $flash = null;
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['alert_email'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'mailtest') {
+    csrf_check();
+    // ── LE SEUL CONTRÔLE QUI VAILLE ──────────────────────────────────────────
+    // Un relais accepté par la configuration peut refuser à l'usage : mot de
+    // passe changé, port filtré par la box, expéditeur rejeté par le fournisseur.
+    // Rien de tout cela ne se voit avant d'avoir réellement envoyé.
+    $dst = (string) (pf_db()->query("SELECT v FROM pf_settings WHERE k='alert_email'")->fetchColumn() ?: '');
+    if (trim($dst) === '') {
+        $flash = ["Enregistrez d'abord une adresse à prévenir.", 'err'];
+    } else {
+        $r = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-mail test '
+            . escapeshellarg($dst) . ' 2>&1'));
+        $ok = strpos($r, 'OK:') === 0;
+        audit('alerte.test-courriel', $ok ? 'remis au relais — ' . $dst : 'ÉCHEC — ' . $r);
+        $flash = [$ok ? "Message remis au relais pour {$dst}. Vérifiez la boîte de réception — "
+                      . "un message accepté par le relais peut encore être rejeté plus loin."
+                      : $r, $ok ? 'ok' : 'err'];
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['alert_email'])) {
     csrf_check();
     $mail = trim((string) $_POST['alert_email']);
     if ($mail !== '' && !filter_var($mail, FILTER_VALIDATE_EMAIL)) {
@@ -188,7 +207,14 @@ try {
     $alertMail = (string) (pf_db()->query("SELECT v FROM pf_settings WHERE k='alert_email'")->fetchColumn() ?: '');
     $hist = pf_db()->query("SELECT lvl,txt,opened_at,closed_at FROM pf_alerts ORDER BY id DESC LIMIT 8")->fetchAll();
 } catch (Throwable $e) { /* table absente tant que le watchdog n'a pas tourné */ }
-$hasMta = is_executable('/usr/sbin/sendmail');
+// L'état est demandé au script, qui vérifie AUSSI que le relais est renseigné :
+// « msmtp installé » ne veut pas dire « capable d'envoyer ». Le modèle posé à
+// l'installation contient des valeurs à remplacer ; le prendre pour une
+// configuration valide produirait un « tout va bien » mensonger.
+$mailEtat  = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-mail state 2>/dev/null'), true) ?: [];
+$hasMta    = !empty($mailEtat['mta']);
+$mailPret  = $hasMta && !empty($mailEtat['configure']);
+$mailRelai = trim((string) ($mailEtat['host'] ?? ''));
 ?>
 <section class="panel">
   <div class="panel-head"><h2>🔔 Surveillance et alertes</h2>
@@ -202,11 +228,42 @@ $hasMta = is_executable('/usr/sbin/sendmail');
       </label>
       <button class="btn">Enregistrer</button>
     </form>
-    <p class="hint" style="margin:.5rem 0 0">Laisser vide pour ne pas envoyer de courriel. Les anomalies restent de toute
+    <?php if ($alertMail !== '' && !$mailPret): ?>
+      <div class="err" style="margin:.8rem 0 0">
+        <strong>Cette adresse ne reçoit rien.</strong>
+        <?php if (!$hasMta): ?>
+          Aucun agent de messagerie n'est installé sur la passerelle.
+        <?php else: ?>
+          Le relais SMTP n'est pas renseigné dans <code>/etc/msmtprc</code> (le modèle contient
+          encore ses valeurs à remplacer).
+        <?php endif; ?>
+        Les anomalies continuent d'être historisées ici et écrites dans le journal système,
+        mais <strong>personne n'est prévenu</strong>.
+      </div>
+    <?php elseif ($alertMail !== '' && $mailPret): ?>
+      <div class="ok" style="margin:.8rem 0 0">
+        Envoi possible via <strong><?= e($mailRelai) ?></strong>.
+        Un test réel reste la seule preuve : le relais peut refuser à l'usage.
+      </div>
+    <?php endif; ?>
+
+    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.8rem 0 0">
+      <form method="post" style="margin:0">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="do" value="mailtest">
+        <button class="btn-sm" <?= $alertMail !== '' ? '' : 'disabled title="Enregistrez d\'abord une adresse"' ?>>
+          ✉️ Envoyer un message de test
+        </button>
+      </form>
+      <span class="muted small">Il part vers l'adresse ci-dessus et rapporte l'erreur exacte en cas d'échec.</span>
+    </div>
+
+    <p class="hint" style="margin:.7rem 0 0">Laisser vide pour ne pas envoyer de courriel. Les anomalies restent de toute
       façon historisées ici et écrites dans le journal système (<code>bastion-watchdog</code>), collectable par une
       supervision de site.
-      <?php if (!$hasMta): ?><br><strong>Aucun agent de messagerie n'est installé sur cette passerelle</strong> :
-      l'envoi de courriel est sans effet tant qu'un MTA (par exemple <code>msmtp-mta</code>) n'est pas configuré.<?php endif; ?>
+      <?php if (!$hasMta): ?><br>Installation de l'agent : <code>apt-get install msmtp-mta</code>, puis compléter
+      <code>/etc/msmtprc</code>. Le mot de passe y figure en clair — le fichier doit rester en <code>600 root:root</code>,
+      et pour une messagerie grand public il faut un <strong>mot de passe d'application</strong>, jamais celui du compte.<?php endif; ?>
     </p>
 
     <h3 style="margin:1.4rem 0 .6rem;font-size:.95rem">Dernières anomalies</h3>

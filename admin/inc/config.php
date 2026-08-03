@@ -270,6 +270,31 @@ function sys_alerts(): array {
                       'act' => 'Système', 'url' => 'systeme.php'];
         }
     }
+    // ── UNE ADRESSE D'ALERTE QUI NE REÇOIT RIEN ──────────────────────────────
+    // CONSTATÉ EN PRODUCTION : une adresse était enregistrée, le surveillant
+    // tournait chaque minute et détectait les anomalies — mais aucun courriel ne
+    // pouvait partir, faute d'agent de transport. La fonction d'envoi renvoyait
+    // « false » et personne ne lisait ce retour. Le portail est tombé, Internet
+    // a été coupé pour tout le service, et pas un message n'est parti.
+    //
+    // Renseigner une adresse, c'est déclarer qu'on compte sur elle. Un dispositif
+    // d'alerte qui ne peut pas alerter est pire que pas de dispositif du tout :
+    // on cesse de surveiller soi-même en croyant être prévenu.
+    try {
+        $mailDest = (string) (pf_db()->query("SELECT v FROM pf_settings WHERE k='alert_email'")->fetchColumn() ?: '');
+        if (trim($mailDest) !== '') {
+            $ms = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-mail state 2>/dev/null'), true) ?: [];
+            if (empty($ms['mta']) || empty($ms['configure'])) {
+                $out[] = ['lvl' => 'danger',
+                          'txt' => "Aucune alerte ne peut être envoyée par courriel : "
+                                 . (empty($ms['mta']) ? "aucun agent de messagerie installé."
+                                                      : "relais SMTP non configuré.")
+                                 . " L'adresse renseignée ne reçoit rien.",
+                          'act' => 'Configurer', 'url' => 'services.php'];
+            }
+        }
+    } catch (Throwable $e) { /* réglages illisibles : on ne bloque pas l'affichage */ }
+
     // ── SORTIE PAR TUNNEL : GROUPE CONFIGURÉ, TUNNEL MORT ────────────────────
     // Cette combinaison prive d'Internet tous les agents du groupe, et c'est
     // VOULU (les laisser repasser en sortie directe les ferait travailler sous

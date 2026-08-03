@@ -73,9 +73,26 @@ function wd_settings(PDO $db): array {
     return $s;
 }
 function wd_mail(string $to, string $sujet, string $corps): bool {
-    if (!is_executable('/usr/sbin/sendmail')) { return false; }
+    // ── UN ENVOI MANQUÉ NE DOIT PAS ÊTRE MUET ────────────────────────────────
+    // Cette fonction rendait « false » et son retour n'était lu par personne.
+    // Une adresse était enregistrée, l'administrateur croyait être prévenu, et
+    // rien ne partait — y compris le jour où le portail est tombé et où le repli
+    // a coupé Internet pour tout le service.
+    // L'échec part désormais dans le journal système, au même endroit que
+    // l'alerte : une supervision de site le verra, et « journalctl -t
+    // bastion-watchdog » le montre en une commande.
+    if (!is_executable('/usr/sbin/sendmail')) {
+        shell_exec('logger -t bastion-watchdog -p daemon.err '
+            . escapeshellarg('COURRIEL NON ENVOYE a ' . $to . ' : aucun agent de messagerie installe'));
+        return false;
+    }
     $h = "From: Bastion <bastion@localhost>\r\nContent-Type: text/plain; charset=utf-8\r\n";
-    return @mail($to, $sujet, $corps, $h);
+    $ok = @mail($to, $sujet, $corps, $h);
+    if (!$ok) {
+        shell_exec('logger -t bastion-watchdog -p daemon.err '
+            . escapeshellarg('COURRIEL NON ENVOYE a ' . $to . ' : le relais a refuse le message'));
+    }
+    return $ok;
 }
 
 $S    = wd_settings($db);
