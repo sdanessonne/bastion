@@ -541,6 +541,48 @@ install -m755 "${REPO_DIR}/services/scripts/vpn-ctl.sh" /usr/local/sbin/proxyfib
 # console lente pour une information de confort.
 install -m755 "${REPO_DIR}/services/scripts/wanip.sh" /usr/local/sbin/proxyfibre-wanip
 
+# ── Image de reference : generalisation + personnalisation ───────────────────
+# Cloner un serveur EN SERVICE serait une faute : ses secrets, son annuaire
+# nominatif et ses journaux de navigation partiraient sur chaque exemplaire, et
+# deux controleurs de domaine issus du meme clone se croiraient le meme.
+# Le modele retenu est donc : un gabarit GENERALISE (sysprep) dont chaque copie
+# se donne son identite au premier demarrage (firstboot).
+install -m755 "${REPO_DIR}/services/scripts/sysprep.sh"   /usr/local/sbin/proxyfibre-sysprep
+install -m755 "${REPO_DIR}/services/scripts/firstboot.sh" /usr/local/sbin/proxyfibre-firstboot
+# growpart : sans lui, une image copiee sur un disque plus grand laisse l'espace
+# inutilise -- et l'on s'en apercoit le jour ou les journaux saturent une
+# partition qu'on croyait spacieuse.
+dpkg -s cloud-guest-utils >/dev/null 2>&1 ||   DEBIAN_FRONTEND=noninteractive apt-get install -y cloud-guest-utils >/dev/null 2>&1 || true
+
+cat > /etc/systemd/system/bastion-firstboot.service <<'UNIT'
+[Unit]
+Description=Bastion — personnalisation au premier demarrage
+# Le reseau doit etre la : le deploiement installe des paquets et interroge des
+# depots. Sans cette attente, la personnalisation echouerait sur une machine
+# pourtant correctement cablee.
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/bastion/firstboot-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Sortie sur la CONSOLE : le technicien est devant la machine, il doit voir ce
+# qui se passe et relever le mot de passe engendre. Un journal seul l'obligerait
+# a savoir qu'il existe.
+StandardInput=tty
+StandardOutput=journal+console
+StandardError=journal+console
+TTYPath=/dev/tty1
+TTYReset=yes
+ExecStart=/usr/local/sbin/proxyfibre-firstboot
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+
 # ── Envoi des alertes par courriel ───────────────────────────────────────────
 # CONSTATE : une adresse de notification etait enregistree, le surveillant
 # tournait, il detectait les anomalies -- et AUCUN courriel ne pouvait partir,

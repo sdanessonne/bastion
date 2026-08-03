@@ -38,8 +38,17 @@ if [ ! -f "$SECRETS" ]; then
     # Ils sont écrits dans le fichier de secrets, en 600, et affichés UNE FOIS à
     # la fin de la fabrication : celui qui lance l'outil doit pouvoir les relever.
     if [ ! -t 0 ]; then
-        _mdp="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
-        _luks="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+        # ── PAS DE « … | head -c » ICI ───────────────────────────────────────
+        # « tr < /dev/urandom | head -c 24 » paraît naturel et TUE LE SCRIPT :
+        # head se ferme dès qu'il a ses 24 octets, tr reçoit un SIGPIPE, pipefail
+        # remonte l'échec et set -e interrompt tout — SANS LE MOINDRE MESSAGE.
+        # Constaté ici : la fabrication s'arrêtait juste après l'en-tête, et rien
+        # n'indiquait pourquoi.
+        # « cut » lit son entrée jusqu'au bout : aucun tuyau ne se ferme trop tôt.
+        _mdp="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | cut -c1-24)"
+        _luks="$(openssl rand -base64 64 | tr -dc 'A-Za-z0-9' | cut -c1-32)"
+        [ ${#_mdp} -ge 20 ] && [ ${#_luks} -ge 28 ] \
+            || { echo "  ERREUR : engendrement des secrets impossible."; exit 1; }
         _dep="${DEPOT:-$DEPOT_DEFAUT}"
         echo "  Aucun terminal : secrets engendrés automatiquement."
         echo "  Ils seront rappelés en fin de fabrication et conservés dans $SECRETS."
