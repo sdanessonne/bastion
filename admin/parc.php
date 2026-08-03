@@ -49,6 +49,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $inv = [];
 try { $inv = $db->query('SELECT * FROM pf_inventaire ORDER BY poste')->fetchAll(PDO::FETCH_ASSOC); }
 catch (Throwable $e) { /* table pas encore créée : aucun poste ne s'est encore signalé */ }
+// Colonnes ajoutées après coup : tant qu'aucun poste ne s'est signalé depuis la mise à
+// jour, la migration n'a pas tourné et « SELECT * » ne les renvoie pas. On les normalise
+// une fois ici plutôt que de s'en méfier à chaque affichage.
+foreach ($inv as &$r) { $r += ['activation' => null, 'activation_det' => null]; }
+unset($r);
 $byName = [];
 foreach ($inv as $r) { $byName[strtoupper($r['poste'])] = $r; }
 
@@ -110,6 +115,21 @@ $disqueTendu = count(array_filter($inv, fn($r) => (int) $r['disque_go'] > 0 && (
 // Postes dont l'horloge est trop décalée : au-delà de 5 minutes, l'authentification du domaine
 // est refusée et AUCUNE stratégie ordinateur ne s'applique (ni applications, ni chiffrement).
 $horloge = count(array_filter($inv, fn($r) => $r['horloge_ecart'] !== null && abs((int) $r['horloge_ecart']) > 300));
+
+// ── ACTIVATION WINDOWS ────────────────────────────────────────────────────────
+// Une activation — et surtout une montée d'édition — qui échoue ne se voyait nulle
+// part : le poste restait en Professionnel et il fallait aller le constater sur place.
+// Le compte rendu déposé par la stratégie remonte maintenant avec l'inventaire.
+$actLbl = [
+    'active'       => ['on',  'activé',                'Activé par le serveur KMS de Bastion'],
+    'ok-existant'  => ['on',  'déjà activé',           'Licence existante préservée : Bastion n’y a pas touché'],
+    'hors-bastion' => ['',    'activé hors Bastion',   'Licence en place, mais la stratégie d’activation n’a jamais été appliquée'],
+    'redemarrage'  => ['',    'redémarrage à faire',   'La clé Entreprise est posée ; le changement d’édition prendra effet au prochain démarrage'],
+    'echec'        => ['off', 'échec',                 'Le poste n’a pas pu être activé — journal C:\\Windows\\Temp\\bastion-activation.log'],
+    'non-active'   => ['off', 'non activé',            'La stratégie d’activation n’a jamais tourné sur ce poste'],
+    'ignore'       => ['',    'édition non gérée',     'Cette édition de Windows n’est pas prise en charge par l’activation KMS'],
+];
+$actKo = count(array_filter($inv, fn($r) => in_array((string) $r['activation'], ['echec', 'non-active'], true)));
 ?>
 <div class="parc-kpi">
   <div class="k"><b><?= $nbP ?></b><span>poste(s) inventorié(s)</span></div>
@@ -118,6 +138,7 @@ $horloge = count(array_filter($inv, fn($r) => $r['horloge_ecart'] !== null && ab
   <div class="k"><b><?= $memMoy ?: '—' ?></b><span>Go de mémoire en moyenne</span></div>
   <div class="k"><b style="color:<?= $disqueTendu ? '#f87171' : 'inherit' ?>"><?= $disqueTendu ?></b><span>disque(s) &lt; 10 Go libres</span></div>
   <div class="k"><b style="color:<?= $horloge ? '#f87171' : 'inherit' ?>"><?= $horloge ?></b><span>horloge(s) décalée(s)</span></div>
+  <div class="k"><b style="color:<?= $actKo ? '#f87171' : 'inherit' ?>"><?= $actKo ?></b><span>Windows non activé(s)</span></div>
 </div>
 
 <section class="panel">
@@ -153,7 +174,13 @@ $horloge = count(array_filter($inv, fn($r) => $r['horloge_ecart'] !== null && ab
                 <?php $sk = (int) $r['os_sku']; if (isset($skuLbl[$sk])): ?>
                   <span class="badge<?= in_array($sk, [4,27,125,121,122], true) ? ' on' : '' ?>"><?= e($skuLbl[$sk]) ?></span>
                 <?php endif; ?>
-                <br><span class="muted">build <?= e($r['os_build']) ?></span></td>
+                <br><span class="muted">build <?= e($r['os_build']) ?></span>
+                <?php $ac = (string) $r['activation'];
+                      // Seuls les états qui appellent une action sont montrés dans la liste ;
+                      // « activé » n'a pas besoin d'être répété sur chaque ligne.
+                      if (isset($actLbl[$ac]) && in_array($ac, ['echec', 'non-active', 'redemarrage'], true)): ?>
+                  <br><span class="badge <?= $actLbl[$ac][0] ?>" title="<?= e($actLbl[$ac][2]) ?>">🔑 <?= e($actLbl[$ac][1]) ?></span>
+                <?php endif; ?></td>
               <td class="small"><?= e(trim($r['fabricant'] . ' ' . $r['modele'])) ?: '—' ?>
                 <?php $t = (int) $r['type_machine']; if (isset($typeLbl[$t])): ?><span class="badge"><?= $typeLbl[$t] ?></span><?php endif; ?>
                 <?php if ($r['serie']): ?><br><span class="muted mono" style="font-size:.72rem">n° <?= e($r['serie']) ?></span><?php endif; ?></td>
@@ -195,6 +222,14 @@ $horloge = count(array_filter($inv, fn($r) => $r['horloge_ecart'] !== null && ab
                                           : '<span class="badge on">' . $a . ' s</span>'); } ?></dd>
                     <dt>Applications</dt>
                     <dd><?= (int) $r['apps_ok'] ?> installée(s) par Bastion</dd>
+                    <dt>Activation Windows</dt>
+                    <dd><?php $ac = (string) $r['activation'];
+                        if (!isset($actLbl[$ac])) { echo '<span class="muted">non remontée</span>'; }
+                        else {
+                            echo '<span class="badge ' . $actLbl[$ac][0] . '" title="' . e($actLbl[$ac][2]) . '">'
+                               . e($actLbl[$ac][1]) . '</span>';
+                            if ($r['activation_det']) { echo '<br><span class="muted small">' . e($r['activation_det']) . '</span>'; }
+                        } ?></dd>
                     <dt>Adresse d'origine</dt><dd class="mono" style="font-size:.78rem"><?= e($r['ip_source']) ?: '—' ?>
                       <?php if ($r['ip_source'] && $r['ip'] && $r['ip_source'] !== $r['ip']): ?>
                         <span class="badge" title="L'adresse vue par la passerelle diffère de celle déclarée par le poste">≠ déclarée</span>
