@@ -74,8 +74,11 @@ try { $rows = $db->query('SELECT * FROM pf_dhcp ORDER BY INET_ATON(ip)')->fetchA
 $cfg = ['dhcp_range_start' => '192.168.182.10', 'dhcp_range_end' => '192.168.182.254', 'dhcp_lease' => '1h'];
 try { foreach ($db->query("SELECT k,v FROM pf_settings WHERE k LIKE 'dhcp\\_%'") as $r) { $cfg[$r['k']] = $r['v']; } }
 catch (Throwable $e) {}
-$lanNet = trim((string) shell_exec("ip -4 addr show scope global 2>/dev/null | awk '/inet /{print \$2}' | cut -d/ -f1 | head -1"));
-$lanPre = $lanNet ? preg_replace('/\.\d+$/', '.', $lanNet) : '192.168.182.';
+// Le préfixe proposé pour la plage DHCP doit venir du réseau des POSTES : la première
+// adresse de la machine est celle du WAN, et la page aurait suggéré une plage sur le
+// réseau de l'opérateur.
+$lanNet = pf_lan_ip();
+$lanPre = preg_replace('/\.\d+$/', '.', $lanNet);
 
 // Baux DHCP en cours : adresses réellement distribuées par dnsmasq.
 // Format d'une ligne : « <expiration epoch> <MAC> <IP> <nom du poste> <identifiant client> ».

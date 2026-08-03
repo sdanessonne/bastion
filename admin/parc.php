@@ -25,10 +25,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $do = $_POST['do'] ?? '';
     if ($do === 'deploy') {
-        // L'URL doit être joignable par les postes : on prend l'IP du LAN, pas « localhost ».
-        $lan = trim((string) shell_exec("ip -4 addr show scope global 2>/dev/null | awk '/inet /{print \$2}' | cut -d/ -f1 | head -1"))
-               ?: '192.168.182.1';
-        $url = 'https://' . $lan . ':8443/api.php?action=poste.inventaire';
+        // L'URL doit être joignable PAR LES POSTES. « la première adresse globale de la
+        // machine » désignait en réalité le WAN : le collecteur pointait vers l'adresse
+        // opérateur, que les postes n'ont aucune raison d'atteindre, et sans le moindre
+        // message. On demande explicitement l'adresse du réseau des postes.
+        $url = 'https://' . pf_lan_ip() . ':8443/api.php?action=poste.inventaire';
         $out = ad('gpo', 'inventaire', $url, parc_token($db));
         $err = stripos($out, 'ERROR') !== false;
         audit('parc.deploy', $err ? 'echec' : $url);

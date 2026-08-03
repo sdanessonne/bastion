@@ -150,6 +150,41 @@ function sys_disk(string $path): ?array {
 }
 
 /**
+ * Adresse de la passerelle SUR LE RÉSEAU DES POSTES.
+ *
+ * À utiliser dès qu'une URL doit être JOIGNABLE PAR UN POSTE : collecteur d'inventaire,
+ * remontée de photo, tout ce qui est écrit dans une stratégie de groupe.
+ *
+ * Ne jamais la déduire de « la première adresse globale de la machine » : la passerelle
+ * en a plusieurs, et la première est celle du WAN. Le collecteur d'inventaire a été
+ * déployé ainsi vers l'adresse opérateur — une adresse que les postes n'ont aucune
+ * raison d'atteindre, et l'échec était muet. La configuration désigne explicitement le
+ * LAN dans « net.env » : c'est elle qui fait foi.
+ */
+function pf_lan_ip(): string {
+    static $ip = null;
+    if ($ip !== null) { return $ip; }
+
+    foreach (@file('/etc/proxyfibre/net.env') ?: [] as $l) {
+        if (preg_match('/^\s*LAN_IP="?([\d.]+)"?/', $l, $m) && filter_var($m[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $ip = $m[1];
+        }
+    }
+    // Repli : l'adresse portée par l'interface LAN déclarée. Une passerelle sans
+    // « LAN_IP » reste exploitable ; c'est deviner l'INTERFACE qui serait fautif.
+    $if = '';
+    foreach (@file('/etc/proxyfibre/net.env') ?: [] as $l) {
+        if (preg_match('/^\s*LAN_IF="?([A-Za-z0-9._@:-]+)"?/', $l, $m)) { $if = $m[1]; break; }
+    }
+    if ($if !== '') {
+        $out = trim((string) shell_exec('ip -4 -o addr show dev ' . escapeshellarg($if)
+                                        . " scope global 2>/dev/null | awk '{print \$4}' | cut -d/ -f1 | head -1"));
+        if (filter_var($out, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) { return $ip = $out; }
+    }
+    return $ip = '192.168.182.1';
+}
+
+/**
  * Débit instantané de l'interface WAN, en octets par seconde.
  *
  * Un débit ne se lit nulle part : le noyau ne publie que des COMPTEURS cumulés. Il faut

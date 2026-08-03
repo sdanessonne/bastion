@@ -40,4 +40,14 @@ config opennds 'ndsconfig'
 	list users_to_router 'allow tcp port 2050'
 	list users_to_router 'allow tcp port 2080'
 	list users_to_router 'allow tcp port 2443'
+	# 8443 : les POSTES DU DOMAINE appellent l'API de la console — remontée d'inventaire
+	# et vignette de l'écran de connexion. Le port manquait à cette liste alors que les
+	# scripts déposés sur les postes visent « https://<passerelle>:8443/api.php » depuis
+	# le début : les appels étaient rejetés par ndsRTR, silencieusement, et l'inventaire
+	# n'a jamais rien remonté. Ces appels portent un jeton qui n'ouvre QUE les deux
+	# actions « poste.* » (voir $actionsPoste dans admin/api.php).
+	# À SAVOIR : cela rend aussi la page de connexion de la console joignable depuis le
+	# réseau des postes. C'était déjà le cas par 192.168.182.2, que la règle « tout vers
+	# l'annuaire » laisse passer en entier ; la protection reste le mot de passe.
+	list users_to_router 'allow tcp port 8443'
 	list users_to_router 'allow udp port 69'

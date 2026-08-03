@@ -403,7 +403,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // droits administrateur, et surtout l'écran de connexion affiche la vignette
             // AVANT la session — posée pendant la session, elle n'apparaîtrait qu'à la
             // suivante. Voir l'en-tête de services/scripts/gpo-photo.py.
-            $out = ad('gpo', 'photo', '192.168.182.1');
+            // L'adresse vient de la configuration : le poste doit joindre la passerelle sur
+            // SON réseau, et une valeur en dur casserait sur tout site adressé autrement.
+            $out = ad('gpo', 'photo', pf_lan_ip());
             if (strpos($out, 'photo deployee') !== false) {
                 $out = "Photo de l'agent déployée par stratégie. Les postes la poseront au "
                      . "prochain démarrage, et l'écran de connexion l'affichera dès celui-ci.";

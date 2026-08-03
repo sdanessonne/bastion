@@ -126,7 +126,9 @@ foreach (['main.cvd', 'main.cld', 'daily.cvd', 'daily.cld', 'bytecode.cvd', 'byt
     if (!is_readable($p)) { $baseBloquee[] = $f; continue; }
     $baseFichiers[$f] = ['taille' => filesize($p), 'date' => filemtime($p)];
 }
-$lanIp = trim((string) shell_exec("ip -4 addr show scope global 2>/dev/null | awk '/inet /{print \$2}' | cut -d/ -f1 | head -1"));
+// Adresse que la station blanche doit appeler : celle du réseau des postes, pas la
+// première de la machine — qui est celle du WAN.
+$lanIp = pf_lan_ip();
 
 pf_header('Antivirus', 'antivirus.php');
 if ($flash) { pf_flash($flash[0], $flash[1]); }
