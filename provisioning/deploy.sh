@@ -570,6 +570,11 @@ install -m755 "${REPO_DIR}/services/scripts/perf-check.sh" /usr/local/sbin/proxy
 # Reinitialisation deliberee du mot de passe de la console : le deploiement ne le
 # reecrit plus, il fallait donc un vrai chemin de secours.
 install -m755 "${REPO_DIR}/services/scripts/admin-passwd.sh" /usr/local/sbin/proxyfibre-admin-passwd
+# La batterie de controles n etait posee que par selfupdate.sh : sur cette
+# passerelle elle datait de la veille, et les controles ajoutes depuis ne
+# s executaient tout simplement pas. Un controle qui ne tourne pas est pire
+# qu absent -- on croit etre couvert.
+install -m755 "${REPO_DIR}/services/scripts/selftest.sh" /usr/local/sbin/proxyfibre-selftest
 
 # ── OPcache : PHP ne recompile plus le code à chaque affichage ───────────────
 # Sans lui, les 1,1 Mo de code de la console sont relus, analysés et recompilés
