@@ -21,6 +21,7 @@ const JAMAIS = [
   '/portal/photo.php',     // photographie de l'agent
   '/portal/fas.php',       // page d'identification
   '/portal/logout.php',    // déconnexion
+  '/portal/motdepasse.php',// changement de mot de passe — jamais servi depuis un cache
   '/portal/moi.php',       // identité affichée dans l'en-tête (nom, photo)
   '/portal/ca.crt.php',    // certificat d'autorité (sans objet hors ligne)
 ];

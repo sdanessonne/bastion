@@ -283,6 +283,11 @@ $iface  = $client['clientif'] ?? '—';
     }
     </script>
 
+    <p class="center" style="margin:1.2rem 0 .4rem">
+      <a class="btn" href="/portal/motdepasse.php">🔑 Changer mon mot de passe</a>
+    </p>
+    <p class="muted small center" style="margin:0 0 1rem">Le même mot de passe ouvre le portail et votre session Windows.</p>
+
     <form class="logout" method="post" action="/portal/logout.php">
       <button type="submit" class="btn btn-danger">Se déconnecter</button>
     </form>
