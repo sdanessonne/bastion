@@ -312,6 +312,11 @@ $mailRelai = trim((string) ($mailEtat['host'] ?? ''));
         <label class="field" style="margin:0;grid-column:1/-1">Fournisseur
           <select id="smtpPreset" onchange="smtpPreremplir(this.value)">
             <option value="">— choisir pour pré-remplir, ou saisir à la main —</option>
+            <optgroup label="Relais gratuits, prevus pour l'envoi automatique">
+              <option value="brevo">Brevo — 300 messages/jour</option>
+              <option value="mailjet">Mailjet — 200 messages/jour</option>
+              <option value="smtp2go">SMTP2GO — 1 000 messages/mois</option>
+            </optgroup>
             <option value="gmail">Gmail / Google Workspace</option>
             <option value="ms">Outlook.com / Microsoft 365</option>
             <option value="orange">Orange</option>
@@ -361,6 +366,22 @@ $mailRelai = trim((string) ($mailEtat['host'] ?? ''));
       // Réglages publics des fournisseurs courants. Aucun identifiant ici : ces
       // valeurs sont documentées par chaque opérateur et identiques pour tous.
       var SMTP_PRESETS = {
+        // Relais transactionnels : concus pour l'envoi automatise, contrairement
+        // a une boite personnelle qui peut bloquer un expediteur inhabituel.
+        brevo:  {h:'smtp-relay.brevo.com',      p:587, t:'starttls',
+                 a:"Compte gratuit sur <code>brevo.com</code>, puis <em>SMTP &amp; API</em> : l'identifiant et la "
+                 + "cle SMTP y sont affiches. 300 messages par jour — tres au-dela de ce que Bastion emet, "
+                 + "un message par anomalie.<br>"
+                 + "<strong>Reserve :</strong> le contenu des alertes decrit l'etat du dispositif de filtrage et "
+                 + "de journalisation. Il transiterait par un prestataire commercial : a valider avec votre SSI."},
+        mailjet:{h:'in-v3.mailjet.com',         p:587, t:'starttls',
+                 a:"Compte gratuit sur <code>mailjet.com</code>, rubrique <em>SMTP</em> : identifiant = cle API, "
+                 + "mot de passe = cle secrete. 200 messages par jour.<br>"
+                 + "<strong>Meme reserve</strong> que Brevo : les alertes passent par un tiers."},
+        smtp2go:{h:'mail.smtp2go.com',          p:587, t:'starttls',
+                 a:"Compte gratuit sur <code>smtp2go.com</code>, puis <em>Sending &gt; SMTP Users</em>. "
+                 + "1 000 messages par mois, journaux conserves 5 jours seulement.<br>"
+                 + "<strong>Meme reserve</strong> : les alertes passent par un tiers."},
         gmail:  {h:'smtp.gmail.com',            p:587, t:'starttls',
                  a:"<strong>Gmail exige un mot de passe d'application</strong> : le mot de passe de votre compte "
                  + "sera refusé. Activez d'abord la validation en deux étapes, puis créez un mot de passe "
