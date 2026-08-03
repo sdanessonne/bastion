@@ -68,10 +68,19 @@ if (!function_exists('pf_mail_notif')) {
         $sujet = "[Bastion] {$mot} — {$titre}";
 
         // ── Version texte ────────────────────────────────────────────────────
-        $t  = strtoupper($mot) . " — " . $titre . "\n";
+        // « mb_strtoupper » et non « strtoupper » : le second travaille octet par
+        // octet et rendait « Rétabli » → « RéTABLI », l'accent restant en bas de
+        // casse au milieu d'un mot en capitales. Constaté sur un message réel.
+        $t  = mb_strtoupper($mot, 'UTF-8') . " — " . $titre . "\n";
         $t .= str_repeat('=', min(70, mb_strlen($t, 'UTF-8'))) . "\n\n";
         $t .= wordwrap($constat, 72, "\n", false) . "\n\n";
-        foreach ($faits as $k => $v) { $t .= sprintf("  %-22s %s\n", $k . ' :', $v); }
+        foreach ($faits as $k => $v) {
+            // Le remplissage est calculé en CARACTÈRES : « %-22s » compte les
+            // octets, et « Émis le » — dont le É en occupe deux — se retrouvait
+            // décalé d'une colonne par rapport aux autres lignes.
+            $lib = $k . ' :';
+            $t .= '  ' . $lib . str_repeat(' ', max(1, 22 - mb_strlen($lib, 'UTF-8'))) . $v . "\n";
+        }
         if ($suite !== '') { $t .= "\nÀ FAIRE\n" . wordwrap($suite, 72, "\n", false) . "\n"; }
         $t .= "\n-- \nMessage automatique de la passerelle Bastion. Ne pas répondre.\n";
 
