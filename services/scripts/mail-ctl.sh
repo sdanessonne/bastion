@@ -67,23 +67,14 @@ test)
     relais_ok || {
         echo "ECHEC: relais SMTP non configure dans ${MSMTPRC}"; exit 4; }
 
-    hote=$(hostname 2>/dev/null || echo bastion)
-    # La sortie de sendmail est CAPTURÉE et rendue telle quelle : c'est elle qui
-    # nomme la vraie cause — authentification refusée, port filtré, expéditeur
-    # rejeté. Un simple « échec » obligerait à chercher dans les journaux.
-    sortie=$( { printf 'Subject: [Bastion/%s] test d envoi\nTo: %s\nContent-Type: text/plain; charset=utf-8\n\n' "$hote" "$dest"
-                printf 'Ceci est un test envoye depuis la console d administration de Bastion.\n\n'
-                printf 'S il vous parvient, les alertes de surveillance vous parviendront aussi.\n'
-                printf 'Emis le %s depuis la passerelle %s.\n\n-- \nMessage automatique, ne pas repondre.\n' \
-                       "$(date '+%d/%m/%Y a %H:%M:%S')" "$hote"
-              } | /usr/sbin/sendmail -t 2>&1 )
-    code=$?
-    if [ "$code" -eq 0 ]; then
-        echo "OK: message remis au relais pour ${dest}"
-    else
-        echo "ECHEC (${code}): ${sortie:-aucun detail}"
-        exit 1
-    fi
+    # ── ON TESTE CE QUI PART VRAIMENT ────────────────────────────────────────
+    # Le message est fabrique par le MEME modele que les alertes reelles
+    # (admin/inc/mailer.php). Un test qui redigerait son propre message ne
+    # prouverait que sa propre existence : si le modele contenait une erreur
+    # d'en-tete MIME ou d'encodage, le test passerait au vert et les vraies
+    # alertes arriveraient illisibles.
+    php /var/www/admin/inc/mailtest.php "$dest" 2>&1
+    exit $?
     ;;
 
 config)

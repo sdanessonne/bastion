@@ -58,6 +58,8 @@ foreach ($open as $sig => $r) {
     $closes[] = $r;
 }
 
+require_once __DIR__ . '/inc/mailer.php';
+
 // ── Notification ─────────────────────────────────────────────────────────────
 /**
  * Envoi par sendmail si un agent de transport est présent.
@@ -72,22 +74,26 @@ function wd_settings(PDO $db): array {
     catch (Throwable $e) {}
     return $s;
 }
-function wd_mail(string $to, string $sujet, string $corps): bool {
-    // ── UN ENVOI MANQUÉ NE DOIT PAS ÊTRE MUET ────────────────────────────────
-    // Cette fonction rendait « false » et son retour n'était lu par personne.
-    // Une adresse était enregistrée, l'administrateur croyait être prévenu, et
-    // rien ne partait — y compris le jour où le portail est tombé et où le repli
-    // a coupé Internet pour tout le service.
-    // L'échec part désormais dans le journal système, au même endroit que
-    // l'alerte : une supervision de site le verra, et « journalctl -t
-    // bastion-watchdog » le montre en une commande.
+/**
+ * Notification mise en forme, dont l'ÉCHEC EST CONSIGNÉ.
+ *
+ * Le modèle (pf_mail_notif) rend « false » en cas de problème. Laisser ce retour
+ * de côté reproduirait exactement le défaut corrigé plus tôt : une adresse
+ * enregistrée, un administrateur qui se croit prévenu, et rien qui part — y
+ * compris le jour où le portail tombe et où le repli coupe Internet.
+ *
+ * L'échec va donc dans le journal système, au même endroit que l'alerte :
+ * « journalctl -t bastion-watchdog » le montre en une commande, et une
+ * supervision de site le collecte comme le reste.
+ */
+function wd_notif(string $to, string $niveau, string $titre,
+                  string $constat, array $faits = [], string $suite = ''): bool {
     if (!is_executable('/usr/sbin/sendmail')) {
         shell_exec('logger -t bastion-watchdog -p daemon.err '
             . escapeshellarg('COURRIEL NON ENVOYE a ' . $to . ' : aucun agent de messagerie installe'));
         return false;
     }
-    $h = "From: Bastion <bastion@localhost>\r\nContent-Type: text/plain; charset=utf-8\r\n";
-    $ok = @mail($to, $sujet, $corps, $h);
+    $ok = pf_mail_notif($to, $niveau, $titre, $constat, $faits, $suite);
     if (!$ok) {
         shell_exec('logger -t bastion-watchdog -p daemon.err '
             . escapeshellarg('COURRIEL NON ENVOYE a ' . $to . ' : le relais a refuse le message'));
@@ -105,20 +111,31 @@ foreach ($nouvelles as $a) {
     shell_exec('logger -t bastion-watchdog -p ' . ($a['lvl'] === 'danger' ? 'daemon.err' : 'daemon.warning')
         . ' ' . escapeshellarg($tag . ' : ' . $a['txt']));
     if ($dest !== '') {
-        wd_mail($dest, "[Bastion/{$host}] {$tag} — anomalie détectée",
-            "Une anomalie vient d'être détectée sur la passerelle Bastion « {$host} ».\n\n"
-            . "  {$a['txt']}\n\n"
-            . "Détectée le " . date('d/m/Y à H:i:s') . ".\n"
-            . "Console d'administration : voir l'onglet Services.\n\n"
-            . "-- \nMessage automatique, ne pas répondre.\n");
+        // Le titre reprend le CONSTAT, pas une formule générique : « anomalie
+        // détectée » ne dit rien dans une liste de messages sur téléphone, alors
+        // que « portail captif à l'arrêt » se comprend sans ouvrir.
+        $court = mb_substr($a['txt'], 0, 90, 'UTF-8');
+        if (mb_strlen($a['txt'], 'UTF-8') > 90) { $court = rtrim($court) . '…'; }
+        wd_notif($dest, $a['lvl'] === 'danger' ? 'danger' : 'warn', $court,
+            $a['txt'],
+            ['Passerelle' => $host, 'Détectée le' => date('d/m/Y à H:i:s'),
+             'Gravité'    => $a['lvl'] === 'danger' ? 'Alerte — action attendue'
+                                                    : 'Avertissement — à surveiller'],
+            'Ouvrez la console d\'administration, rubrique Surveiller. '
+            . 'Cette anomalie y figure avec le détail et les actions possibles.');
     }
 }
 foreach ($closes as $r) {
     shell_exec('logger -t bastion-watchdog -p daemon.notice ' . escapeshellarg('retour a la normale : ' . $r['txt']));
     if ($dest !== '') {
-        wd_mail($dest, "[Bastion/{$host}] retour à la normale",
-            "L'anomalie suivante est résolue sur « {$host} » :\n\n  {$r['txt']}\n\n"
-            . "Résolue le " . date('d/m/Y à H:i:s') . ".\n\n-- \nMessage automatique, ne pas répondre.\n");
+        // La clôture est envoyée aussi : sans elle, on reste avec la dernière
+        // alerte en tête et l'on intervient sur un incident déjà terminé.
+        $court = mb_substr($r['txt'], 0, 90, 'UTF-8');
+        if (mb_strlen($r['txt'], 'UTF-8') > 90) { $court = rtrim($court) . '…'; }
+        wd_notif($dest, 'ok', 'Résolu : ' . $court,
+            "L'anomalie signalée précédemment n'est plus constatée.",
+            ['Passerelle' => $host, 'Anomalie' => $r['txt'],
+             'Résolue le' => date('d/m/Y à H:i:s')]);
     }
 }
 
