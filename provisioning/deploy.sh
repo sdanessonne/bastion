@@ -595,9 +595,16 @@ systemctl restart systemd-journald >/dev/null 2>&1 || true
 # On ne DÉSINSTALLE pas (réversible d'une commande) : on ne la démarre plus.
 systemctl set-default multi-user.target >/dev/null 2>&1 || true
 
-# Rétention légale : purge quotidienne (365 j)
+# ── Rétention : purge quotidienne ────────────────────────────────────────────
+# La tâche est lancée SANS argument, à dessein. Elle imposait « 365 » en dur : la
+# durée de conservation réglée dans la console était donc affichée à l'écran,
+# enregistrée en base... et ignorée par la seule chose qui efface réellement
+# quelque chose. Un service qui ramenait la conservation à 90 jours croyait
+# l'avoir fait ; les données restaient un an.
+# Sans argument, le script lit « log_retention_days » et retombe sur 365 s'il est
+# absent ou aberrant — il refuse déjà en dessous de 30 j et au-delà de 5 ans.
 install -m755 "${REPO_DIR}/services/scripts/purge-logs.sh" /usr/local/sbin/proxyfibre-purge-logs
-echo "30 3 * * * root /usr/local/sbin/proxyfibre-purge-logs 365" > /etc/cron.d/proxyfibre-purge
+echo "30 3 * * * root /usr/local/sbin/proxyfibre-purge-logs" > /etc/cron.d/proxyfibre-purge
 log "Filtrage + quotas + journalisation déployés"
 
 # ── Walled garden : serveurs de MAJ (Windows/Linux) ouverts sans authentification ──
