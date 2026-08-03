@@ -40,6 +40,8 @@ CONF="/etc/wireguard/${IF}.conf"
 TABLE=51820          # table de routage dédiée
 MARK=0x51820         # marque appliquée aux paquets du groupe
 NFT_TABLE="inet bastion_vpn"
+# Marqueur d'intention : « ce tunnel doit rester debout ». Voir « up » et « apply ».
+VOULU=/etc/proxyfibre/vpn-actif
 SET=vpnclients
 
 json_esc() { printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n'; }
@@ -179,6 +181,13 @@ import)
 up)
     [ -r "$CONF" ] || err "aucune configuration : utilisez « import » d'abord"
     command -v wg-quick >/dev/null 2>&1 || err "wireguard-tools absent"
+    # ── L'INTENTION EST ENREGISTRÉE, PAS SEULEMENT L'ÉTAT ────────────────────
+    # Sans ce marqueur, un tunnel qui tombe à 14 h reste tombé jusqu'à ce qu'un
+    # administrateur s'en aperçoive et reclique. Les agents du groupe, eux, sont
+    # bloqués pendant tout ce temps — et le blocage est volontaire, donc rien
+    # n'a l'air anormal côté serveur. Le fichier dit « on VEUT ce tunnel
+    # debout » ; la minuterie s'en sert pour le remonter toute seule.
+    : > "$VOULU"
     ip link show "$IF" >/dev/null 2>&1 || wg-quick up "$IF" >/dev/null 2>&1 || err "montage impossible"
     # On attend la première poignée de main : déclarer « actif » sur la seule
     # existence de l'interface reviendrait à promettre une protection avant
@@ -192,6 +201,10 @@ up)
     ;;
 
 down)
+    # L'intention est effacée EN PREMIER : si la minuterie se déclenchait entre
+    # l'arrêt et l'effacement, elle remonterait le tunnel qu'on vient tout juste
+    # de couper — et l'administrateur verrait son action annulée sans comprendre.
+    rm -f "$VOULU"
     # Les règles sont retirées AVANT l'interface. Dans l'ordre inverse, il
     # existerait un instant où le tunnel est mort et le verrou déjà levé : le
     # trafic du groupe sortirait en clair pendant ce laps de temps.
@@ -201,8 +214,20 @@ down)
     ;;
 
 apply)
-    # Rejoué périodiquement : réévalue le verrou selon l'état RÉEL du tunnel.
+    # Rejoué toutes les 30 s : réévalue le verrou, et REMONTE le tunnel si
+    # l'administrateur l'a demandé et qu'il est retombé — coupure réseau, serveur
+    # Proton qui bascule, redémarrage de la passerelle. Sans cela, « Connecter »
+    # ne vaudrait que jusqu'au premier incident, et le groupe resterait bloqué
+    # jusqu'à ce que quelqu'un s'en aperçoive.
     [ -r "$CONF" ] || exit 0
+    if [ -f "$VOULU" ] && ! tunnel_ok; then
+        # L'interface peut exister tout en étant morte : on la démonte avant de
+        # remonter, sinon wg-quick refuse et l'on tourne en rond indéfiniment.
+        ip link show "$IF" >/dev/null 2>&1 && wg-quick down "$IF" >/dev/null 2>&1
+        wg-quick up "$IF" >/dev/null 2>&1 || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do tunnel_ok && break; sleep 1; done
+        tunnel_ok && logger -t bastion-vpn "tunnel remonte automatiquement" 2>/dev/null || true
+    fi
     regles_poser
     tunnel_ok && echo "actif" || echo "bloque"
     ;;
@@ -249,8 +274,12 @@ state)
     tx=$(wg show "$IF" transfer 2>/dev/null | awk '{print $3; exit}')
     rx=$(wg show "$IF" transfer 2>/dev/null | awk '{print $2; exit}')
     n=$(nft list set $NFT_TABLE $SET 2>/dev/null | grep -c '\.' || true)
-    printf '{"config":%s,"interface":%s,"actif":%s,"handshake_s":%s,"endpoint":"%s","rx":%s,"tx":%s,"postes":%s}\n' \
-        "$conf" "$iface" "$actif" "${age:--1}" "$(json_esc "${endpoint:-}")" "${rx:-0}" "${tx:-0}" "${n:-0}"
+    # « voulu » distingue un tunnel ARRÊTÉ VOLONTAIREMENT d'un tunnel TOMBÉ.
+    # Sans cette nuance, la console afficherait la même chose dans les deux cas,
+    # et l'administrateur ne saurait pas s'il doit s'inquiéter.
+    voulu=false; [ -f "$VOULU" ] && voulu=true
+    printf '{"config":%s,"interface":%s,"actif":%s,"voulu":%s,"handshake_s":%s,"endpoint":"%s","rx":%s,"tx":%s,"postes":%s}\n' \
+        "$conf" "$iface" "$actif" "$voulu" "${age:--1}" "$(json_esc "${endpoint:-}")" "${rx:-0}" "${tx:-0}" "${n:-0}"
     ;;
 
 *)

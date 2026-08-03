@@ -92,6 +92,11 @@ $st = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-vpn state
 $conf  = !empty($st['config']);
 $iface = !empty($st['interface']);
 $actif = !empty($st['actif']);
+// « voulu » = l'administrateur a demandé la connexion, et Bastion la maintient.
+// Distingue un tunnel ARRÊTÉ VOLONTAIREMENT d'un tunnel TOMBÉ : sans cette
+// nuance la console afficherait la même chose dans les deux cas, et l'on ne
+// saurait pas s'il y a lieu de s'inquiéter.
+$voulu = !empty($st['voulu']);
 $age   = (int) ($st['handshake_s'] ?? -1);
 
 $postes = array_values(array_filter(array_map('trim',
@@ -172,16 +177,35 @@ if ($flash): ?>
       <?php if ($actif): ?>
         Les postes des groupes concernés sortent sous l'adresse du fournisseur du tunnel.
         Dernière poignée de main il y a <?= $age ?> s.
+      <?php elseif ($conf && $voulu): ?>
+        <strong>Le tunnel est demandé mais ne répond pas.</strong> Bastion tente de le remonter
+        toutes les 30 secondes. Si cela dure, le serveur choisi est peut-être indisponible :
+        récupérez une configuration sur un autre serveur.
       <?php elseif ($conf): ?>
-        Une configuration est présente, mais le pair ne répond pas — l'interface peut exister
-        sans que rien ne passe. Tant que la poignée de main n'est pas rétablie, le trafic des
-        groupes concernés reste bloqué.
+        Configuration présente, tunnel arrêté. Cliquez sur <em>Connecter</em> — il restera monté,
+        y compris après un redémarrage de la passerelle.
       <?php else: ?>
         Aucune configuration WireGuard n'a été importée. Les groupes cochés « sortie par tunnel »
         n'auraient pas d'accès Internet du tout.
       <?php endif; ?>
     </div>
   </div>
+
+  <?php
+  // ── L'INTERRUPTEUR, À CÔTÉ DE L'ÉTAT ─────────────────────────────────────
+  // Il était enterré dans l'étape 3 d'une liste de mise en service — une liste
+  // qu'on ne relit pas une fois l'installation faite. L'action la plus courante
+  // doit se trouver là où l'on regarde en arrivant : à côté de l'état.
+  ?>
+  <form method="post" style="margin:0 0 0 auto"
+        <?= $voulu ? 'onsubmit="return confirm(\'Déconnecter le VPN ?\n\nLes postes des groupes concernés perdront leur accès Internet — ils ne repasseront pas en sortie directe.\')"' : '' ?>>
+    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+    <input type="hidden" name="do" value="<?= $voulu ? 'down' : 'up' ?>">
+    <button class="<?= $voulu ? 'btn-danger' : 'btn' ?>" style="font-size:1rem;padding:.65rem 1.4rem"
+            <?= $conf ? '' : 'disabled title="Importez d\'abord une configuration (étapes ci-dessous)"' ?>>
+      <?= $voulu ? '⏻ Déconnecter' : '⏻ Connecter' ?>
+    </button>
+  </form>
 </div>
 
 <section class="panel">
@@ -271,27 +295,16 @@ if ($flash): ?>
         </form>
       </li>
       <li>
-        <strong>Monter le tunnel</strong>
-        <span class="d">Le bouton attend une <em>poignée de main</em> réelle avant d'annoncer le succès :
-        l'interface se crée même quand le pair ne répond pas, et déclarer « actif » à ce moment-là
-        promettrait une protection inexistante.</span>
-        <div style="margin:.7rem 0 0;display:flex;gap:.6rem;flex-wrap:wrap">
-          <form method="post" style="margin:0">
-            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <input type="hidden" name="do" value="up">
-            <button class="btn" <?= $conf ? '' : 'disabled title="Importez d\'abord une configuration"' ?>>
-              <?= $actif ? 'Remonter le tunnel' : 'Monter le tunnel' ?>
-            </button>
-          </form>
-          <?php if ($iface): ?>
-          <form method="post" style="margin:0"
-                onsubmit="return confirm('Arrêter le tunnel ?\n\nLes postes des groupes concernés perdront leur accès Internet — ils ne repasseront pas en sortie directe.')">
-            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <input type="hidden" name="do" value="down">
-            <button class="btn-danger">Arrêter le tunnel</button>
-          </form>
-          <?php endif; ?>
-        </div>
+        <strong>Connecter</strong>
+        <span class="d">Avec l'interrupteur <strong>⏻ Connecter</strong>, en haut de cette page.
+        Il n'y en a qu'un : deux boutons identiques à deux endroits, ce serait deux fois
+        l'occasion de se demander lequel fait quoi.<br>
+        Il attend une <em>poignée de main</em> réelle avant d'annoncer le succès — l'interface se
+        crée même quand le pair ne répond pas, et déclarer « actif » à ce moment-là promettrait
+        une protection inexistante.<br>
+        Une fois connecté, <strong>Bastion maintient le tunnel</strong> : il le remonte tout seul
+        toutes les 30 secondes s'il tombe, et après un redémarrage de la passerelle. Il ne
+        s'arrête que si vous le demandez.</span>
       </li>
       <li>
         <strong>Vérifier l'adresse de sortie</strong>
