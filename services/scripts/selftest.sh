@@ -120,7 +120,11 @@ fi
 # ne teste que la console. Seul un agent tapant l'adresse sans chemin le voyait —
 # et concluait que la passerelle était en panne.
 h "Racine du portail"
-LAN_IP_T=$(sed -n 's/^LAN_IP=//p' /etc/proxyfibre/config.env 2>/dev/null | tr -d '"' | head -1)
+# L'adresse est dans net.env, PAS dans config.env : le contrôle visait le mauvais
+# fichier et se sautait poliment en annonçant « adresse LAN inconnue ». Il
+# paraissait donc s'exécuter alors qu'il ne vérifiait rien — le défaut même qu'il
+# est censé détecter ailleurs.
+LAN_IP_T=$(sed -n 's/^LAN_IP=//p' /etc/proxyfibre/net.env 2>/dev/null | tr -d '"' | head -1)
 if [ -z "$LAN_IP_T" ]; then
   wn "adresse LAN inconnue (config.env) — contrôle sauté"
 else
