@@ -63,6 +63,16 @@ EOF2
         # poste pouvait saturer la ligne. C'est ce script qui les applique vraiment.
         /usr/local/sbin/proxyfibre-qos add "$pf_ip" "$pf_drate" "$pf_urate" >/dev/null 2>&1 || true
 
+        # SORTIE PAR TUNNEL, si le groupe le prévoit.
+        # Le poste est basculé À L'AUTHENTIFICATION, comme la limitation de débit :
+        # c'est le seul moment où l'on connaît à la fois l'agent, son groupe et son
+        # adresse. La bascule est donc automatique — un agent du groupe n'a rien à
+        # activer, donc rien à oublier d'activer.
+        pf_vpn=$($DB -e "SELECT COALESCE(vpn_exit,0) FROM pf_groups WHERE groupname='$pf_group' LIMIT 1;" 2>/dev/null)
+        if [ "${pf_vpn:-0}" = "1" ]; then
+            /usr/local/sbin/proxyfibre-vpn client add "$pf_ip" >/dev/null 2>&1 || true
+        fi
+
         # OpenNDS ne transmet PAS l'IP lors de la déconnexion (seulement la MAC) : sans
         # cette correspondance, impossible de relâcher la limite du bon poste.
         mkdir -p /run/bastion-qos 2>/dev/null
@@ -79,6 +89,10 @@ elif [ "$action" = "deauth" ]; then
     if [ -n "$pf_key" ] && [ -r "/run/bastion-qos/$pf_key" ]; then
         pf_ip=$(cat "/run/bastion-qos/$pf_key" 2>/dev/null | tr -cd '0-9.')
         [ -n "$pf_ip" ] && /usr/local/sbin/proxyfibre-qos del "$pf_ip" >/dev/null 2>&1 || true
+        # Retrait du tunnel. Sans cela, l'adresse resterait marquée et le poste
+        # SUIVANT à recevoir ce bail sortirait par le tunnel sans y avoir droit —
+        # et, le tunnel tombé, se retrouverait bloqué sans explication.
+        [ -n "$pf_ip" ] && /usr/local/sbin/proxyfibre-vpn client del "$pf_ip" >/dev/null 2>&1 || true
         rm -f "/run/bastion-qos/$pf_key" 2>/dev/null
     fi
 fi

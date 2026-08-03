@@ -451,6 +451,17 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-wifi apply, /usr/local/
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-wifi
 
+# Sortie par tunnel : la console lit l'état et vérifie l'adresse de sortie, mais
+# ne monte ni ne démonte le tunnel elle-même. « import » manipule une clé privée
+# et « up/down » coupent l'accès d'un groupe entier : ces trois-là restent à la
+# main d'un administrateur système sur la machine, pas derrière un bouton web.
+# Les arguments sont listés explicitement — une règle sur le seul nom de commande
+# autoriserait « proxyfibre-vpn down », qui n'est pas dans cette liste.
+cat > /etc/sudoers.d/proxyfibre-vpn <<'SUD'
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients
+SUD
+chmod 440 /etc/sudoers.d/proxyfibre-vpn
+
 # Pilotage des services depuis la console admin (liste blanche stricte)
 install -m755 "${REPO_DIR}/services/scripts/service-ctl.sh" /usr/local/sbin/proxyfibre-service
 install -m755 "${REPO_DIR}/services/scripts/apt-ctl.sh"     /usr/local/sbin/proxyfibre-apt
@@ -468,6 +479,43 @@ systemctl daemon-reload
 systemctl enable --now proxyfibre-updatecheck.timer >/dev/null 2>&1 || true
 # Mesure de la ligne Internet : la passerelle ne peut pas connaître sa capacité autrement.
 install -m755 "${REPO_DIR}/services/scripts/speedtest-wan.sh" /usr/local/sbin/proxyfibre-speedtest
+
+# ── Sortie Internet par tunnel, réservée à un groupe ─────────────────────────
+# Le besoin : consulter en source ouverte le profil d'un mis en cause sans que
+# l'adresse publique du commissariat apparaisse dans les journaux du site visité.
+# Réservé à un GROUPE : faire sortir tout le réseau par un tunnel casserait les
+# applications métier et les accès ministériels qui filtrent par adresse source.
+dpkg -s wireguard-tools >/dev/null 2>&1 || \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard-tools >/dev/null 2>&1 || true
+install -m755 "${REPO_DIR}/services/scripts/vpn-ctl.sh" /usr/local/sbin/proxyfibre-vpn
+
+# Le verrou doit être RÉÉVALUÉ en permanence : si le tunnel tombe en cours de
+# journée, le routage reprendrait la route normale et le groupe sortirait EN
+# CLAIR sans que rien ne change à l'écran. L'agent poursuivrait sa recherche en
+# se croyant couvert — pire que pas de tunnel du tout.
+cat > /etc/systemd/system/proxyfibre-vpn-guard.service <<'UNIT'
+[Unit]
+Description=Bastion — verrou de la sortie par tunnel (re-evaluation)
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proxyfibre-vpn apply
+UNIT
+cat > /etc/systemd/system/proxyfibre-vpn-guard.timer <<'UNIT'
+[Unit]
+Description=Bastion — controle du tunnel toutes les 30 s
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30
+AccuracySec=5
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now proxyfibre-vpn-guard.timer >/dev/null 2>&1 || true
+
+# Marqueur de groupe. Colonne ajoutée sans condition : « ADD COLUMN IF NOT
+# EXISTS » est disponible sur MariaDB et rend le déploiement rejouable.
+mysql -N -B radius -e "ALTER TABLE pf_groups ADD COLUMN IF NOT EXISTS vpn_exit TINYINT(1) NOT NULL DEFAULT 0;" 2>/dev/null || true
 # Base des fabricants de cartes réseau (paquet Debian « ieee-data »).
 # Elle sert à nommer l'appareil derrière une adresse MAC dans la page DHCP. Le
 # paquet vient du dépôt Debian, PAS d'un service web : interroger un service en
