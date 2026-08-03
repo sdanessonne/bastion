@@ -73,6 +73,34 @@ body:has(.sidebar){display:flex}
 .sidebar nav a{display:flex;align-items:center;gap:.65rem;padding:.4rem .7rem;border-radius:9px;
   color:var(--muted);font-weight:500;font-size:.92rem}
 .sidebar nav a:hover{background:var(--panel2);color:var(--text)}
+
+/* ── Champ de recherche du menu ────────────────────────────────────────────── */
+.nav-search{padding:.15rem .1rem .45rem}
+.nav-search input{width:100%;padding:.4rem .6rem;font-size:.82rem;border-radius:8px;
+  background:var(--bg);border:1px solid var(--line);color:var(--text)}
+.nav-search input:focus{border-color:var(--accent,#38bdf8);outline:none}
+.nav-vide{font-size:.78rem;color:var(--muted);padding:.5rem .7rem}
+/* Première correspondance : elle est ce qu'ouvre la touche Entrée, il faut donc
+   la voir avant d'appuyer. */
+.sidebar nav a.nav-hit{background:var(--panel2);box-shadow:inset 2px 0 0 var(--accent,#38bdf8)}
+
+/* ── Pastille d'anomalie ───────────────────────────────────────────────────────
+   Un point coloré ne suffit pas seul : sur un écran en niveaux de gris, ou pour
+   un daltonisme rouge-vert, rien ne distinguerait « à surveiller » de « en
+   panne ». L'anomalie critique bat donc lentement — le mouvement se perçoit
+   indépendamment de la couleur. */
+.nav-dot{margin-left:auto;width:8px;height:8px;border-radius:50%;flex:none}
+.nav-dot.warn{background:#eab308}
+.nav-dot.danger{background:#f87171;animation:navPulse 2s ease-in-out infinite}
+@keyframes navPulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.nav-dot.danger{animation:none;box-shadow:0 0 0 3px rgba(248,113,113,.25)}}
+/* Menu réduit en rail : le libellé disparaît, la pastille doit rester visible et
+   ne plus être poussée à droite par un texte absent. */
+html.rail .nav-dot{position:absolute;top:.3rem;right:.3rem;margin:0}
+html.rail .sidebar nav a{position:relative}
+html.rail .nav-search{display:none}
+
+.nav-group-label.nav-freq{color:var(--accent,#38bdf8);opacity:.85}
 .sidebar nav a.active{background:rgba(56,189,248,.14);color:var(--accent)}
 .sidebar .ico{width:1.3rem;text-align:center}
 .sidebar-foot{flex:none;padding-top:.8rem;margin-top:.4rem;border-top:1px solid var(--line);display:grid;gap:.5rem}

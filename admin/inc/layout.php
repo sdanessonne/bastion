@@ -2,47 +2,61 @@
 // Bastion — © 2026 Mickaël MONESTIER (Mle 110.480). Tous droits réservés. Voir LICENCE.txt.
 /** Bastion Admin — en-tête / navigation / pied de page communs. */
 
+require_once __DIR__ . '/navstate.php';
+
 function pf_header(string $title, string $active = ''): void {
     // Navigation groupée par domaine fonctionnel.
+    // ── REGROUPEMENT PAR QUESTION POSÉE, ET NON PAR ORDRE D'ÉCRITURE ─────────
+    // L'ancien découpage suivait l'histoire du projet : « Santé & sécurité »
+    // vivait dans Supervision alors qu'un groupe « Accès & sécurité » existait,
+    // « Journalisation » formait un groupe d'UNE entrée — un titre pour rien —
+    // et trois groupes portaient 7 entrées quand deux en portaient une ou deux.
+    //
+    // Les groupes répondent désormais à ce que l'administrateur vient chercher :
+    // est-ce que ça tourne · qui a le droit · quels postes · que publie-t-on ·
+    // que s'est-il passé.
+    //
+    // Le troisième élément (optionnel) donne des SYNONYMES pour la recherche :
+    // personne ne tape « Parc informatique » quand il cherche un inventaire.
     $navGroups = [
-        'Supervision' => [
-            'index.php'    => ['Tableau de bord', '▚'],
-            'reseau.php'   => ['Trafic réseau', '📡'],
-            'securite.php' => ['Santé & sécurité', '🩺'],
-            'rapport.php'  => ['Rapport de conformité', '📊'],
-            'services.php' => ['Services', '🧰'],
-            'sauvegarde.php' => ['Sauvegarde', '💾'],
-            'systeme.php'  => ['Système', '🖥'],
+        'Surveiller' => [
+            'index.php'      => ['Tableau de bord', '▚', 'accueil resume'],
+            'securite.php'   => ['Santé & sécurité', '🩺', 'alertes anomalies etat'],
+            'services.php'   => ['Services', '🧰', 'demarrer arreter redemarrer daemon'],
+            'reseau.php'     => ['Trafic réseau', '📡', 'debit bande passante wifi canal'],
+            'systeme.php'    => ['Système', '🖥', 'disque memoire cpu mise a jour version'],
+            'rapport.php'    => ['Rapport de conformité', '📊', 'audit rgpd bilan pdf hierarchie'],
+            'journal.php'    => ['Journalisation', '📄', 'logs historique navigation connexions traces'],
         ],
-        'Accès & sécurité' => [
-            'users.php'     => ['Utilisateurs & droits', '👤'],
-            'annuaire.php'  => ['Annuaire', '📇'],
-            'groups.php'    => ['Groupes & quotas', '⚙'],
-            'filter.php'    => ['Filtrage', '⛔'],
-            'antivirus.php' => ['Antivirus', '🛡️'],
-            'chiffrement.php' => ['Chiffrement des postes', '🔐'],
-            'visiteurs.php' => ['Accès visiteur', '🎟️'],
+        'Accès & droits' => [
+            'users.php'      => ['Utilisateurs & droits', '👤', 'comptes agents mot de passe roles'],
+            'annuaire.php'   => ['Annuaire', '📇', 'trombinoscope photos services'],
+            'groups.php'     => ['Groupes & quotas', '⚙', 'debit horaires limitation tunnel vpn'],
+            'visiteurs.php'  => ['Accès visiteur', '🎟️', 'invite temporaire ticket'],
+            'vpn.php'        => ['Sortie par tunnel', '🔒', 'vpn wireguard proton ip sortie osint'],
         ],
-        'Réseau & postes' => [
-            'ad.php'   => ['Active Directory', '🗄️'],
-            'parc.php' => ['Parc informatique', '🗃️'],
-            'dhcp.php' => ['Réservations DHCP', '🔌'],
-            'quarantaine.php' => ['Quarantaine réseau', '🚫'],
-            'vpn.php'  => ['Sortie par tunnel', '🔒'],
-            'apps.php' => ['Store d\'applications', '🏪'],
-            'pxe.php'  => ['Serveur PXE', '📀'],
+        'Protection' => [
+            'filter.php'     => ['Filtrage', '⛔', 'blocage sites categories liste noire dns publicite'],
+            'antivirus.php'  => ['Antivirus', '🛡️', 'clamav analyse menace station blanche usb'],
+            'chiffrement.php' => ['Chiffrement des postes', '🔐', 'bitlocker tpm disque'],
+            'quarantaine.php' => ['Quarantaine réseau', '🚫', 'isoler poste couper bloquer'],
+            'sauvegarde.php' => ['Sauvegarde', '💾', 'restauration archive cle usb'],
+        ],
+        'Postes & réseau' => [
+            'ad.php'         => ['Active Directory', '🗄️', 'domaine gpo strategies ou samba'],
+            'parc.php'       => ['Parc informatique', '🗃️', 'inventaire machines conformite materiel'],
+            'dhcp.php'       => ['Réservations DHCP', '🔌', 'bail adresse ip mac appareil'],
+            'apps.php'       => ['Store d\'applications', '🏪', 'logiciels deploiement installation'],
+            'pxe.php'        => ['Serveur PXE', '📀', 'boot reseau installation windows ubuntu image'],
         ],
         'Intranet' => [
-            'cms.php'        => ['Portail intranet', '🏠'],
-            'assistance.php' => ['Assistance', '📨'],
-        ],
-        'Journalisation' => [
-            'journal.php' => ['Journalisation', '📄'],
+            'cms.php'        => ['Portail intranet', '🏠', 'pages actualites mediatheque publication'],
+            'assistance.php' => ['Demandes d\'assistance', '📨', 'tickets agents demandes support'],
         ],
         'Aide' => [
-            'assistant.php' => ['Assistant de configuration', '🧭'],
-            'aide.php'    => ['Aide', '❓'],
-            'apropos.php' => ['En savoir +', 'ℹ️'],
+            'assistant.php'  => ['Assistant de configuration', '🧭', 'demarrage mise en route'],
+            'aide.php'       => ['Aide', '❓', 'documentation manuel'],
+            'apropos.php'    => ['À propos de Bastion', 'ℹ️', 'version licence auteur'],
         ],
     ];
     $admin = $_SESSION['admin'] ?? '';
@@ -138,16 +152,58 @@ function pf_header(string $title, string $active = ''): void {
       // la navigation). Défini côté serveur dans inc/auth.php — garde-fou : admin = full.
       $pfRole = $_SESSION['admin_role'] ?? 'full';
       $pfAllow = ($pfRole === 'comptes') ? ['index.php', 'users.php', 'annuaire.php', 'groups.php'] : null;
-      foreach ($navGroups as $groupName => $items):
+
+      // Anomalies à signaler, et pages les plus ouvertes par cet administrateur.
+      $pfBadges = nav_badges();
+      nav_freq_note($active, (string) $admin);
+      $pfFreq = nav_freq_top((string) $admin);
+
+      // Index à plat : sert au bloc « Fréquentes », qui doit retrouver le libellé
+      // et l'icône d'une page sans savoir dans quel groupe elle se trouve.
+      $pfPlat = [];
+      foreach ($navGroups as $gN => $its) { foreach ($its as $ff => $dd) { $pfPlat[$ff] = $dd; } }
+
+      /** Une entrée du menu, avec sa pastille éventuelle. */
+      $pfLien = function (string $file, array $d, string $active, array $badges, string $suffixe = '') {
+          $b = $badges[$file] ?? null;
+          $syn = $d[2] ?? '';
+          // « data-r » alimente la recherche : libellé + synonymes, sans accents,
+          // pour que « securite » trouve « Santé & sécurité ».
+          $r = $d[0] . ' ' . $syn;
+          $r = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', mb_strtolower($r, 'UTF-8')) ?: mb_strtolower($r, 'UTF-8');
+          echo '<a href="/' . $file . $suffixe . '" data-r="' . e(strtolower($r)) . '"'
+             . ' title="' . e($b ? $d[0] . ' — ' . $b['txt'] : $d[0]) . '"'
+             . ' class="' . ($active === $file ? 'active' : '') . '">'
+             . '<span class="ico">' . $d[1] . '</span><span class="lbl">' . e($d[0]) . '</span>'
+             . ($b ? '<span class="nav-dot ' . $b['lvl'] . '" aria-label="anomalie"></span>' : '')
+             . '</a>';
+      };
+      ?>
+      <div class="nav-search">
+        <input type="search" id="navQ" placeholder="Rechercher une page…  Ctrl+K"
+               autocomplete="off" aria-label="Rechercher une page de la console">
+      </div>
+      <div id="navVide" class="nav-vide" hidden>Aucune page ne correspond.</div>
+
+      <?php
+      // ── FRÉQUENTES ──────────────────────────────────────────────────────────
+      // Masquées pendant une recherche : elles feraient doublon avec les résultats
+      // et brouilleraient le comptage de ce qui correspond.
+      $pfFreqVis = array_values(array_filter($pfFreq,
+          fn($p) => isset($pfPlat[$p]) && ($pfAllow === null || in_array($p, $pfAllow, true))));
+      if (count($pfFreqVis) >= 2): ?>
+        <div class="nav-group-label nav-freq">Fréquentes</div>
+        <div class="nav-freq">
+          <?php foreach ($pfFreqVis as $ff) { $pfLien($ff, $pfPlat[$ff], $active, $pfBadges); } ?>
+        </div>
+      <?php endif; ?>
+
+      <?php foreach ($navGroups as $groupName => $items):
           $vis = $pfAllow === null ? $items : array_intersect_key($items, array_flip($pfAllow));
           if (!$vis) { continue; }
       ?>
-        <div class="nav-group-label"><?= e($groupName) ?></div>
-        <?php foreach ($vis as $file => [$label, $icon]): ?>
-          <a href="/<?= $file ?>" title="<?= e($label) ?>" class="<?= $active === $file ? 'active' : '' ?>">
-            <span class="ico"><?= $icon ?></span><span class="lbl"><?= e($label) ?></span>
-          </a>
-        <?php endforeach; ?>
+        <div class="nav-group-label" data-grp="1"><?= e($groupName) ?></div>
+        <?php foreach ($vis as $file => $d) { $pfLien($file, $d, $active, $pfBadges); } ?>
       <?php endforeach; ?>
     </nav>
     <div class="sidebar-foot">
@@ -288,6 +344,64 @@ function pf_footer(): void {
       if(bd) bd.addEventListener('click',closeNav);
       document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeNav(); });
       document.querySelectorAll('.sidebar nav a').forEach(function(a){ a.addEventListener('click',closeNav); });
+
+    // ── RECHERCHE DANS LE MENU ────────────────────────────────────────────────
+    // 27 destinations : les parcourir de l'oeil est plus lent que d'en taper trois
+    // lettres. La recherche porte aussi sur des SYNONYMES (data-r) — « inventaire »
+    // doit trouver « Parc informatique », que personne n'appelle ainsi de tête.
+    (function () {
+      var q = document.getElementById('navQ');
+      if (!q) { return; }
+      var liens = Array.prototype.slice.call(document.querySelectorAll('.sidebar nav a'));
+      var titres = Array.prototype.slice.call(document.querySelectorAll('.sidebar .nav-group-label'));
+      var freq = Array.prototype.slice.call(document.querySelectorAll('.sidebar .nav-freq'));
+      var vide = document.getElementById('navVide');
+
+      function plat(v) {
+        v = (v || '').toLowerCase();
+        return v.normalize ? v.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : v;
+      }
+
+      function filtrer() {
+        var t = plat(q.value.trim());
+        // Les titres de groupe et le bloc « Fréquentes » disparaissent pendant une
+        // recherche : conserver « Protection » au-dessus d'une liste filtrée
+        // laisserait croire que le résultat appartient à ce groupe.
+        var actif = t !== '';
+        titres.forEach(function (h) { h.hidden = actif; });
+        freq.forEach(function (h) { h.hidden = actif; });
+        var n = 0;
+        liens.forEach(function (a) {
+          var ok = !actif || plat(a.getAttribute('data-r') || a.textContent).indexOf(t) >= 0;
+          a.hidden = !ok;
+          a.classList.toggle('nav-hit', ok && actif && n === 0);
+          if (ok) { n++; }
+        });
+        if (vide) { vide.hidden = !(actif && n === 0); }
+      }
+
+      q.addEventListener('input', filtrer);
+      q.addEventListener('keydown', function (e) {
+        // Entrée ouvre la première correspondance : sans cela il faudrait lâcher le
+        // clavier pour aller cliquer, ce qui annule le gain.
+        if (e.key === 'Enter') {
+          var p = liens.filter(function (a) { return !a.hidden; })[0];
+          if (p) { location.href = p.getAttribute('href'); }
+        } else if (e.key === 'Escape') {
+          q.value = ''; filtrer(); q.blur();
+        }
+      });
+      document.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+          e.preventDefault();
+          // Sur téléphone la barre latérale est masquée : l'ouvrir d'abord, sinon
+          // le curseur irait dans un champ invisible.
+          var b = document.getElementById('navToggle');
+          if (b && getComputedStyle(document.querySelector('.sidebar')).transform !== 'none') { b.click(); }
+          q.focus(); q.select();
+        }
+      });
+    })();
     })();
     // Popup « mise à jour disponible ». Une fois par session, hors page Système, en
     // ASYNCHRONE : elle ne retarde jamais l'affichage. On lit l'état déjà rafraîchi par la
