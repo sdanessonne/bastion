@@ -33,7 +33,7 @@ function pf_header(string $title, string $active = ''): void {
             'annuaire.php'   => ['Annuaire', '📇', 'trombinoscope photos services'],
             'groups.php'     => ['Groupes & quotas', '⚙', 'debit horaires limitation tunnel vpn'],
             'visiteurs.php'  => ['Accès visiteur', '🎟️', 'invite temporaire ticket'],
-            'vpn.php'        => ['Sortie par tunnel', '🔒', 'vpn wireguard proton ip sortie osint'],
+            'vpn.php'        => ['VPN', '🔒', 'tunnel wireguard proton ip sortie osint anonymat source ouverte'],
         ],
         'Protection' => [
             'filter.php'     => ['Filtrage', '⛔', 'blocage sites categories liste noire dns publicite'],

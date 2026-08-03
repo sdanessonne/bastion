@@ -498,8 +498,15 @@ chmod 440 /etc/sudoers.d/proxyfibre-wifi
 # main d'un administrateur système sur la machine, pas derrière un bouton web.
 # Les arguments sont listés explicitement — une règle sur le seul nom de commande
 # autoriserait « proxyfibre-vpn down », qui n'est pas dans cette liste.
+# Depot de la configuration par la console : un SEUL chemin autorise.
+# « import » recopie le fichier vers /etc/wireguard. Si le chemin etait libre
+# dans sudoers, www-data pourrait faire recopier n'importe quel fichier lisible
+# par root. Le chemin est donc fige ici ET verifie par le script lui-meme.
+install -d -m 0750 -o www-data -g root /run/bastion
+printf 'd /run/bastion 0750 www-data root -
+' > /usr/lib/tmpfiles.d/bastion.conf
 cat > /etc/sudoers.d/proxyfibre-vpn <<'SUD'
-www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-vpn
 

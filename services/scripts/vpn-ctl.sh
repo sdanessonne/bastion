@@ -123,6 +123,19 @@ import)
     # configuration »). Elle contient une CLÉ PRIVÉE : le fichier est donc écrit
     # en 600, hors de tout répertoire servi par le web.
     src="${2:-}"
+
+    # ── LE CHEMIN EST BORNÉ, ET CE N'EST PAS UN DÉTAIL ───────────────────────
+    # La console appelle cette commande via sudo. Si le chemin était libre,
+    # www-data pourrait faire recopier N'IMPORTE QUEL fichier lisible par root
+    # vers /etc/wireguard/ — les contrôles de forme ci-dessous limitent les
+    # dégâts, mais s'appuyer dessus reviendrait à faire reposer la sécurité sur
+    # une expression régulière. Un dépôt web n'a besoin que d'un seul chemin.
+    case "$src" in
+        /run/bastion/vpn-import.conf) : ;;
+        /*) [ -t 0 ] || err "chemin refusé hors dépôt de la console" ;;
+        *)  err "chemin absolu requis" ;;
+    esac
+
     [ -r "$src" ] || err "fichier illisible : $src"
     grep -q '^\[Interface\]' "$src" || err "ce fichier n'est pas une configuration WireGuard"
     grep -q '^\s*PrivateKey' "$src"  || err "configuration sans clé privée"
@@ -134,6 +147,13 @@ import)
     # l'on veut précisément éviter. On neutralise donc la gestion de route de
     # wg-quick et on pose nous-mêmes la route dans une table dédiée.
     grep -q '^\s*Table\s*=' "$CONF" || sed -i '/^\[Interface\]/a Table = off' "$CONF"
+
+    # Le fichier déposé par la console est EFFACÉ tout de suite. Il contient la
+    # clé privée du tunnel ; le laisser dans un répertoire accessible au serveur
+    # web reviendrait à conserver une seconde copie du secret, au même endroit
+    # que le code qui l'a reçue.
+    case "$src" in /run/bastion/vpn-import.conf) rm -f "$src" ;; esac
+
     echo "configuration importée ($(grep -c '^\[Peer\]' "$CONF") pair(s))"
     ;;
 

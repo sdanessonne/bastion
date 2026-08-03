@@ -22,13 +22,69 @@ $db = pf_db();
 $flash = null;
 $verif = null;
 
+/** Chemin de dépôt UNIQUE, le seul que sudoers autorise à « import ». */
+const VPN_DEPOT = '/run/bastion/vpn-import.conf';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
-    if (($_POST['do'] ?? '') === 'check') {
+    $do = $_POST['do'] ?? '';
+
+    if ($do === 'check') {
         // La vérification sort sur Internet : elle est donc DÉCLENCHÉE par
         // l'administrateur, jamais jouée automatiquement à l'affichage de la page.
         $verif = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-vpn check 2>&1'));
         audit('vpn.verification', strpos($verif, 'OK:') === 0 ? 'sortie confirmée' : 'ÉCHEC — ' . $verif);
+
+    } elseif ($do === 'import') {
+        // ── LE FICHIER CONTIENT UNE CLÉ PRIVÉE ───────────────────────────────
+        // Il n'est jamais réaffiché, jamais journalisé, jamais conservé côté web.
+        // Il transite par un chemin unique, hors de la racine du serveur, que le
+        // script efface aussitôt l'import fait.
+        $f = $_FILES['conf'] ?? null;
+        if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $flash = ['Aucun fichier reçu.', 'err'];
+        } elseif (($f['size'] ?? 0) > 20480) {
+            // Une configuration WireGuard fait quelques centaines d'octets. Au-delà
+            // de 20 Ko, ce n'en est pas une — on refuse avant de lire.
+            $flash = ['Fichier trop volumineux pour une configuration WireGuard.', 'err'];
+        } else {
+            $brut = (string) @file_get_contents($f['tmp_name']);
+            if (strpos($brut, '[Interface]') === false || strpos($brut, '[Peer]') === false
+                || !preg_match('/^\s*PrivateKey\s*=/mi', $brut)) {
+                $flash = ["Ce fichier n'est pas une configuration WireGuard complète "
+                        . "(sections [Interface] et [Peer], clé privée).", 'err'];
+            } elseif (!is_dir(dirname(VPN_DEPOT)) || !is_writable(dirname(VPN_DEPOT))) {
+                $flash = ['Dépôt indisponible (' . dirname(VPN_DEPOT) . ') — relancer le déploiement.', 'err'];
+            } else {
+                // umask AVANT l'écriture : créer puis corriger laisserait le secret
+                // lisible pendant l'intervalle, si court soit-il.
+                $old = umask(0177);
+                $ok = @file_put_contents(VPN_DEPOT, $brut) !== false;
+                umask($old);
+                if (!$ok) {
+                    $flash = ['Écriture impossible dans le dépôt.', 'err'];
+                } else {
+                    $r = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-vpn import '
+                        . escapeshellarg(VPN_DEPOT) . ' 2>&1'));
+                    @unlink(VPN_DEPOT);   // au cas où le script n'aurait pas abouti
+                    $bon = strpos($r, 'configuration importée') !== false;
+                    // Le nom du fichier déposé est tracé, jamais son contenu.
+                    audit('vpn.import', ($bon ? 'configuration importée — ' : 'ÉCHEC — ')
+                        . basename((string) ($f['name'] ?? '')));
+                    $flash = [$bon ? 'Configuration importée. Vous pouvez monter le tunnel.' : $r,
+                              $bon ? 'ok' : 'err'];
+                }
+            }
+        }
+
+    } elseif ($do === 'up' || $do === 'down') {
+        // « down » coupe l'accès des groupes concernés : c'est voulu, et c'est
+        // précisément pour cela que l'action est tracée avec son auteur.
+        $r = trim((string) shell_exec('sudo /usr/local/sbin/proxyfibre-vpn ' . $do . ' 2>&1'));
+        $bon = $do === 'up' ? (strpos($r, 'tunnel actif') !== false)
+                            : (strpos($r, 'tunnel arrêté') !== false);
+        audit('vpn.' . $do, $bon ? 'succès' : 'ÉCHEC — ' . $r);
+        $flash = [$r !== '' ? $r : ($bon ? 'Terminé.' : 'Échec.'), $bon ? 'ok' : 'err'];
     }
 }
 
@@ -60,7 +116,7 @@ function octets(int $n): string {
     return $n . ' ' . $u[$i];
 }
 
-pf_header('Sortie par tunnel', 'vpn.php');
+pf_header('VPN', 'vpn.php');
 ?>
 <style>
   .etat{display:flex;align-items:center;gap:1.1rem;padding:1.1rem 1.3rem;border-radius:13px;
@@ -75,9 +131,21 @@ pf_header('Sortie par tunnel', 'vpn.php');
   .kv .c{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem}
   .kv .c .v{font-size:1.15rem;font-weight:700}
   .kv .c .l{color:var(--muted);font-size:.75rem;margin-top:.2rem}
-  .cmd{background:#0b1220;border:1px solid var(--line);border-radius:9px;padding:.6rem .8rem;
-       font-family:ui-monospace,monospace;font-size:.82rem;overflow-x:auto;white-space:pre;color:#cbd5e1}
+  .etapes{margin:0;padding-left:1.3rem;display:grid;gap:1.1rem}
+  .etapes li{line-height:1.5}
+  .etapes .d{display:block;color:var(--muted);font-size:.84rem;line-height:1.65;margin-top:.25rem}
+  .etapes code{background:var(--bg);padding:.05rem .3rem;border-radius:5px;font-size:.85em}
 </style>
+
+<?php
+// ── LE RETOUR D'ACTION EST AFFICHÉ ───────────────────────────────────────────
+// Écrit lors de la première rédaction, ce bloc manquait : $flash était renseigné
+// à chaque import, chaque montage, chaque échec… et n'apparaissait nulle part.
+// Un import refusé n'aurait produit AUCUN message — la page se serait rechargée
+// à l'identique, et l'administrateur aurait conclu que rien ne se passe.
+if ($flash): ?>
+  <div class="<?= $flash[1] === 'ok' ? 'ok' : 'err' ?>" style="margin-bottom:1rem"><?= e($flash[0]) ?></div>
+<?php endif; ?>
 
 <?php if ($alerte): ?>
 <div class="etat ko">
@@ -180,16 +248,59 @@ pf_header('Sortie par tunnel', 'vpn.php');
 <section class="panel">
   <div class="panel-head"><h2>Mise en service</h2></div>
   <div style="padding:1.2rem">
-    <p class="muted small" style="margin-top:0;line-height:1.7">
-      L'import de la configuration et le montage du tunnel <strong>ne se font pas depuis la console</strong>,
-      délibérément : le fichier contient une clé privée, et monter ou démonter le tunnel coupe
-      l'accès d'un groupe entier. Ces opérations restent à la main d'un administrateur système sur
-      la machine. La console lit l'état et vérifie la sortie — elle ne pilote pas.
-    </p>
-    <div class="cmd">sudo proxyfibre-vpn import /chemin/vers/configuration.conf
-sudo proxyfibre-vpn up
-sudo proxyfibre-vpn check</div>
-    <p class="muted small" style="margin:1rem 0 0;line-height:1.7">
+    <ol class="etapes">
+      <li>
+        <strong>Récupérer la configuration chez Proton</strong>
+        <span class="d">Compte Proton VPN → <em>Downloads</em> → <em>WireGuard configuration</em>.
+        Choisissez un serveur, cochez la plateforme <em>Router</em> ou <em>Linux</em>, et téléchargez
+        le fichier <code>.conf</code>. Cette étape se fait chez Proton : aucune interface programmable
+        ne permet de s'y connecter depuis un outil tiers, et Bastion ne vous demandera jamais vos
+        identifiants Proton.</span>
+      </li>
+      <li>
+        <strong>Déposer le fichier ici</strong>
+        <span class="d">Il contient une <strong>clé privée</strong> : il est écrit hors de la racine du
+        serveur web, en lecture pour le seul compte root, et effacé du dépôt aussitôt l'import
+        terminé. Il n'est jamais réaffiché ni journalisé — seul son nom apparaît dans l'audit.</span>
+        <form method="post" enctype="multipart/form-data" style="margin:.7rem 0 0;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <input type="hidden" name="do" value="import">
+          <input type="file" name="conf" accept=".conf,text/plain" required
+                 style="flex:1;min-width:230px;font-size:.85rem">
+          <button class="btn">Importer</button>
+        </form>
+      </li>
+      <li>
+        <strong>Monter le tunnel</strong>
+        <span class="d">Le bouton attend une <em>poignée de main</em> réelle avant d'annoncer le succès :
+        l'interface se crée même quand le pair ne répond pas, et déclarer « actif » à ce moment-là
+        promettrait une protection inexistante.</span>
+        <div style="margin:.7rem 0 0;display:flex;gap:.6rem;flex-wrap:wrap">
+          <form method="post" style="margin:0">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="do" value="up">
+            <button class="btn" <?= $conf ? '' : 'disabled title="Importez d\'abord une configuration"' ?>>
+              <?= $actif ? 'Remonter le tunnel' : 'Monter le tunnel' ?>
+            </button>
+          </form>
+          <?php if ($iface): ?>
+          <form method="post" style="margin:0"
+                onsubmit="return confirm('Arrêter le tunnel ?\n\nLes postes des groupes concernés perdront leur accès Internet — ils ne repasseront pas en sortie directe.')">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="do" value="down">
+            <button class="btn-danger">Arrêter le tunnel</button>
+          </form>
+          <?php endif; ?>
+        </div>
+      </li>
+      <li>
+        <strong>Vérifier l'adresse de sortie</strong>
+        <span class="d">Le bouton du panneau ci-dessus. Ne sautez pas cette étape : un tunnel qui
+        répond n'est pas un tunnel par lequel le trafic passe.</span>
+      </li>
+    </ol>
+
+    <p class="muted small" style="margin:1.2rem 0 0;line-height:1.7">
       <strong>Deux réserves.</strong> Le DNS des postes concernés passe encore par le résolveur local
       de la passerelle : le tunnel masque la connexion, pas la résolution du nom. Et faire transiter
       du trafic d'enquête par un opérateur commercial mérite l'accord de votre SSI — la journalisation
