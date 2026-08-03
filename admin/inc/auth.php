@@ -27,14 +27,30 @@ if ($ADMIN_USER !== 'admin') {
 }
 $_SESSION['admin_role'] = $ADMIN_ROLE;
 
+/**
+ * Cette page est-elle CONSULTABLE par ce rôle ?
+ *
+ * Définition unique du périmètre d'un rôle : la garde de navigation ci-dessous s'en sert,
+ * et la recherche globale aussi — sans quoi un compte « comptes » aurait vu passer dans
+ * ses résultats l'inventaire du parc ou le journal de navigation, c'est-à-dire précisément
+ * ce que son rôle lui interdit d'ouvrir. Une liste dupliquée aurait dérivé en silence.
+ *
+ * « lecture » consulte tout : c'est l'écriture qui lui est refusée, plus bas.
+ */
+function pf_page_autorisee(string $page, ?string $role = null): bool {
+    $role = $role ?? (string) ($_SESSION['admin_role'] ?? 'full');
+    if ($role !== 'comptes') { return true; }
+    return in_array($page, ['index.php', 'profil.php', 'logout.php', 'login.php', 'avatar.php',
+                            'user-photo.php', 'users.php', 'annuaire.php', 'badge.php', 'groups.php'], true);
+}
+
 // Application du rôle. On ne bloque JAMAIS durement une navigation : on redirige vers une page
 // autorisée. Les pages transverses (profil, déconnexion, images de profil) restent ouvertes.
 if ($ADMIN_ROLE !== 'full') {
     $pfPage = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
-    $pfAlways = ['index.php', 'profil.php', 'logout.php', 'login.php', 'avatar.php', 'user-photo.php'];
     if ($ADMIN_ROLE === 'comptes') {
         // Gestion des comptes et des agents uniquement.
-        if (!in_array($pfPage, array_merge($pfAlways, ['users.php', 'annuaire.php', 'badge.php', 'groups.php']), true)) {
+        if (!pf_page_autorisee($pfPage, 'comptes')) {
             header('Location: /users.php'); exit;
         }
     } elseif ($ADMIN_ROLE === 'lecture') {

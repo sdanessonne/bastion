@@ -79,7 +79,9 @@ body:has(.sidebar){display:flex}
 .nav-search input{width:100%;padding:.4rem .6rem;font-size:.82rem;border-radius:8px;
   background:var(--bg);border:1px solid var(--line);color:var(--text)}
 .nav-search input:focus{border-color:var(--accent,#38bdf8);outline:none}
-.nav-vide{font-size:.78rem;color:var(--muted);padding:.5rem .7rem}
+.nav-vide{font-size:.78rem;color:var(--muted);padding:.5rem .7rem;display:flex;flex-direction:column;gap:.3rem}
+.nav-vide a{color:var(--acc,#38bdf8);text-decoration:none}
+.nav-vide a:hover{text-decoration:underline}
 /* Première correspondance : elle est ce qu'ouvre la touche Entrée, il faut donc
    la voir avant d'appuyer. */
 .sidebar nav a.nav-hit{background:var(--panel2);box-shadow:inset 2px 0 0 var(--accent,#38bdf8)}

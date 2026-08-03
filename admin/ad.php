@@ -404,8 +404,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // droits administrateur, et surtout l'écran de connexion affiche la vignette
             // AVANT la session — posée pendant la session, elle n'apparaîtrait qu'à la
             // suivante. Voir l'en-tête de services/scripts/gpo-photo.py.
-            // L'adresse vient de la configuration : le poste doit joindre la passerelle sur
-            // SON réseau, et une valeur en dur casserait sur tout site adressé autrement.
+            // L'adresse vient de la configuration : une valeur en dur casserait sur tout
+            // site adressé autrement.
             $out = ad('gpo', 'photo', pf_lan_ip());
             if (strpos($out, 'photo deployee') !== false) {
                 $out = "Photo de l'agent déployée par stratégie. Les postes la poseront au "
@@ -1760,6 +1760,15 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
           h.style.display=shown?'':'none';
         });
       });
+      // Arrivée depuis la recherche globale : « ?gpo=<titre> ». Sans cela le lien deposait
+      // l'administrateur en haut d'une page de plus de cent stratégies, à lui de retrouver
+      // celle qu'il venait de voir dans les résultats.
+      var cible=new URLSearchParams(location.search).get('gpo');
+      if(cible){
+        q.value=cible;
+        q.dispatchEvent(new Event('input',{bubbles:true}));
+        q.scrollIntoView({block:'center'});
+      }
     })();
     </script>
 

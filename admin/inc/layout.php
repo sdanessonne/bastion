@@ -4,7 +4,17 @@
 
 require_once __DIR__ . '/navstate.php';
 
-function pf_header(string $title, string $active = ''): void {
+/**
+ * Catalogue de la navigation : groupe => fichier => [libellé, icône, synonymes].
+ *
+ * Sorti de pf_header() pour avoir UNE seule définition : la barre latérale l'affiche,
+ * et la recherche globale s'en sert pour trouver une page par son nom ou par un de ses
+ * synonymes. Deux copies auraient dérivé — une page ajoutée au menu et introuvable à la
+ * recherche est exactement le genre d'écart qui ne se voit pas.
+ *
+ * @return array<string,array<string,array{0:string,1:string,2?:string}>>
+ */
+function pf_nav_groups(): array {
     // Navigation groupée par domaine fonctionnel.
     // ── REGROUPEMENT PAR QUESTION POSÉE, ET NON PAR ORDRE D'ÉCRITURE ─────────
     // L'ancien découpage suivait l'histoire du projet : « Santé & sécurité »
@@ -18,9 +28,10 @@ function pf_header(string $title, string $active = ''): void {
     //
     // Le troisième élément (optionnel) donne des SYNONYMES pour la recherche :
     // personne ne tape « Parc informatique » quand il cherche un inventaire.
-    $navGroups = [
+    return [
         'Surveiller' => [
             'index.php'      => ['Tableau de bord', '▚', 'accueil resume'],
+            'chercher.php'   => ['Recherche globale', '🔎', 'chercher trouver partout agent poste adresse ip mac domaine'],
             'securite.php'   => ['Santé & sécurité', '🩺', 'alertes anomalies etat'],
             'services.php'   => ['Services', '🧰', 'demarrer arreter redemarrer daemon'],
             'reseau.php'     => ['Trafic réseau', '📡', 'debit bande passante wifi canal'],
@@ -60,6 +71,10 @@ function pf_header(string $title, string $active = ''): void {
             'apropos.php'    => ['À propos de Bastion', 'ℹ️', 'version licence auteur'],
         ],
     ];
+}
+
+function pf_header(string $title, string $active = ''): void {
+    $navGroups = pf_nav_groups();
     $admin = $_SESSION['admin'] ?? '';
     // Mode « embarqué » : une page ouverte dans un onglet (iframe) de journal.php n'affiche
     // ni barre latérale ni en-tête — juste son contenu. pf_footer() garde alors « embed » sur
@@ -184,7 +199,13 @@ function pf_header(string $title, string $active = ''): void {
         <input type="search" id="navQ" placeholder="Rechercher une page…  Ctrl+K"
                autocomplete="off" aria-label="Rechercher une page de la console">
       </div>
-      <div id="navVide" class="nav-vide" hidden>Aucune page ne correspond.</div>
+      <!-- Le champ ne filtrait que les PAGES : sur « DUPONT » ou « 192.168.182.47 » il
+           répondait « aucune page ne correspond », alors que la console connaît la
+           réponse. Ce relais mène à la recherche globale sans rien retaper. -->
+      <div id="navVide" class="nav-vide" hidden>
+        <span id="navVideTxt">Aucune page ne correspond.</span>
+        <a id="navTout" href="/chercher.php">🔎 Chercher partout →</a>
+      </div>
 
       <?php
       // ── FRÉQUENTES ──────────────────────────────────────────────────────────
@@ -378,16 +399,27 @@ function pf_footer(): void {
           a.classList.toggle('nav-hit', ok && actif && n === 0);
           if (ok) { n++; }
         });
-        if (vide) { vide.hidden = !(actif && n === 0); }
+        // Le relais vers la recherche globale est proposé dès qu'on tape, et pas
+        // seulement quand aucune page ne correspond : chercher un agent alors qu'une
+        // page porte le même mot est un cas courant.
+        if (vide) {
+          vide.hidden = !actif;
+          var txt = document.getElementById('navVideTxt');
+          if (txt) { txt.hidden = (n > 0); }
+          var tout = document.getElementById('navTout');
+          if (tout) { tout.href = '/chercher.php?q=' + encodeURIComponent(q.value.trim()); }
+        }
       }
 
       q.addEventListener('input', filtrer);
       q.addEventListener('keydown', function (e) {
         // Entrée ouvre la première correspondance : sans cela il faudrait lâcher le
-        // clavier pour aller cliquer, ce qui annule le gain.
+        // clavier pour aller cliquer, ce qui annule le gain. Si rien ne correspond,
+        // la frappe part vers la recherche globale plutôt que de ne rien faire.
         if (e.key === 'Enter') {
           var p = liens.filter(function (a) { return !a.hidden; })[0];
           if (p) { location.href = p.getAttribute('href'); }
+          else if (q.value.trim() !== '') { location.href = '/chercher.php?q=' + encodeURIComponent(q.value.trim()); }
         } else if (e.key === 'Escape') {
           q.value = ''; filtrer(); q.blur();
         }
