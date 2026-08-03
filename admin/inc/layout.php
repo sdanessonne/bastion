@@ -47,6 +47,7 @@ function pf_header(string $title, string $active = ''): void {
             'parc.php'       => ['Parc informatique', '🗃️', 'inventaire machines conformite materiel'],
             'dhcp.php'       => ['Réservations DHCP', '🔌', 'bail adresse ip mac appareil'],
             'apps.php'       => ['Store d\'applications', '🏪', 'logiciels deploiement installation'],
+            'firefox.php'    => ['Firefox', '🦊', 'navigateur mozilla gpo admx accueil doh telemetrie extensions'],
             'pxe.php'        => ['Serveur PXE', '📀', 'boot reseau installation windows ubuntu image'],
         ],
         'Intranet' => [
