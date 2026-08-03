@@ -506,7 +506,7 @@ install -d -m 0750 -o www-data -g root /run/bastion
 printf 'd /run/bastion 0750 www-data root -
 ' > /usr/lib/tmpfiles.d/bastion.conf
 cat > /etc/sudoers.d/proxyfibre-vpn <<'SUD'
-www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-wanip state, /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-vpn
 
@@ -536,6 +536,10 @@ install -m755 "${REPO_DIR}/services/scripts/speedtest-wan.sh" /usr/local/sbin/pr
 dpkg -s wireguard-tools >/dev/null 2>&1 || \
   DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard-tools >/dev/null 2>&1 || true
 install -m755 "${REPO_DIR}/services/scripts/vpn-ctl.sh" /usr/local/sbin/proxyfibre-vpn
+# Adresse vue de l'exterieur : relevee par la minuterie, JAMAIS pendant le rendu
+# d'une page. Deux attentes reseau au milieu du tableau de bord rendraient la
+# console lente pour une information de confort.
+install -m755 "${REPO_DIR}/services/scripts/wanip.sh" /usr/local/sbin/proxyfibre-wanip
 
 # Le verrou doit être RÉÉVALUÉ en permanence : si le tunnel tombe en cours de
 # journée, le routage reprendrait la route normale et le groupe sortirait EN
@@ -676,7 +680,14 @@ PHPCONF="$(ls -d /etc/php/*/apache2/conf.d 2>/dev/null | head -1)"
 [ -f "${REPO_DIR}/provisioning/setup-ad.sh" ] && install -m755 "${REPO_DIR}/provisioning/setup-ad.sh" /usr/local/sbin/proxyfibre-setup-ad
 # Échantillonneur de charge (processeur/mémoire) : cron 1/min → historique pf_metrics (24 h)
 install -m755 "${REPO_DIR}/services/scripts/metrics-sample.php" /usr/local/sbin/proxyfibre-metrics-sample
-echo '* * * * * root php /usr/local/sbin/proxyfibre-metrics-sample >/dev/null 2>&1' > /etc/cron.d/proxyfibre-metrics
+# Le relevé de l'adresse publique s'accroche à la même minuterie : elle existe
+# déjà, elle tourne à la bonne cadence, et cela évite une tâche planifiée de plus
+# à surveiller. Le script sort tout de suite si le tunnel n'est pas établi — il
+# n'interroge alors qu'une seule fois l'extérieur, pas deux.
+printf '%s\n%s\n' \
+  '* * * * * root php /usr/local/sbin/proxyfibre-metrics-sample >/dev/null 2>&1' \
+  '* * * * * root /usr/local/sbin/proxyfibre-wanip refresh >/dev/null 2>&1' \
+  > /etc/cron.d/proxyfibre-metrics
 install -m755 "${REPO_DIR}/services/scripts/backup-ctl.sh" /usr/local/sbin/proxyfibre-backup
 # Cachet électronique des fiches d'habilitation (autorité de signature locale).
 install -m755 "${REPO_DIR}/services/scripts/habilitation-ctl.sh" /usr/local/sbin/proxyfibre-habilitation

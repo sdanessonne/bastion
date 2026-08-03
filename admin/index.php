@@ -149,7 +149,98 @@ $resBlock = function (string $key, string $icon, string $label, int $pct, string
   .res-top span{font-weight:500} .res-top strong{font-size:1.35rem}
   .bar{height:9px;background:var(--bg);border-radius:6px;overflow:hidden}
   .bar .fill{height:100%;border-radius:6px;transition:width .5s ease}
+  .wan-l{display:flex;gap:.9rem;align-items:flex-start;padding:.8rem 1rem;border-radius:11px;
+    background:var(--bg);border:1px solid var(--line)}
+  .wan-l.wan-ok{border-color:rgba(74,222,128,.35);background:rgba(74,222,128,.06)}
+  .wan-l.wan-ko{border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.07)}
+  .wan-i{font-size:1.35rem;line-height:1.2;flex:none}
+  .wan-v{font-family:ui-monospace,monospace;font-size:1.15rem;font-weight:700;letter-spacing:.01em}
+  .wan-d{color:var(--muted);font-size:.83rem;line-height:1.6;margin-top:.2rem;max-width:78ch}
 </style>
+<?php
+// ── L'ADRESSE VUE DE L'EXTÉRIEUR ─────────────────────────────────────────────
+// Question fréquente, et réponse non triviale : depuis que la sortie par tunnel
+// existe, il y a DEUX adresses à la fois. Les postes ordinaires sortent par la
+// box, ceux des groupes marqués « VPN » par le tunnel. N'en afficher qu'une
+// laisserait croire que tout le monde présente la même — et un enquêteur
+// pourrait se croire couvert alors qu'il sort en clair.
+//
+// La console LIT un cache alimenté chaque minute par la minuterie des métriques.
+// Interroger un service distant pendant le rendu ajouterait deux attentes
+// réseau à l'affichage du tableau de bord, pour une information de confort.
+$wan = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-wanip state 2>/dev/null'), true) ?: [];
+$wanDirect = trim((string) ($wan['direct'] ?? ''));
+$wanVpn    = trim((string) ($wan['vpn'] ?? ''));
+$wanAge    = (int) ($wan['age'] ?? -1);
+$wanVieux  = !empty($wan['perime']);
+$wanGrp = [];
+try {
+    foreach (pf_db()->query('SELECT groupname FROM pf_groups WHERE vpn_exit=1 ORDER BY groupname') as $g) {
+        $wanGrp[] = (string) $g['groupname'];
+    }
+} catch (Throwable $e) { /* colonne absente sur une installation antérieure */ }
+?>
+<section class="panel">
+  <div class="panel-head"><h2>🌍 Adresse vue de l'extérieur</h2>
+    <span class="muted small"><?php
+      if ($wanAge < 0)      { echo 'jamais relevée'; }
+      elseif ($wanVieux)    { echo 'relevé de plus de ' . (int) round($wanAge / 60) . ' min — à confirmer'; }
+      else                  { echo 'relevé il y a ' . ($wanAge < 60 ? $wanAge . ' s' : (int) round($wanAge / 60) . ' min'); }
+    ?></span></div>
+  <div style="padding:1.1rem 1.3rem;display:grid;gap:.8rem">
+
+    <div class="wan-l">
+      <span class="wan-i">📡</span>
+      <div>
+        <div class="wan-v"><?= $wanDirect !== '' ? e($wanDirect) : '<span class="muted">indisponible</span>' ?></div>
+        <div class="wan-d">
+          <strong>Sortie directe — par la box.</strong>
+          C'est l'adresse que présentent <?= $wanGrp ? 'tous les postes SAUF ceux des groupes ci-dessous' : 'tous les postes du commissariat' ?>.
+          Elle est publique et attribuable : elle apparaît dans les journaux de chaque site consulté.
+        </div>
+      </div>
+    </div>
+
+    <?php if ($wanVpn !== ''): ?>
+    <div class="wan-l wan-ok">
+      <span class="wan-i">🔒</span>
+      <div>
+        <div class="wan-v"><?= e($wanVpn) ?></div>
+        <div class="wan-d">
+          <strong>Sortie par le VPN — tunnel actif.</strong>
+          <?php if ($wanGrp): ?>
+            Adresse présentée par les postes du/des groupe(s) <strong><?= e(implode(', ', $wanGrp)) ?></strong>.
+          <?php else: ?>
+            Le tunnel fonctionne, mais <strong>aucun groupe ne l'utilise</strong> : personne ne sort par cette
+            adresse pour l'instant. Cochez un groupe dans <a href="/groups.php">Groupes &amp; quotas</a>.
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+    <?php elseif ($wanGrp): ?>
+    <div class="wan-l wan-ko">
+      <span class="wan-i">⚠</span>
+      <div>
+        <div class="wan-v">aucune</div>
+        <div class="wan-d">
+          <strong>Le VPN ne sort pas.</strong>
+          <?= count($wanGrp) ?> groupe(s) — <strong><?= e(implode(', ', $wanGrp)) ?></strong> — sont configurés
+          pour le tunnel, mais il ne répond pas. Leurs postes sont <strong>bloqués</strong> : ils ne repassent
+          jamais en sortie directe, pour ne pas travailler à découvert en se croyant couverts.
+          <a href="/vpn.php">Voir le VPN</a>
+        </div>
+      </div>
+    </div>
+    <?php endif; ?>
+
+    <p class="muted small" style="margin:0">
+      L'adresse locale du port WAN n'est pas celle-ci : une box traduit les adresses en amont.
+      Ce relevé vient donc d'un service d'écho externe, interrogé une fois par minute au plus.
+      <?php if (!$wanVpn && !$wanGrp): ?><a href="/vpn.php">Configurer une sortie par VPN</a><?php endif; ?>
+    </p>
+  </div>
+</section>
+
 <section class="panel">
   <div class="panel-head"><h2>🖥️ Ressources de la passerelle</h2>
     <span class="muted small"><?= e($uptime ?: '') ?></span></div>
