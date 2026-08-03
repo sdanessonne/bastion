@@ -28,6 +28,7 @@ function pf_header(string $title, string $active = ''): void {
             'parc.php' => ['Parc informatique', '🗃️'],
             'dhcp.php' => ['Réservations DHCP', '🔌'],
             'quarantaine.php' => ['Quarantaine réseau', '🚫'],
+            'vpn.php'  => ['Sortie par tunnel', '🔒'],
             'apps.php' => ['Store d\'applications', '🏪'],
             'pxe.php'  => ['Serveur PXE', '📀'],
         ],

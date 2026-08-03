@@ -270,6 +270,28 @@ function sys_alerts(): array {
                       'act' => 'Système', 'url' => 'systeme.php'];
         }
     }
+    // ── SORTIE PAR TUNNEL : GROUPE CONFIGURÉ, TUNNEL MORT ────────────────────
+    // Cette combinaison prive d'Internet tous les agents du groupe, et c'est
+    // VOULU (les laisser repasser en sortie directe les ferait travailler sous
+    // l'adresse du commissariat en se croyant couverts). Mais côté console, rien
+    // ne le disait : la panne était visible de l'agent, invisible de
+    // l'administrateur. Elle rejoint donc le canal d'alerte existant.
+    // Contrôle volontairement peu coûteux : on n'interroge le tunnel QUE si au
+    // moins un groupe le réclame — inutile de lancer une commande sur toutes les
+    // installations qui n'utilisent pas cette fonction.
+    try {
+        $nGrpVpn = (int) pf_db()->query('SELECT COUNT(*) FROM pf_groups WHERE vpn_exit=1')->fetchColumn();
+        if ($nGrpVpn > 0) {
+            $vs = json_decode((string) shell_exec('sudo /usr/local/sbin/proxyfibre-vpn state 2>/dev/null'), true) ?: [];
+            if (empty($vs['actif'])) {
+                $out[] = ['lvl' => 'danger',
+                          'txt' => $nGrpVpn . ' groupe(s) sortent par tunnel, mais le tunnel ne répond pas : '
+                                 . "leurs postes n'ont plus d'accès Internet.",
+                          'act' => 'Tunnel', 'url' => 'vpn.php'];
+            }
+        }
+    } catch (Throwable $e) { /* colonne absente sur une installation antérieure */ }
+
     // Anomalies de sécurité détectées et NON acquittées (nouvel appareil LAN, membres admin
     // AD, GPO hors console). Elles rejoignent le canal d'alerte existant : courriel du
     // watchdog + bandeau du tableau de bord. La détection/écriture est faite par le scanner
