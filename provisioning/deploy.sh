@@ -221,7 +221,18 @@ RestartSec=5
 # La socket n'est retirée QUE si aucun processus opennds ne tourne : l'effacer
 # sans vérifier détruirait le canal de commande d'une instance bien vivante, et
 # « ndsctl » ne répondrait plus — panne plus difficile encore à diagnostiquer.
-ExecStartPre=/bin/sh -c 'pgrep -x opennds >/dev/null || rm -f /tmp/ndsctl.sock'
+#
+# ON ATTEND LA SORTIE DE L'ANCIENNE INSTANCE, on n'échoue pas.
+# MESURÉ : OpenNDS met une dizaine de secondes à s'arrêter (il purge ses règles
+# de pare-feu et ses clients). Un redémarrage relance donc la nouvelle instance
+# alors que l'ancienne vit encore : elle voyait la socket, se croyait en double,
+# et abandonnait. Le service finissait par repartir — après TROIS échecs, sur les
+# cinq que systemd tolère avant de renoncer définitivement. Et chaque échec
+# déclenche ExecStopPost, donc recoupe le trafic LAN vers Internet : vingt
+# secondes de coupure pour tout le service, à chaque déploiement.
+# Attendre jusqu'à 20 s coûte moins qu'un échec, et laisse la marge de systemd
+# intacte pour les vraies pannes.
+ExecStartPre=/bin/sh -c 'i=0; while pgrep -x opennds >/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done; pgrep -x opennds >/dev/null || rm -f /tmp/ndsctl.sock'
 # Le trafic LAN->WAN n'est autorisé QU'APRÈS confirmation du démarrage du portail,
 # et recoupé dès son arrêt — y compris un arrêt volontaire depuis la console.
 # Si le portail échoue 5 fois en 5 min, systemd renonce : le repli RESTE actif.
