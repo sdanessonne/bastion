@@ -302,6 +302,25 @@ $mailRelai = trim((string) ($mailEtat['host'] ?? ''));
                                  grid-template-columns:repeat(auto-fit,minmax(190px,1fr));align-items:end">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="do" value="smtp">
+        <?php
+        // ── LE CHOIX DU FOURNISSEUR ÉVITE L'ERREUR LA PLUS COURANTE ──────────
+        // Serveur, port et chiffrement vont par TROIS : 587 avec STARTTLS, ou 465
+        // avec SSL direct. Les mélanger donne un échec dont le message ne dit
+        // rien d'utile (« connexion réinitialisée »), et l'on cherche du côté du
+        // mot de passe. Autant les poser ensemble.
+        ?>
+        <label class="field" style="margin:0;grid-column:1/-1">Fournisseur
+          <select id="smtpPreset" onchange="smtpPreremplir(this.value)">
+            <option value="">— choisir pour pré-remplir, ou saisir à la main —</option>
+            <option value="gmail">Gmail / Google Workspace</option>
+            <option value="ms">Outlook.com / Microsoft 365</option>
+            <option value="orange">Orange</option>
+            <option value="free">Free</option>
+            <option value="sfr">SFR</option>
+            <option value="ovh">OVH</option>
+          </select>
+        </label>
+        <div id="smtpAide" class="hint" style="grid-column:1/-1;margin:0;display:none"></div>
         <label class="field" style="margin:0">Serveur
           <input name="smtp_host" value="<?= e($mailRelai) ?>" placeholder="smtp.exemple.fr" required>
         </label>
@@ -338,6 +357,38 @@ $mailRelai = trim((string) ($mailEtat['host'] ?? ''));
         d'application</strong>, jamais celui du compte. Et pour des alertes de sécurité d'une passerelle,
         une adresse institutionnelle vaut mieux qu'une boîte personnelle.
       </p>
+      <script>
+      // Réglages publics des fournisseurs courants. Aucun identifiant ici : ces
+      // valeurs sont documentées par chaque opérateur et identiques pour tous.
+      var SMTP_PRESETS = {
+        gmail:  {h:'smtp.gmail.com',            p:587, t:'starttls',
+                 a:"<strong>Gmail exige un mot de passe d'application</strong> : le mot de passe de votre compte "
+                 + "sera refusé. Activez d'abord la validation en deux étapes, puis créez un mot de passe "
+                 + "d'application sur <code>myaccount.google.com/apppasswords</code> et collez-le ci-dessous "
+                 + "(16 lettres, les espaces sont sans importance).<br>"
+                 + "L'adresse d'expédition doit être <strong>celle du compte Gmail</strong> : Google réécrit "
+                 + "toute autre adresse, et le message paraîtrait venir d'ailleurs que de ce qu'on a saisi."},
+        ms:     {h:'smtp.office365.com',        p:587, t:'starttls',
+                 a:"Microsoft a désactivé l'authentification par mot de passe simple sur beaucoup de locataires. "
+                 + "Si l'envoi échoue malgré des identifiants justes, c'est probablement ce blocage : voyez "
+                 + "l'administrateur du domaine."},
+        orange: {h:'smtp.orange.fr',            p:465, t:'ssl',    a:"Identifiant = adresse Orange complète."},
+        free:   {h:'smtp.free.fr',              p:465, t:'ssl',    a:"L'envoi par ce relais suppose une connexion depuis le réseau Free."},
+        sfr:    {h:'smtp.sfr.fr',               p:465, t:'ssl',    a:"Identifiant = adresse SFR complète."},
+        ovh:    {h:'ssl0.ovh.net',              p:587, t:'starttls', a:"Identifiant = adresse complète du compte de messagerie."}
+      };
+      function smtpPreremplir(k) {
+        var d = SMTP_PRESETS[k], f = document.forms, aide = document.getElementById('smtpAide');
+        if (!d) { if (aide) { aide.style.display = 'none'; } return; }
+        var q = function (n) { return document.querySelector('[name="' + n + '"]'); };
+        // Les champs sont REMPLIS, pas verrouillés : un service peut avoir un
+        // relais interne qui ne ressemble à aucun de ces modèles.
+        if (q('smtp_host')) { q('smtp_host').value = d.h; }
+        if (q('smtp_port')) { q('smtp_port').value = d.p; }
+        if (q('smtp_tls'))  { q('smtp_tls').value  = d.t; }
+        if (aide) { aide.innerHTML = d.a; aide.style.display = ''; }
+      }
+      </script>
     </details>
 
     <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.8rem 0 0">
