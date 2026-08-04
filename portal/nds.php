@@ -39,15 +39,33 @@ function pf_nds_valide(string $raw): bool
  * @return array|null null = client inconnu d'OpenNDS, ou premier appel refusé sans
  *                    aucune valeur antérieure en cache.
  */
+/**
+ * La dernière réponse de pf_nds_client() venait-elle du CACHE ?
+ *
+ * Sert à ne pas reposer à OpenNDS une question qu'on vient de lui poser. Un appel à
+ * ndsctl coûte un demi-seconde FIXE — mesuré : 510 ms, identique qu'il y ait un client
+ * ou cent, c'est le coût de l'appel lui-même et non du travail. Redemander « juste pour
+ * être sûr » double donc le temps d'affichage d'une page pour la même réponse.
+ *
+ * @param bool|null $set réservé à pf_nds_client() ; lecture seule ailleurs.
+ */
+function pf_nds_dernier_cache(?bool $set = null): bool
+{
+    static $v = false;
+    if ($set !== null) { $v = $set; }
+    return $v;
+}
+
 function pf_nds_client(string $ip, int $ttl = 10): ?array
 {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) { return null; }
     $f   = '/dev/shm/pf-nds-' . preg_replace('/[^0-9a-fA-F:.]/', '', $ip) . '.cache';
     $raw = '';
+    pf_nds_dernier_cache(false);
 
     if (is_file($f) && (time() - filemtime($f)) < $ttl) {
         $c = (string) @file_get_contents($f);
-        if (pf_nds_valide($c)) { $raw = $c; }
+        if (pf_nds_valide($c)) { $raw = $c; pf_nds_dernier_cache(true); }
     }
     if ($raw === '') {
         $r = (string) shell_exec('sudo /usr/bin/ndsctl json ' . escapeshellarg($ip) . ' 2>/dev/null');
@@ -55,6 +73,7 @@ function pf_nds_client(string $ip, int $ttl = 10): ?array
             @file_put_contents($f, $r);
             $raw = $r;
         } elseif (is_file($f)) {
+            pf_nds_dernier_cache(true);
             // Refusé : on rejoue la dernière valeur connue, même périmée. Jamais l'erreur.
             $c = (string) @file_get_contents($f);
             if (pf_nds_valide($c)) { $raw = $c; }

@@ -53,7 +53,12 @@ function intranet_user(): array {
     // au plus 60 s après une déconnexion — sans conséquence, le pare-feu ayant déjà
     // coupé l'accès. Un « non authentifié » périmé, lui, tombe précisément au moment
     // où l'agent vient d'agir. On ne met donc en cache QUE les réponses positives.
-    if (!$auth) {
+    // …ET SEULEMENT SI LA RÉPONSE VENAIT DU CACHE. Redemander après un appel qu'on
+    // vient de faire coûtait un demi-seconde de plus pour la même réponse : mesuré,
+    // 0,78 s au lieu de 0,41 s sur la page d'accueil du portail, à chaque première
+    // visite d'un agent non encore identifié. Un appel à ndsctl coûte ~510 ms FIXES,
+    // qu'il y ait un client ou cent — c'est le prix de l'appel, pas du travail.
+    if (!$auth && pf_nds_dernier_cache()) {
         $x = pf_nds_client($ip, 0);   // 0 = on redemande à OpenNDS, sans se fier au cache
         $auth = $x !== null && ($x['state'] ?? '') === 'Authenticated';
     }
