@@ -47,9 +47,11 @@ a{color:inherit;text-decoration:none}
 .brand-center .logo{margin:0 auto .6rem;width:60px;height:60px}
 .brand-center h1{margin:.2rem 0 0;font-size:1.4rem}
 .login-card label{display:grid;gap:.35rem;margin-bottom:1rem;font-size:.82rem;color:var(--muted)}
-.login-card input,.stack input{width:100%;padding:.7rem .8rem;background:var(--bg);color:var(--text);
+.login-card input,.stack input,.stack select,.stack textarea{width:100%;padding:.7rem .8rem;background:var(--bg);color:var(--text);
   border:1px solid var(--line);border-radius:10px;font-size:1rem;outline:none}
-.login-card input:focus,.stack input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(56,189,248,.2)}
+/* Les listes deroulantes des formulaires empiles n'etaient pas habillees : elles
+   ressortaient en blanc sur fond sombre, seul element clair de la page. */
+.login-card input:focus,.stack input:focus,.stack select:focus,.stack textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(56,189,248,.2)}
 .login-card button{width:100%;padding:.75rem;background:var(--accent2);color:#052536;font-weight:600;
   border:none;border-radius:10px;font-size:1rem;cursor:pointer}
 .login-card button:hover{background:var(--accent)}

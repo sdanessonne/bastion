@@ -313,6 +313,39 @@ try {
         if ($r['k'] === 'logon_caption')       { $lgCapActuel = (string) $r['v']; }
     }
 } catch (Throwable $e) {}
+/**
+ * Modèles de rédaction proposés.
+ *
+ * Ce sont des BASES DE TRAVAIL, pas des textes officiels : elles n'engagent que celui
+ * qui les publie. Elles ne citent que des références exactes et déjà employées dans ce
+ * projet — l'accès frauduleux à un système de traitement automatisé (323-1 et suivants
+ * du code pénal), la conservation des données de connexion (L.34-1 du CPCE), le secret
+ * professionnel (226-13 du code pénal). Aucune n'annonce une surveillance que la
+ * passerelle ne pratique pas : c'est la faute la plus courante de ce genre de texte, et
+ * la plus difficile à défendre ensuite.
+ */
+$MODELES = [
+    'console' => ['nom' => 'Console d’administration (proposé par défaut)',
+        'titre' => 'Accès réservé',
+        'texte' => "L'accès à cette console est réservé aux personnels habilités, dans le cadre exclusif de leurs fonctions.\n"
+                 . "Les tentatives de connexion, réussies comme échouées, et les actions d'administration font l'objet d'un journal, à des fins de sécurité et de traçabilité.\n"
+                 . "L'accès ou le maintien frauduleux dans tout ou partie d'un système de traitement automatisé de données est réprimé par les articles 323-1 et suivants du code pénal."],
+    'postes' => ['nom' => 'Postes de travail — adressé aux agents',
+        'titre' => 'Accès réservé aux personnels habilités',
+        'texte' => "Ce poste et le réseau auquel il est raccordé sont réservés aux personnels habilités, dans le cadre exclusif de leurs fonctions.\n"
+                 . "Les connexions et la navigation font l'objet d'une journalisation, conservée conformément à l'article L.34-1 du code des postes et des communications électroniques.\n"
+                 . "L'accès ou le maintien frauduleux dans un système de traitement automatisé de données est réprimé par les articles 323-1 et suivants du code pénal."],
+    'secret' => ['nom' => 'Avec rappel du secret professionnel',
+        'titre' => 'Accès réservé — données protégées',
+        'texte' => "L'accès à ce système est réservé aux personnels habilités, dans le cadre exclusif de leurs fonctions.\n"
+                 . "Les informations qui y sont traitées sont couvertes par le secret professionnel : leur révélation est réprimée par l'article 226-13 du code pénal.\n"
+                 . "Les connexions et les actions effectuées font l'objet d'un journal.\n"
+                 . "L'accès ou le maintien frauduleux dans un système de traitement automatisé de données est réprimé par les articles 323-1 et suivants du code pénal."],
+    'court' => ['nom' => 'Court — une seule phrase',
+        'titre' => 'Accès réservé',
+        'texte' => "Accès réservé aux personnels habilités. Les connexions sont journalisées."],
+];
+
 // Les postes portent-ils un texte DIFFÉRENT ? Le dire avant, pas après : cocher la case
 // remplacera ce qui y est affiché, et un texte à portée juridique ne se remplace pas à
 // l'aveugle.
@@ -355,6 +388,17 @@ $nDefTxt = "L'accès à cette console est réservé aux personnels habilités, d
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
       <input type="hidden" name="do" value="notice_save">
       <div class="stack" style="max-width:760px">
+        <label>Partir d'un modèle <span class="muted small">(remplit les deux champs — à relire et à adapter)</span>
+          <select id="modeleAvert">
+            <option value="">— choisir un modèle —</option>
+            <?php foreach ($MODELES as $k => $m): ?>
+              <option value="<?= e($k) ?>"><?= e($m['nom']) ?></option>
+            <?php endforeach; ?>
+          </select></label>
+        <script type="application/json" id="modelesAvert"><?= json_encode(
+            array_map(fn($m) => ['titre' => $m['titre'], 'texte' => $m['texte']], $MODELES),
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP) ?></script>
+
         <label>Titre <span class="muted small">(facultatif — laisser vide pour n'afficher que le texte)</span>
           <input type="text" name="notice_titre" maxlength="80"
                  value="<?= e($nTtl) ?>" placeholder="<?= e($nDefTtl) ?>"></label>
@@ -367,11 +411,15 @@ $nDefTxt = "L'accès à cette console est réservé aux personnels habilités, d
         <fieldset style="border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin:.3rem 0 0">
           <legend class="muted small" style="padding:0 .4rem">Où ce texte est affiché</legend>
           <label style="display:flex;gap:.5rem;align-items:flex-start;margin:0 0 .45rem">
-            <input type="checkbox" name="notice_off" value="1"<?= $nOn ? '' : ' checked' ?> style="margin-top:.2rem">
+            <?php // « width:auto » : sans cela la règle « .stack input{width:100%} » étire la
+                  // case à toute la largeur et rejette le libellé à l'autre bout de la ligne. ?>
+            <input type="checkbox" name="notice_off" value="1"<?= $nOn ? '' : ' checked' ?>
+                   style="width:auto;flex:none;margin-top:.2rem">
             <span>Ne <strong>pas</strong> l'afficher sur la page de connexion de la <strong>console</strong>
               <br><span class="muted small">Vu par les administrateurs, avant toute authentification.</span></span></label>
           <label style="display:flex;gap:.5rem;align-items:flex-start">
-            <input type="checkbox" name="notice_postes" value="1"<?= $nPostes ? ' checked' : '' ?> style="margin-top:.2rem">
+            <input type="checkbox" name="notice_postes" value="1"<?= $nPostes ? ' checked' : '' ?>
+                   style="width:auto;flex:none;margin-top:.2rem">
             <span>L'afficher aussi sur l'<strong>écran de connexion des postes</strong>
               <br><span class="muted small">Vu par tous les agents, avant l'ouverture de session Windows.
               L'enregistrement redéploie la stratégie ; l'image de fond et les informations masquées
@@ -390,6 +438,30 @@ $nDefTxt = "L'accès à cette console est réservé aux personnels habilités, d
           <a class="btn ghost" href="/login.php" target="_blank" rel="noopener">👁 Voir la page</a></div>
       </div>
     </form>
+    <script>
+    (function () {
+      var sel = document.getElementById('modeleAvert');
+      var src = document.getElementById('modelesAvert');
+      if (!sel || !src) { return; }
+      var M = {};
+      try { M = JSON.parse(src.textContent); } catch (e) { return; }
+      var t = document.querySelector('[name="notice_titre"]');
+      var x = document.querySelector('[name="notice_texte"]');
+      sel.addEventListener('change', function () {
+        var m = M[this.value];
+        if (!m) { return; }
+        // On ne remplace jamais un texte deja saisi sans demander : un avertissement
+        // d'acces a pu etre valide par la hierarchie, et il serait perdu d'un clic.
+        var ecrit = (t.value.trim() !== '' || x.value.trim() !== '');
+        if (ecrit && !confirm('Remplacer le titre et le texte actuels par ce modèle ?')) {
+          this.value = ''; return;
+        }
+        t.value = m.titre;
+        x.value = m.texte;
+        x.focus();
+      });
+    })();
+    </script>
   </div>
 </section>
 
