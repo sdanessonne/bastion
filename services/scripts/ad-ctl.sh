@@ -271,6 +271,40 @@ PY
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid recalage heure deployee"
         ;;
+      defaultbrowser)
+        # GPO « Bastion — Navigateur par défaut » : dépose le fichier d'associations dans le
+        # SYSVOL et pose la stratégie qui le désigne. $a = suffixe ProgId (facultatif).
+        # Windows n'applique ce fichier qu'à la CRÉATION d'un profil : voir l'en-tête de
+        # gpo-defaultapps.py. Aucun réglage ne peut réécrire le choix d'un profil existant.
+        name="Bastion — Navigateur par défaut"
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
+        unc=$(python3 /usr/local/sbin/proxyfibre-gpo-defaultapps "$guid" "${a:-}" 2>&1)
+        case "$unc" in
+          '\\\\'*|'\\'*) : ;;
+          *) echo "ERROR: depot du fichier d'associations echoue ($unc)" >&2; exit 1 ;;
+        esac
+        # La stratégie elle-même : une valeur de registre qui pointe le fichier déposé.
+        tmpj=$(mktemp /tmp/defbrowser.XXXXXX.json) || exit 1
+        printf '[{"keyname":"Software\\\\Policies\\\\Microsoft\\\\Windows\\\\System","valuename":"DefaultAssociationsConfiguration","class":"MACHINE","type":"REG_SZ","data":"%s"}]' \
+          "$(printf '%s' "$unc" | sed 's/\\/\\\\/g')" > "$tmpj"
+        python3 /usr/local/sbin/proxyfibre-gpo-apply "$guid" "$tmpj" >/dev/null 2>&1
+        rc=$?
+        rm -f "$tmpj"
+        [ "$rc" -eq 0 ] || { echo "ERROR: application de la strategie echouee ($guid)" >&2; exit 1; }
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
+          || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
+        # « printf %s » et non « echo » : le chemin UNC contient des antislashes, et echo
+        # interprete « \b » comme un retour arriere — le chemin s'affichait ampute, ce qui
+        # donne toutes les raisons de croire le deploiement rate alors qu'il est correct.
+        printf '%s navigateur par defaut deploye (%s)\n' "$guid" "$unc"
+        ;;
       numlock)
         # GPO « Bastion — Verrouillage numérique » : script de démarrage (SYSTEM) qui active le
         # pavé numérique à l'écran de connexion et dans chaque profil. Un script et non une

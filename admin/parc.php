@@ -54,7 +54,7 @@ catch (Throwable $e) { /* table pas encore créée : aucun poste ne s'est encore
 // Colonnes ajoutées après coup : tant qu'aucun poste ne s'est signalé depuis la mise à
 // jour, la migration n'a pas tourné et « SELECT * » ne les renvoie pas. On les normalise
 // une fois ici plutôt que de s'en méfier à chaque affichage.
-foreach ($inv as &$r) { $r += ['activation' => null, 'activation_det' => null]; }
+foreach ($inv as &$r) { $r += ['activation' => null, 'activation_det' => null, 'navigateur' => null]; }
 unset($r);
 $byName = [];
 foreach ($inv as $r) { $byName[strtoupper($r['poste'])] = $r; }
@@ -224,6 +224,19 @@ $actKo = count(array_filter($inv, fn($r) => in_array((string) $r['activation'], 
                                           : '<span class="badge on">' . $a . ' s</span>'); } ?></dd>
                     <dt>Applications</dt>
                     <dd><?= (int) $r['apps_ok'] ?> installée(s) par Bastion</dd>
+                    <dt>Navigateur par défaut</dt>
+                    <dd><?php
+                        // Ce que le poste utilise VRAIMENT. La stratégie d'associations ne
+                        // s'applique qu'aux profils créés après son déploiement : sans cette
+                        // ligne, on croirait le parc basculé alors qu'il ne l'est qu'en partie.
+                        $nv = (string) $r['navigateur'];
+                        if ($nv === '') { echo '<span class="muted">non remonté</span>'; }
+                        elseif (stripos($nv, 'firefox') !== false) { echo '<span class="badge on">🦊 Firefox</span>'; }
+                        elseif (stripos($nv, 'edge') !== false)    { echo '<span class="badge">Edge</span>'; }
+                        elseif (stripos($nv, 'chrome') !== false)  { echo '<span class="badge">Chrome</span>'; }
+                        else { echo '<span class="badge">' . e($nv) . '</span>'; }
+                        if ($nv !== '') { echo '<br><span class="muted small mono" style="font-size:.72rem">' . e($nv) . '</span>'; }
+                        ?></dd>
                     <dt>Activation Windows</dt>
                     <dd><?php $ac = (string) $r['activation'];
                         if (!isset($actLbl[$ac])) { echo '<span class="muted">non remontée</span>'; }

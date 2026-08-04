@@ -437,18 +437,19 @@ switch ($action) {
                 ip VARCHAR(45), mac VARCHAR(20), secureboot INT, ip_source VARCHAR(45),
                 logiciels MEDIUMTEXT,
                 horloge_ecart INT NULL, apps_ok INT DEFAULT 0, apps_log TEXT,
-                activation VARCHAR(24), activation_det VARCHAR(190))');
+                activation VARCHAR(24), activation_det VARCHAR(190), navigateur VARCHAR(64))');
             // Migration des inventaires créés avant l'ajout du diagnostic embarqué.
             foreach (['horloge_ecart INT NULL', 'apps_ok INT DEFAULT 0', 'apps_log TEXT',
-                      'activation VARCHAR(24)', 'activation_det VARCHAR(190)'] as $col) {
+                      'activation VARCHAR(24)', 'activation_det VARCHAR(190)',
+                      'navigateur VARCHAR(64)'] as $col) {
                 try { $db->exec('ALTER TABLE pf_inventaire ADD COLUMN ' . $col); } catch (Throwable $e) {}
             }
             $inst = $s('os_install', 10); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $inst)) { $inst = null; }
             $db->prepare('INSERT INTO pf_inventaire
                 (poste,utilisateur,domaine,os_nom,os_version,os_build,os_sku,os_install,fabricant,modele,serie,bios,
                  type_machine,processeur,coeurs,memoire_mo,disque_go,libre_go,disque_mdl,ip,mac,secureboot,ip_source,logiciels,
-                 horloge_ecart,apps_ok,apps_log,activation,activation_det)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 horloge_ecart,apps_ok,apps_log,activation,activation_det,navigateur)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE vu_le=NOW(), utilisateur=VALUES(utilisateur), domaine=VALUES(domaine),
                  os_nom=VALUES(os_nom), os_version=VALUES(os_version), os_build=VALUES(os_build), os_sku=VALUES(os_sku),
                  os_install=VALUES(os_install), fabricant=VALUES(fabricant), modele=VALUES(modele), serie=VALUES(serie),
@@ -457,7 +458,8 @@ switch ($action) {
                  disque_mdl=VALUES(disque_mdl), ip=VALUES(ip), mac=VALUES(mac), secureboot=VALUES(secureboot),
                  ip_source=VALUES(ip_source), logiciels=VALUES(logiciels),
                  horloge_ecart=VALUES(horloge_ecart), apps_ok=VALUES(apps_ok), apps_log=VALUES(apps_log),
-                 activation=VALUES(activation), activation_det=VALUES(activation_det)')
+                 activation=VALUES(activation), activation_det=VALUES(activation_det),
+                 navigateur=VALUES(navigateur)')
                ->execute([$poste, $s('utilisateur', 64), $s('domaine', 96), $s('os_nom'), $s('os_version', 40),
                           $s('os_build', 20), $i('os_sku'), $inst, $s('fabricant', 96), $s('modele', 96),
                           $s('serie', 96), $s('bios'), $i('type'), $s('processeur'), $i('coeurs'), $i('memoire_mo'),
@@ -466,7 +468,7 @@ switch ($action) {
                           json_encode($apps, JSON_UNESCAPED_UNICODE),
                           isset($d['horloge_ecart']) && $d['horloge_ecart'] !== null ? (int) $d['horloge_ecart'] : null,
                           $i('apps_ok'), substr((string) ($d['apps_log'] ?? ''), 0, 8000),
-                          $s('activation', 24), $s('activation_det', 190)]);
+                          $s('activation', 24), $s('activation_det', 190), $s('navigateur', 64)]);
         } catch (Throwable $e) { jout(['error' => 'stockage impossible'], 500); }
         jout(['ok' => true, 'poste' => $poste, 'logiciels' => count($apps)]);
     }

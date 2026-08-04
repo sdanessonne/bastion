@@ -247,6 +247,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
         case 'timesync_deploy': $out = ad('gpo', 'timesync'); break;
         case 'numlock_deploy': $out = ad('gpo', 'numlock'); break;
+        case 'defbrowser_deploy': {
+            // Le suffixe ProgId est une empreinte hexadécimale ; on refuse tout le reste
+            // avant de l'envoyer, il finit dans un XML lu par tous les postes.
+            $sfx = strtoupper(preg_replace('/[^0-9A-Fa-f]/', '', (string) ($_POST['progid'] ?? '')));
+            if ($sfx !== '' && (strlen($sfx) < 8 || strlen($sfx) > 32)) {
+                $out = 'ERROR: empreinte ProgId invalide (8 à 32 caractères hexadécimaux).';
+                break;
+            }
+            $out = ad('gpo', 'defaultbrowser', $sfx);
+            if (strpos($out, 'navigateur par defaut deploye') !== false) {
+                $out = "Stratégie déployée. Elle s'applique à la CRÉATION d'un profil : "
+                     . "un agent qui ouvre sa session pour la première fois sur un poste aura Firefox. "
+                     . "Les profils déjà créés gardent leur navigateur — Windows ne permet pas de le changer.";
+            }
+            break;
+        }
         case 'sysvol_reset': $out = ad('gpo', 'sysvolreset', ''); break;
         case 'bitlocker_deploy':
             $blm = (string) ($_POST['bl_mode'] ?? 'tpm');
@@ -992,6 +1008,47 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
         <button class="btn">🔢 Déployer</button>
       </form>
       <?php endif; ?>
+    </div>
+
+    <?php $dbGpo = in_array('Bastion — Navigateur par défaut', array_map(fn($g) => $g['name'] ?? '', $gpos), true); ?>
+    <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#14324f,#152238);padding:1rem 1.2rem;margin-top:1rem">
+      <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+        <span style="font-size:1.8rem">🦊</span>
+        <div style="flex:1;min-width:240px">
+          <div style="font-weight:600">Firefox comme navigateur par défaut
+            <?php if ($dbGpo): ?><span class="badge on" style="margin-left:.4rem">✓ Déployée</span><?php endif; ?></div>
+          <div class="dir-help" style="margin:.2rem 0 0">Associe les liens <code>http</code> et <code>https</code>
+          et les fichiers <code>.html</code> à Firefox, par le fichier d'associations que Windows prévoit pour cela.</div>
+        </div>
+      </div>
+
+      <!-- La limite est ANNONCÉE, pas découverte : promettre « Firefox par défaut partout »
+           serait faux, et l'administrateur s'en apercevrait sur le terrain. -->
+      <p class="dir-help" style="margin:.8rem 0 0;padding:.6rem .8rem;border-radius:8px;
+         background:rgba(250,204,21,.1);border:1px solid rgba(250,204,21,.3);color:#fde68a">
+        <strong>Ce que Windows autorise, et rien de plus.</strong> Depuis Windows 10, le choix du navigateur
+        d'un utilisateur est scellé par une empreinte que Microsoft protège : aucune stratégie ne peut la
+        réécrire. Cette stratégie s'applique donc à la <strong>création d'un profil</strong> — la première
+        ouverture de session d'un agent sur un poste. <strong>Les profils déjà créés gardent leur navigateur.</strong>
+        Pour ceux-là, il faut passer par le poste, ou recréer le profil.
+      </p>
+
+      <form method="post" style="margin-top:.9rem;display:flex;gap:.6rem;align-items:flex-end;flex-wrap:wrap"
+            onsubmit="return confirm('Déployer le fichier d\'associations sur le domaine ?\n\nEffet à la création des profils utilisateurs, pas sur les profils existants.')">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="defbrowser_deploy">
+        <label style="display:grid;gap:.3rem;font-size:.82rem;color:var(--muted)">
+          <span>Empreinte ProgId de Firefox <span class="muted small">(laisser vide = installation standard)</span></span>
+          <input type="text" name="progid" maxlength="32" placeholder="308046B0AF4A39CB"
+                 style="width:22ch;padding:.5rem .7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;font-family:ui-monospace,monospace">
+        </label>
+        <button class="btn">🦊 Déployer</button>
+      </form>
+      <div class="dir-help" style="margin:.5rem 0 0">
+        Cette empreinte dépend de l'emplacement d'installation de Firefox. Si les liens ne s'ouvrent pas
+        dans Firefox sur un poste neuf, relevez-la sur un poste où Firefox est bien par défaut :
+        <code>dism /online /Export-DefaultAppAssociations:C:\assoc.xml</code>, puis lisez la valeur
+        <code>ProgId</code> de la ligne <code>https</code>.
+      </div>
     </div>
   </div>
 </section>
