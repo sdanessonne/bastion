@@ -229,6 +229,96 @@ $REGLAGES = [
         'reg'    => [[FF_KEY, 'DisplayBookmarksToolbar', 'REG_SZ', 'always']],
     ],
 
+
+    // ── Deuxième série ───────────────────────────────────────────────────────
+    'suggestionsbarre' => [
+        'titre'  => 'Ne rien envoyer au moteur de recherche pendant la frappe',
+        'quoi'   => "Par défaut, Firefox transmet au moteur de recherche CE QUI EST TAPÉ dans la barre "
+                  . "d'adresse, lettre après lettre, pour proposer des suggestions — avant même d'avoir "
+                  . "validé, et même si l'on se ravise. Un nom, une plaque, une adresse commencés puis "
+                  . "effacés sont malgré tout partis.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'essentiel',
+        'reg'    => [[FF_KEY, 'SearchSuggestEnabled', 'REG_DWORD', 0]],
+    ],
+    'cookiespisteurs' => [
+        'titre'  => 'Rejeter les cookies de pistage',
+        'quoi'   => "Bloque les cookies déposés par les régies présentes sur les pages consultées, sans "
+                  . "toucher à ceux des sites eux-mêmes — les applications métier continuent de "
+                  . "fonctionner.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY . '\\Cookies', 'Behavior', 'REG_SZ', 'reject-tracker']],
+    ],
+    'remplissage' => [
+        'titre'  => 'Pas de remplissage automatique des cartes et adresses',
+        'quoi'   => "Firefox propose d'enregistrer coordonnées bancaires et adresses postales pour les "
+                  . "réinjecter ensuite. Sur un poste partagé, c'est l'agent suivant qui se les voit "
+                  . "proposer.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [
+            [FF_KEY, 'AutofillCreditCardEnabled', 'REG_DWORD', 0],
+            [FF_KEY, 'AutofillAddressEnabled',    'REG_DWORD', 0],
+        ],
+    ],
+    'prediction' => [
+        'titre'  => 'Désactiver les connexions anticipées',
+        'quoi'   => "Firefox résout et contacte à l'avance des adresses que l'agent n'a pas encore "
+                  . "demandées, en devinant la suite de sa frappe. Ces contacts figurent dans le journal "
+                  . "de navigation sans qu'aucune page n'ait été ouverte — ce qui brouille une "
+                  . "vérification a posteriori.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'NetworkPrediction', 'REG_DWORD', 0]],
+    ],
+    'agentdefaut' => [
+        'titre'  => "Supprimer le service de fond « navigateur par défaut »",
+        'quoi'   => "Une tâche planifiée tourne en dehors de Firefox pour vérifier s'il est le navigateur "
+                  . "par défaut, et transmet le résultat à Mozilla. Elle continue même navigateur fermé.",
+        'cat' => 'Filtrage & vie privée', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'DisableDefaultBrowserAgent', 'REG_DWORD', 1]],
+    ],
+
+    'aboutprofils' => [
+        'titre'  => 'Bloquer about:profiles et about:support',
+        'quoi'   => "La première permet de créer et de basculer entre des profils Firefox, la seconde "
+                  . "expose la configuration complète du poste et ses chemins de fichiers. Complément "
+                  . "naturel du blocage d'about:config.",
+        'cat' => 'Verrouillage du navigateur', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [
+            [FF_KEY, 'BlockAboutProfiles', 'REG_DWORD', 1],
+            [FF_KEY, 'BlockAboutSupport',  'REG_DWORD', 1],
+        ],
+    ],
+    'tls' => [
+        'titre'  => 'Refuser les vieilles versions de TLS',
+        'quoi'   => "Impose TLS 1.2 au minimum. Les versions antérieures sont cassées depuis des années ; "
+                  . "les refuser évite qu'un site mal configuré fasse retomber la connexion dessus sans "
+                  . "que personne ne s'en aperçoive.",
+        'cat' => 'Verrouillage du navigateur', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'SSLVersionMin', 'REG_SZ', 'tls1.2']],
+    ],
+    'fondecran' => [
+        'titre'  => "Interdire « définir comme fond d'écran »",
+        'quoi'   => "Firefox propose ce menu sur n'importe quelle image d'une page. Sur un parc où le fond "
+                  . "d'écran est imposé par stratégie, c'est le seul moyen simple de le contourner.",
+        'cat' => 'Verrouillage du navigateur', 'defaut' => true, 'poids' => 'recommandé',
+        'reg'    => [[FF_KEY, 'DisableSetDesktopBackground', 'REG_DWORD', 1]],
+    ],
+
+    'telechargement' => [
+        'titre'  => 'Demander où enregistrer chaque téléchargement',
+        'quoi'   => "Sans cela tout atterrit dans « Téléchargements » sans que l'agent y pense, et s'y "
+                  . "accumule sur un poste partagé. Demander le dossier ralentit un peu, mais rend le "
+                  . "geste conscient.",
+        'cat' => 'Présentation', 'defaut' => false, 'poids' => 'facultatif',
+        'reg'    => [[FF_KEY, 'PromptForDownloadLocation', 'REG_DWORD', 1]],
+    ],
+    'capture' => [
+        'titre'  => "Désactiver l'outil de capture d'écran de Firefox",
+        'quoi'   => "Firefox sait capturer une page entière en un clic droit. À décocher si vos agents s'en "
+                  . "servent pour leurs comptes rendus — l'outil de Windows reste disponible dans tous les cas.",
+        'cat' => 'Présentation', 'defaut' => false, 'poids' => 'facultatif',
+        'reg'    => [[FF_KEY, 'DisableFirefoxScreenshots', 'REG_DWORD', 1]],
+    ],
+
 ];
 
 // ── Réglages enregistrés ────────────────────────────────────────────────────
