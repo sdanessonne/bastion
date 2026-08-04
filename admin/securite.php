@@ -9,6 +9,8 @@
 require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/layout.php';
 require_once __DIR__ . '/inc/audit.php';
+// ad() : l'avertissement d'accès peut être poussé sur l'écran de connexion des postes.
+require_once __DIR__ . '/inc/adcache.php';
 
 $db = pf_db();
 
@@ -41,13 +43,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $ttl = mb_substr($ttl, 0, 80);
         $txt = mb_substr($txt, 0, 1500);
         $on  = empty($_POST['notice_off']) ? '1' : '0';
+        // Second destinataire du MÊME texte : l'écran de connexion Windows des postes.
+        // Il se saisissait auparavant une seconde fois dans Active Directory — deux
+        // rédactions d'un texte à portée juridique finissent toujours par diverger, et
+        // c'est celle qu'on ne relit plus qui reste affichée sur les postes.
+        $auxPostes = !empty($_POST['notice_postes']);
         try {
             $up = $db->prepare('INSERT INTO pf_settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)');
             $up->execute(['login_notice_titre', $ttl]);
             $up->execute(['login_notice', $txt]);
             $up->execute(['login_notice_on', $on]);
-            audit('securite.notice_save', ($on === '1' ? 'actif' : 'masqué') . ', ' . mb_strlen($txt) . ' signes');
-            $anoFlash = ["Avertissement enregistré. Il s'affiche dès le prochain chargement de la page de connexion.", 'ok'];
+            $up->execute(['login_notice_postes', $auxPostes ? '1' : '0']);
+
+            $surPostes = '';
+            if ($auxPostes) {
+                // Les options propres aux postes (informations masquées) sont conservées
+                // telles quelles : on ne redéploie QUE le texte. « - » demande à la
+                // stratégie de garder l'image de fond déjà en place.
+                $flags = '';
+                try { $flags = (string) ($db->query("SELECT v FROM pf_settings WHERE k='logon_flags'")->fetchColumn() ?: ''); }
+                catch (Throwable $e) {}
+                $capP = $ttl !== '' ? $ttl : ($txt !== '' ? 'Information' : '');
+                $sortie = ad('gpo', 'logon', '-', $capP, $txt, $flags);
+                if (strpos($sortie, 'deploye') !== false) {
+                    $up->execute(['logon_caption', $capP]);
+                    $up->execute(['logon_notice', $txt]);
+                    $surPostes = " Déployé aussi sur l'écran de connexion des postes — effet à leur prochain démarrage.";
+                } else {
+                    // L'échec est DIT : sans cela l'administrateur croirait les postes à jour.
+                    $surPostes = " En revanche, le déploiement sur les postes a échoué : " . trim($sortie);
+                }
+            }
+            audit('securite.notice_save', ($on === '1' ? 'actif' : 'masqué') . ', ' . mb_strlen($txt) . ' signes'
+                                        . ($auxPostes ? ', + postes' : ''));
+            $anoFlash = ["Avertissement enregistré. Il s'affiche dès le prochain chargement de la page de connexion." . $surPostes,
+                         ($surPostes !== '' && strpos($surPostes, 'échoué') !== false) ? 'err' : 'ok'];
         } catch (Throwable $e) {
             $anoFlash = ['Enregistrement impossible.', 'err'];
         }
@@ -269,15 +299,25 @@ pf_header('Santé & conformité sécurité', 'securite.php');
 
 <!-- Avertissement de la page de connexion -->
 <?php
-$nTtl = ''; $nTxt = ''; $nOn = true;
+$nTtl = ''; $nTxt = ''; $nOn = true; $nPostes = false; $lgTxtActuel = ''; $lgCapActuel = '';
 try {
     foreach ($db->query("SELECT k,v FROM pf_settings
-                         WHERE k IN ('login_notice_titre','login_notice','login_notice_on')") as $r) {
-        if ($r['k'] === 'login_notice_titre') { $nTtl = (string) $r['v']; }
-        if ($r['k'] === 'login_notice')       { $nTxt = (string) $r['v']; }
-        if ($r['k'] === 'login_notice_on')    { $nOn  = $r['v'] !== '0'; }
+                         WHERE k IN ('login_notice_titre','login_notice','login_notice_on',
+                                     'login_notice_postes','logon_notice','logon_caption')") as $r) {
+        if ($r['k'] === 'login_notice_titre')  { $nTtl = (string) $r['v']; }
+        if ($r['k'] === 'login_notice')        { $nTxt = (string) $r['v']; }
+        if ($r['k'] === 'login_notice_on')     { $nOn  = $r['v'] !== '0'; }
+        if ($r['k'] === 'login_notice_postes') { $nPostes = $r['v'] === '1'; }
+        // Ce qui est RÉELLEMENT déployé sur les postes aujourd'hui.
+        if ($r['k'] === 'logon_notice')        { $lgTxtActuel = (string) $r['v']; }
+        if ($r['k'] === 'logon_caption')       { $lgCapActuel = (string) $r['v']; }
     }
 } catch (Throwable $e) {}
+// Les postes portent-ils un texte DIFFÉRENT ? Le dire avant, pas après : cocher la case
+// remplacera ce qui y est affiché, et un texte à portée juridique ne se remplace pas à
+// l'aveugle.
+$nDiffere = ($lgTxtActuel !== '' || $lgCapActuel !== '')
+         && ($lgTxtActuel !== $nTxt || $lgCapActuel !== $nTtl);
 // Même défaut que login.php : ce qui s'affiche tant que rien n'a été saisi.
 $nDefTtl = 'Accès réservé';
 $nDefTxt = "L'accès à cette console est réservé aux personnels habilités, dans le cadre "
@@ -292,13 +332,17 @@ $nDefTxt = "L'accès à cette console est réservé aux personnels habilités, d
          . "suivants du code pénal.";
 ?>
 <section class="panel" id="avertissement">
-  <div class="panel-head"><h2>⚖️ Avertissement de la page de connexion</h2>
-    <?php if (!$nOn): ?><span class="badge off">masqué</span><?php endif; ?>
+  <div class="panel-head"><h2>⚖️ Avertissement d'accès</h2>
+    <?php if (!$nOn && !$nPostes): ?><span class="badge off">masqué partout</span>
+    <?php elseif ($nPostes): ?><span class="badge on">console + postes</span><?php endif; ?>
   </div>
   <div style="padding:1rem 1.2rem">
     <p class="muted small" style="margin-top:0">
-      Texte affiché <strong>avant toute authentification</strong>, sous le formulaire de connexion.
-      Il informe qui arrive sur cette page des règles d'accès et de la traçabilité des opérations.
+      Texte affiché <strong>avant toute authentification</strong> : sous le formulaire de connexion
+      de la console, et — si vous le demandez — sur l'écran de connexion Windows des postes.
+      Il informe qui arrive là des règles d'accès et de la traçabilité des opérations.
+      <br><strong>Une seule rédaction pour les deux</strong> : ce texte se saisissait auparavant
+      aussi dans Active Directory, et deux versions d'un même avertissement finissent par diverger.
     </p>
     <p class="muted small" style="margin:.5rem 0 1rem;padding:.6rem .8rem;border-radius:8px;
        background:rgba(251,191,36,.07);border-left:3px solid rgba(251,191,36,.7)">
@@ -320,9 +364,28 @@ $nDefTxt = "L'accès à cette console est réservé aux personnels habilités, d
         <p class="muted small" style="margin:-.4rem 0 0">
           Laisser vide rétablit le texte par défaut. Les retours à la ligne sont conservés.
         </p>
-        <label style="display:flex;gap:.5rem;align-items:center">
-          <input type="checkbox" name="notice_off" value="1"<?= $nOn ? '' : ' checked' ?>>
-          <span>Ne pas afficher d'avertissement sur la page de connexion</span></label>
+        <fieldset style="border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin:.3rem 0 0">
+          <legend class="muted small" style="padding:0 .4rem">Où ce texte est affiché</legend>
+          <label style="display:flex;gap:.5rem;align-items:flex-start;margin:0 0 .45rem">
+            <input type="checkbox" name="notice_off" value="1"<?= $nOn ? '' : ' checked' ?> style="margin-top:.2rem">
+            <span>Ne <strong>pas</strong> l'afficher sur la page de connexion de la <strong>console</strong>
+              <br><span class="muted small">Vu par les administrateurs, avant toute authentification.</span></span></label>
+          <label style="display:flex;gap:.5rem;align-items:flex-start">
+            <input type="checkbox" name="notice_postes" value="1"<?= $nPostes ? ' checked' : '' ?> style="margin-top:.2rem">
+            <span>L'afficher aussi sur l'<strong>écran de connexion des postes</strong>
+              <br><span class="muted small">Vu par tous les agents, avant l'ouverture de session Windows.
+              L'enregistrement redéploie la stratégie ; l'image de fond et les informations masquées
+              ne sont pas touchées — elles se règlent dans
+              <a href="/ad.php#logon">Active Directory</a>.</span></span></label>
+          <?php if ($nDiffere): ?>
+            <p class="muted small" style="margin:.6rem 0 0;padding:.5rem .7rem;border-radius:8px;
+               background:rgba(250,204,21,.1);border:1px solid rgba(250,204,21,.3);color:#fde68a">
+              Les postes affichent aujourd'hui un texte <strong>différent</strong> :
+              « <?= e(mb_substr(trim($lgCapActuel . ' — ' . $lgTxtActuel, ' —'), 0, 160)) ?><?= mb_strlen($lgCapActuel . $lgTxtActuel) > 160 ? '…' : '' ?> ».
+              Cocher la case ci-dessus le <strong>remplacera</strong> par le texte saisi ici.
+            </p>
+          <?php endif; ?>
+        </fieldset>
         <div><button class="btn">💾 Enregistrer</button>
           <a class="btn ghost" href="/login.php" target="_blank" rel="noopener">👁 Voir la page</a></div>
       </div>

@@ -1375,13 +1375,15 @@ try {
 } catch (Throwable $e) {}
 $lgHas = fn(string $l) => strpos($lgFlags, $l) !== false;
 ?>
-<section class="dir-sec panel">
+<section class="dir-sec panel" id="logon">
   <div class="panel-head"><h2>🔐 Écran de connexion des postes</h2>
     <?php if ($lgGpo): ?><span class="badge on">✓ GPO déployée</span><?php endif; ?>
   </div>
   <div style="padding:0 1.2rem 1.2rem">
     <p class="lead" style="margin:.7rem 0">Personnalise l'écran affiché <strong>avant l'ouverture de session</strong> :
-    image de fond, message d'accueil, et informations masquées. S'applique à tous les postes du domaine.</p>
+    image de fond et informations masquées. S'applique à tous les postes du domaine.
+    Le <strong>message</strong>, lui, est celui de l'avertissement d'accès — commun avec la page de
+    connexion de la console — et se rédige dans <a href="/securite.php#avertissement">Santé &amp; sécurité</a>.</p>
     <form method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="logon_deploy">
       <div style="display:grid;gap:.9rem;max-width:760px">
@@ -1389,16 +1391,25 @@ $lgHas = fn(string $l) => strpos($lgFlags, $l) !== false;
           <span><strong>Image de fond</strong> <span class="muted small">(JPG, PNG ou BMP — 1920×1080 conseillé ; laisser vide conserve l'image actuelle)</span></span>
           <input type="file" name="logo" accept="image/jpeg,image/png,image/bmp">
         </label>
-        <label style="display:grid;gap:.3rem">
-          <span><strong>Titre du message</strong> <span class="muted small">(vide = aucun message affiché)</span></span>
-          <input type="text" name="caption" maxlength="120" value="<?= e($lgCap) ?>"
-                 placeholder="Accès réservé aux personnels habilités">
-        </label>
-        <label style="display:grid;gap:.3rem">
-          <span><strong>Message</strong></span>
-          <textarea name="notice" rows="3" maxlength="900"
-            placeholder="Ce système est réservé aux agents habilités. Toute activité est enregistrée et contrôlée."><?= e($lgTxt) ?></textarea>
-        </label>
+        <?php
+        // Le message ne se saisit PLUS ici : c'est le même avertissement que celui de la
+        // page de connexion de la console, et deux rédactions d'un texte à portée juridique
+        // finissent par diverger — celle qu'on ne relit plus reste affichée sur les postes.
+        // Il se rédige désormais dans « Santé & sécurité » ; on n'en montre ici que l'état,
+        // et les champs cachés le transmettent au déploiement pour ne rien changer au reste.
+        ?>
+        <input type="hidden" name="caption" value="<?= e($lgCap) ?>">
+        <input type="hidden" name="notice" value="<?= e($lgTxt) ?>">
+        <div style="border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem;background:var(--bg)">
+          <div class="muted small" style="margin-bottom:.35rem">Message affiché — commun avec la page de connexion de la console</div>
+          <?php if ($lgCap === '' && $lgTxt === ''): ?>
+            <div class="muted small"><em>Aucun message n'est déployé sur les postes.</em></div>
+          <?php else: ?>
+            <?php if ($lgCap !== ''): ?><div style="font-weight:600"><?= e($lgCap) ?></div><?php endif; ?>
+            <?php if ($lgTxt !== ''): ?><div class="small" style="white-space:pre-line;margin-top:.2rem"><?= e($lgTxt) ?></div><?php endif; ?>
+          <?php endif; ?>
+          <div style="margin-top:.5rem"><a class="btn-sm" href="/securite.php#avertissement">✏️ Rédiger l'avertissement →</a></div>
+        </div>
         <fieldset style="border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem">
           <legend class="muted small" style="padding:0 .4rem">Informations à masquer</legend>
           <label style="display:block;margin:.2rem 0"><input type="checkbox" name="hide_user"<?= $lgHas('u') ? ' checked' : '' ?>>
