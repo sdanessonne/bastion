@@ -171,9 +171,111 @@ $sites = [];
 try { $sites = $db->query('SELECT * FROM pf_lien_sites ORDER BY adresse')->fetchAll(PDO::FETCH_ASSOC); }
 catch (Throwable $ex) {}
 
+/**
+ * Carte de la flotte — schéma en étoile, dessiné à partir de l'état réel.
+ *
+ * Une table de sites répond à « qui est déclaré ». La carte répond à « qui répond »,
+ * ce qui n'est pas la même question : un site déclaré dont le tunnel ne s'établit
+ * pas se lit d'un coup d'œil ici, alors qu'il se confond avec les autres dans une
+ * liste. Le trait est plein quand la liaison vit, pointillé sinon.
+ *
+ * SVG écrit à la main, sans bibliothèque : la console n'a aucune dépendance
+ * extérieure et ce n'est pas ici qu'on va en introduire une.
+ */
+function lien_carte(array $noeuds, string $centre, string $sousCentre, bool $actif): string
+{
+    $n = count($noeuds);
+    $L = 760; $H = $n > 6 ? 420 : 340;
+    $cx = $L / 2; $cy = $H / 2;
+    $rx = $L * 0.36; $ry = $H * 0.33;
+
+    $o  = '<svg viewBox="0 0 ' . $L . ' ' . $H . '" width="100%" height="auto" role="img"'
+        . ' aria-label="Carte des commissariats rattachés" style="max-height:' . $H . 'px">';
+    $o .= '<defs><style>'
+        . '.lk{stroke:#22c55e;stroke-width:2}'
+        . '.lk.ko{stroke:#f87171;stroke-dasharray:5 5}'
+        . '.lk.off{stroke:#475569;stroke-dasharray:3 6}'
+        . '.nd{fill:#152238;stroke:#28374f}'
+        . '.nd.ok{stroke:#22c55e}.nd.ko{stroke:#f87171}'
+        . '.hub{fill:#14324f;stroke:#38bdf8;stroke-width:2}'
+        . '.t{fill:#e6edf6;font:600 12px system-ui,sans-serif}'
+        . '.s{fill:#8ea2bd;font:11px system-ui,sans-serif}'
+        . '</style></defs>';
+
+    // Les liaisons d'abord : elles passent sous les pastilles.
+    $pos = [];
+    foreach (array_values($noeuds) as $i => $nd) {
+        // Départ à midi puis sens horaire : l'ordre à l'écran suit celui de la table.
+        $a = -M_PI / 2 + ($n > 0 ? 2 * M_PI * $i / $n : 0);
+        $x = $cx + $rx * cos($a); $y = $cy + $ry * sin($a);
+        $pos[$i] = [$x, $y];
+        $cls = !$actif ? 'off' : ($nd['ok'] ? '' : 'ko');
+        $o .= sprintf('<line class="lk %s" x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>', $cls, $cx, $cy, $x, $y);
+    }
+
+    // Le centre.
+    $o .= sprintf('<circle class="hub" cx="%.1f" cy="%.1f" r="42"/>', $cx, $cy);
+    $o .= sprintf('<text class="t" x="%.1f" y="%.1f" text-anchor="middle">%s</text>', $cx, $cy - 2, e($centre));
+    $o .= sprintf('<text class="s" x="%.1f" y="%.1f" text-anchor="middle">%s</text>', $cx, $cy + 14, e($sousCentre));
+
+    foreach (array_values($noeuds) as $i => $nd) {
+        [$x, $y] = $pos[$i];
+        $cls = !$actif ? '' : ($nd['ok'] ? 'ok' : 'ko');
+        $o .= sprintf('<circle class="nd %s" cx="%.1f" cy="%.1f" r="30" stroke-width="2"/>', $cls, $x, $y);
+        // Le libellé sort du cercle du côté où il y a de la place.
+        $dy = $y < $cy ? -40 : 46;
+        $o .= sprintf('<text class="t" x="%.1f" y="%.1f" text-anchor="middle">%s</text>',
+                      $x, $y + $dy, e(mb_substr($nd['nom'], 0, 22)));
+        $o .= sprintf('<text class="s" x="%.1f" y="%.1f" text-anchor="middle">%s</text>',
+                      $x, $y + $dy + 14, e($nd['sous']));
+        $o .= sprintf('<text class="s" x="%.1f" y="%.1f" text-anchor="middle" style="font-size:15px">%s</text>',
+                      $x, $y + 5, !$actif ? '·' : ($nd['ok'] ? '✓' : '✕'));
+    }
+    return $o . '</svg>';
+}
+
 pf_header('Liaison inter-sites', 'lien.php');
 if ($flash) { pf_flash($flash[0], $flash[1]); }
 ?>
+
+<?php
+// ── Carte ────────────────────────────────────────────────────────────────────
+$noeuds = [];
+if ($principal) {
+    foreach ($sites as $s) {
+        $hs = $vus[$s['cle']] ?? 0;
+        $noeuds[] = ['nom' => $s['nom'], 'sous' => $s['adresse'],
+                     'ok'  => $montee && $hs > 0 && (time() - $hs) < 300];
+    }
+    $centre = 'Principal'; $sousCentre = $dep !== '' ? $dep : '10.90.0.1';
+} elseif ($configuree) {
+    // Vu d'un site : le centre, c'est le principal ; le seul nœud, c'est nous.
+    $noeuds[] = ['nom' => 'Ce commissariat', 'sous' => (string) ($e['adresse'] ?? ''), 'ok' => $vivante];
+    $centre = 'Principal'; $sousCentre = (string) ($e['concentrateur'] ?? '');
+}
+if ($noeuds):
+    $joignables = count(array_filter($noeuds, fn($x) => $x['ok']));
+?>
+<section class="panel">
+  <div class="panel-head"><h2>🗺️ Carte de la flotte</h2>
+    <span class="badge<?= $joignables === count($noeuds) && $montee ? ' on' : ($montee ? ' off' : '') ?>">
+      <?= $joignables ?>/<?= count($noeuds) ?> en liaison</span>
+  </div>
+  <div style="padding:.6rem 1.2rem 1rem">
+    <?= lien_carte($noeuds, $centre, $sousCentre, $montee) ?>
+    <p class="muted small" style="margin:.2rem 0 0;display:flex;gap:1.2rem;flex-wrap:wrap">
+      <span><span style="color:#22c55e">━</span> liaison active (échange il y a moins de 5 min)</span>
+      <span><span style="color:#f87171">╌</span> déclaré, jamais vu</span>
+      <span><span style="color:#475569">╌</span> tunnel arrêté</span>
+    </p>
+    <p class="muted small" style="margin:.6rem 0 0">
+      La carte ne montre pas ce qui est <em>déclaré</em> mais ce qui <strong>répond</strong>.
+      Un trait rouge signifie que le site est enregistré ici et n'a encore rien échangé : point de contact
+      erroné de son côté, clé mal recopiée, ou sortie UDP bloquée par son opérateur.
+    </p>
+  </div>
+</section>
+<?php endif; ?>
 <section class="panel">
   <div class="panel-head"><h2>🔗 Rôle de ce serveur</h2>
     <?php if ($principal): ?><span class="badge on">principal<?= $dep !== '' ? ' — ' . e($dep) : '' ?></span>
@@ -391,14 +493,23 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
 <?php endif; ?>
 
 <section class="panel" style="margin-top:1.4rem">
-  <div class="panel-head"><h2>⚖️ Avant de généraliser</h2></div>
+  <div class="panel-head"><h2>🛡️ Ce que cette liaison protège, et ce qui reste à surveiller</h2></div>
   <div style="padding:1rem 1.2rem">
-    <p class="muted small" style="margin:0">
-      Relier des commissariats à travers l'Internet public engage la sécurité des systèmes d'information
-      de votre administration. Le <strong>réseau interministériel de l'État</strong> existe pour cet usage :
-      si vos sites y ont accès, ce tunnel devient inutile et le principal les joint directement.
-      À trancher avec votre hiérarchie avant d'installer d'autres départements.
+    <p class="muted small" style="margin:0 0 .7rem">
+      Ces serveurs équipent les postes <strong>hors réseau interministériel</strong> : la liaison passe donc
+      par les accès opérateur des commissariats. Le tunnel n'est pas un confort, c'est ce qui remplace ici
+      le réseau privé — tout ce qui circule entre les sites est chiffré de bout en bout, et chaque
+      commissariat possède sa propre clé.
     </p>
+    <ul class="muted small" style="margin:0;padding-left:1.2rem;line-height:1.8">
+      <li><strong>Un seul point exposé</strong> dans tout le département : le principal, sur son port UDP.
+      Aucun autre commissariat n'ouvre quoi que ce soit.</li>
+      <li><strong>Une clé par site</strong>, révocable seule : retirer un commissariat de la table suffit à
+      lui fermer la liaison, sans toucher aux autres.</li>
+      <li><strong>Rien d'autre ne transite</strong> : seul <code>10.90.0.0/24</code> emprunte le tunnel.
+      La navigation des agents reste sur l'accès local du commissariat.</li>
+      <li>La clé privée de chaque serveur <strong>ne quitte jamais sa machine</strong> et n'est affichée nulle part.</li>
+    </ul>
   </div>
 </section>
 

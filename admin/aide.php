@@ -199,6 +199,39 @@ $GROUPS = [
       <code>unattend-*.xml</code> sont protégés et n\'apparaissent pas dans la liste.</p>'],
   ],
 
+  'Flotte multi-sites' => [
+    ['lien', '🔗', 'Liaison inter-sites', '
+      <p>Chaque commissariat a <strong>son</strong> serveur Bastion, derrière la box de son opérateur.
+      La <em>Liaison inter-sites</em> les relie pour qu\'une console unique voie tout le département.</p>
+      <p><strong>Deux rôles, à déclarer sur chaque serveur :</strong></p>
+      <ul>
+        <li><strong>Rattaché</strong> — le cas courant. Le serveur compose un tunnel <em>sortant</em> vers son
+        principal. <strong>Rien à ouvrir sur sa box</strong>, et une adresse qui change n\'y fait rien.</li>
+        <li><strong>Principal du département</strong> — un seul serveur. Il écoute, porte l\'adresse
+        <code>10.90.0.1</code> et connaît la clé publique de chaque site. C\'est le <strong>seul</strong> de la
+        flotte à avoir besoin d\'un point de contact joignable de l\'extérieur : un port UDP redirigé sur sa box.</li>
+      </ul>
+      <p><strong>Mise en service, dans cet ordre :</strong></p>
+      <ol>
+        <li>Sur le principal : déclarer le rôle, créer la clé, choisir le port, démarrer. Relever sa clé publique.</li>
+        <li>Sur chaque commissariat : déclarer le rôle « rattaché », créer la clé, relever sa clé publique.</li>
+        <li>Retour sur le principal : rattacher chaque site (nom, clé publique, adresse <code>10.90.0.11</code>,
+        <code>.12</code>…). La <strong>carte</strong> en haut de page montre alors qui répond et qui ne répond pas.</li>
+        <li>Sur chaque commissariat : saisir la clé du principal et son point de contact, puis <em>Connecter</em>.</li>
+      </ol>
+      <p class="tip"><strong>Ce qui passe dans ce tunnel :</strong> uniquement le réseau de gestion
+      <code>10.90.0.0/24</code>. La navigation des agents ne l\'emprunte pas et la route par défaut n\'est pas
+      touchée — une panne du principal ne coupe pas Internet au commissariat.</p>
+      <p><strong>Un site « jamais vu » n\'est pas un site rattaché.</strong> La carte et la table le distinguent :
+      déclarer une clé ne prouve rien. Trois causes, par ordre de fréquence — point de contact erroné côté site,
+      clé mal recopiée, sortie UDP bloquée par son opérateur.</p>
+      <p><strong>Si l\'adresse publique du principal change</strong> (fréquent derrière une box), les tunnels
+      restent « montés » et plus rien ne passe. Une veille le détecte et <strong>prévient par courriel</strong>.
+      Si le point de contact est un <em>nom</em> et non une adresse, chaque site le re-résout tout seul.
+      Une adresse fixe demandée à l\'opérateur supprime le problème.</p>
+      <p class="tip">Ces serveurs équipent les postes <strong>hors réseau interministériel</strong> : la liaison emprunte donc les accès opérateur des commissariats, et le tunnel remplace ici le réseau privé. Un seul point est exposé dans le département — le principal, sur son port UDP — et chaque site possède sa propre clé, révocable seule.</p>'],
+  ],
+
   'Journalisation' => [
     ['navigation', '🌐', 'Navigation, journaux &amp; recherche', '
       <p>La <strong>Journalisation</strong> réunit ses outils en onglets. <strong>Navigation</strong> : historique des
