@@ -100,10 +100,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = ['Contrôleur de domaine inactif : impossible de déployer.', 'err'];
         } else {
             $apps = [];
-            foreach ($db->query('SELECT id,filename,args FROM pf_apps WHERE deployed=1') as $r) {
+            foreach ($db->query('SELECT id,name,filename,args FROM pf_apps WHERE deployed=1') as $r) {
                 $ext = strtolower(pathinfo((string) $r['filename'], PATHINFO_EXTENSION));
                 $apps[] = [
                     'marker' => 'app' . (int) $r['id'],
+                    // Le NOM voyage avec l'application : le poste doit pouvoir dire
+                    // « Installation de Firefox » à l'agent, pas « app6 ».
+                    'nom'    => (string) $r['name'],
                     'url'    => 'http://' . $gw . ':2080/apps/' . rawurlencode((string) $r['filename']),
                     'args'   => (string) $r['args'],
                     'msi'    => $ext === 'msi',
