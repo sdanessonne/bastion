@@ -611,6 +611,14 @@ $siteOptions = function (int $sel) use ($sites) {
 
       <div class="u-block">
         <div class="hd">👮 Identité du fonctionnaire</div>
+        <!-- Un même agent a souvent DEUX comptes : « 0110480 » pour lui, « admin-0110480 »
+             pour administrer la console. La fiche d'identité n'existe que sur le premier.
+             Ouvrir le second et le trouver vide donne l'impression que les informations ont
+             disparu — c'est le signalement qui a motivé cette note. On dit donc où elles sont
+             plutôt que de laisser des champs vides parler à notre place. -->
+        <p id="f_jumeau" hidden class="muted small"
+           style="margin:0 0 .6rem;padding:.5rem .7rem;border-radius:8px;
+                  background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3)"></p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
           <label class="field" style="margin:0">Nom<input type="text" name="nom" id="f_nom" placeholder="DUPONT"></label>
           <label class="field" style="margin:0">Prénom<input type="text" name="prenom" id="f_prenom" placeholder="Jean"></label>
@@ -682,6 +690,7 @@ $siteOptions = function (int $sel) use ($sites) {
   function set(id,v){document.getElementById(id).checked=!!v;}
   function open(){ov.classList.add('open');}
   function close(){ov.classList.remove('open');}
+  var PF_PROFILS = <?= json_encode(array_keys($profiles), JSON_UNESCAPED_UNICODE) ?>;
   function fill(d,isNew){
     title.textContent=isNew?'Nouvel utilisateur':'Modifier « '+d.u+' »';
     uName.value=d.u||''; uName.readOnly=!isNew;
@@ -694,6 +703,19 @@ $siteOptions = function (int $sel) use ($sites) {
     document.getElementById('f_nom').value=d.nom||'';
     document.getElementById('f_prenom').value=d.prenom||'';
     document.getElementById('f_service').value=d.service||'';
+    // Compte d'administration sans fiche : dire OU elle se trouve.
+    (function(){
+      var n=document.getElementById('f_jumeau');
+      if(!n) return;
+      n.hidden=true;
+      if(isNew || (d.nom||'') || (d.prenom||'') || (d.service||'')) return;
+      var u=d.u||'', jum = u.indexOf('admin-')===0 ? u.slice(6) : 'admin-'+u;
+      if(PF_PROFILS.indexOf(jum)===-1) return;
+      n.innerHTML='Ce compte n’a pas de fiche d’identité. Celle de l’agent est portée par '
+                + '<strong>'+jum.replace(/[<>&"]/g,'')+'</strong> — un même agent a souvent deux comptes : '
+                + 'le sien, et celui avec lequel il administre la console.';
+      n.hidden=false;
+    })();
     // Photo : aperçu de l'existante en édition ; sinon pastille neutre. Champ fichier remis à zéro.
     var pimg=document.getElementById('f_photo_img'), pph=document.getElementById('f_photo_ph'), prml=document.getElementById('f_photo_rm_l');
     document.getElementById('f_photo').value=''; document.getElementById('f_photo_rm').checked=false;
