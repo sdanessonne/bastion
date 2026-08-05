@@ -270,6 +270,46 @@ EOF2
     fi
     ;;
 
+reendpoint)
+    # Reprise après un changement d'adresse du principal.
+    #
+    # WireGuard résout le nom du point de contact UNE SEULE FOIS, au montage. Si le
+    # principal change d'adresse — cas courant derrière une box —, le site continue
+    # d'écrire à l'ancienne : l'interface reste montée, tout paraît normal, et plus
+    # rien ne passe. C'est exactement la panne qui ne se signale pas.
+    #
+    # On ne touche RIEN tant que le tunnel fonctionne : ré-appliquer un point de
+    # contact sain n'apporterait que du risque.
+    [ "$(role_actuel)" = "site" ] || { echo "SANS OBJET: ce serveur est principal"; exit 0; }
+    ip -o addr show dev "$IF" >/dev/null 2>&1 || { echo "SANS OBJET: liaison non montee"; exit 0; }
+
+    pt=$(sed -n 's/^Endpoint *= *//p' "$CONF" 2>/dev/null | head -1)
+    pk=$(sed -n 's/^PublicKey *= *//p' "$CONF" 2>/dev/null | head -1)
+    [ -n "$pt" ] && [ -n "$pk" ] || { echo "SANS OBJET: configuration incomplete"; exit 0; }
+
+    hs=$(wg show "$IF" latest-handshakes 2>/dev/null | awk '{print $2}' | head -1)
+    maintenant=$(date +%s)
+    # 180 s : trois fois le keepalive. En deçà, un simple retard réseau suffirait à
+    # déclencher une reprise inutile.
+    if [ "${hs:-0}" -gt 0 ] 2>/dev/null && [ $((maintenant - hs)) -lt 180 ]; then
+        echo "SANS OBJET: tunnel actif (dernier echange il y a $((maintenant - hs)) s)"
+        exit 0
+    fi
+
+    hote=${pt%:*}
+    # Un point de contact donné en ADRESSE ne peut pas être re-résolu : il n'y a
+    # rien à redemander. C'est précisément le cas où l'alerte par courriel du
+    # principal est la seule issue, et il faut le dire plutôt que de faire semblant.
+    if printf '%s' "$hote" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+        echo "IMPOSSIBLE: le point de contact est une adresse ($hote), pas un nom — rien a re-resoudre"
+        exit 11
+    fi
+
+    wg set "$IF" peer "$pk" endpoint "$pt" 2>/dev/null \
+        || { echo "ECHEC: re-resolution de $hote impossible"; exit 12; }
+    echo "OK: point de contact re-applique ($pt)"
+    ;;
+
 state)
     configuree=false; [ -s "$CONF" ] && configuree=true
     montee=false;     ip -o addr show dev "$IF" >/dev/null 2>&1 && montee=true
