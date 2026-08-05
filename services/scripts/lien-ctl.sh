@@ -333,10 +333,19 @@ state)
     # sont réellement joignables.
     pairs=""
     if $montee && [ "$role" = "principal" ]; then
+        # Le TRANSFERT par site, en plus de la poignée de main : c'est lui qui permet
+        # à la console de calculer un débit réel entre deux relevés. Sans ces compteurs,
+        # une carte « en direct » ne pourrait qu'animer du vide.
+        declare -A RX TX
+        while read -r pk r t; do
+            [ -n "$pk" ] && { RX["$pk"]=${r:-0}; TX["$pk"]=${t:-0}; }
+        done <<EOF2
+$(wg show "$IF" transfer 2>/dev/null)
+EOF2
         sep=""
         while read -r pk h; do
             [ -n "$pk" ] || continue
-            pairs="${pairs}${sep}{\"cle\":\"$(json_esc "$pk")\",\"poignee\":${h:-0}}"
+            pairs="${pairs}${sep}{\"cle\":\"$(json_esc "$pk")\",\"poignee\":${h:-0},\"recu\":${RX[$pk]:-0},\"emis\":${TX[$pk]:-0}}"
             sep=","
         done <<EOF3
 $(wg show "$IF" latest-handshakes 2>/dev/null)

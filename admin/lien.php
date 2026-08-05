@@ -68,6 +68,26 @@ $reglage = function (string $k, ?string $v = null) use ($db) {
     return $v;
 };
 
+// ── Relevé en direct, pour la carte ──────────────────────────────────────────
+// Rendu AVANT toute sortie HTML : la carte l'interroge toutes les 3 secondes et
+// n'a besoin que de l'état, pas de la page entière. Le calcul du débit se fait
+// côté navigateur, à partir de deux relevés successifs — le serveur ne fournit
+// que des compteurs, ce qui évite d'y garder un état.
+if (($_GET['flux'] ?? '') === '1') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    $st = json_decode(lien('state'), true) ?: [];
+    $noms = [];
+    try {
+        foreach ($db->query('SELECT cle,nom,adresse FROM pf_lien_sites') as $r) {
+            $noms[(string) $r['cle']] = ['nom' => (string) $r['nom'], 'adresse' => (string) $r['adresse']];
+        }
+    } catch (Throwable $ex) {}
+    echo json_encode(['t' => time(), 'etat' => $st, 'sites' => $noms],
+                     JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 $flash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
@@ -195,6 +215,9 @@ function lien_carte(array $noeuds, string $centre, string $sousCentre, bool $act
         . '.lk{stroke:#22c55e;stroke-width:2}'
         . '.lk.ko{stroke:#f87171;stroke-dasharray:5 5}'
         . '.lk.off{stroke:#475569;stroke-dasharray:3 6}'
+        . '.fx{stroke:#7dd3fc;stroke-width:3;stroke-dasharray:2 14;stroke-linecap:round}'
+        . '@keyframes fl{to{stroke-dashoffset:-160}}'
+        . '@media(prefers-reduced-motion:reduce){.fx{animation:none!important}}'
         . '.nd{fill:#152238;stroke:#28374f}'
         . '.nd.ok{stroke:#22c55e}.nd.ko{stroke:#f87171}'
         . '.hub{fill:#14324f;stroke:#38bdf8;stroke-width:2}'
@@ -203,6 +226,9 @@ function lien_carte(array $noeuds, string $centre, string $sousCentre, bool $act
         . '</style></defs>';
 
     // Les liaisons d'abord : elles passent sous les pastilles.
+    // Chaque élément porte la clé du site : la mise à jour en direct les retrouve
+    // sans redessiner la carte, ce qui éviterait de faire clignoter tout l'écran
+    // toutes les trois secondes.
     $pos = [];
     foreach (array_values($noeuds) as $i => $nd) {
         // Départ à midi puis sens horaire : l'ordre à l'écran suit celui de la table.
@@ -210,7 +236,15 @@ function lien_carte(array $noeuds, string $centre, string $sousCentre, bool $act
         $x = $cx + $rx * cos($a); $y = $cy + $ry * sin($a);
         $pos[$i] = [$x, $y];
         $cls = !$actif ? 'off' : ($nd['ok'] ? '' : 'ko');
-        $o .= sprintf('<line class="lk %s" x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>', $cls, $cx, $cy, $x, $y);
+        $k = e((string) ($nd['cle'] ?? $i));
+        // Le trait porteur, puis un SECOND trait en pointillés qui, lui, se déplace :
+        // c'est ce dernier qui matérialise le flux. Il reste invisible tant qu'aucune
+        // donnée ne circule — une animation sans trafic serait une décoration, et
+        // ferait croire à une liaison vivante là où il n'y a rien.
+        $o .= sprintf('<line class="lk %s" data-k="%s" x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>',
+                      $cls, $k, $cx, $cy, $x, $y);
+        $o .= sprintf('<line class="fx" data-fx="%s" x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" style="opacity:0"/>',
+                      $k, $x, $y, $cx, $cy);
     }
 
     // Le centre.
@@ -221,15 +255,21 @@ function lien_carte(array $noeuds, string $centre, string $sousCentre, bool $act
     foreach (array_values($noeuds) as $i => $nd) {
         [$x, $y] = $pos[$i];
         $cls = !$actif ? '' : ($nd['ok'] ? 'ok' : 'ko');
-        $o .= sprintf('<circle class="nd %s" cx="%.1f" cy="%.1f" r="30" stroke-width="2"/>', $cls, $x, $y);
+        $k2 = e((string) ($nd['cle'] ?? $i));
+        $o .= sprintf('<circle class="nd %s" data-nd="%s" cx="%.1f" cy="%.1f" r="30" stroke-width="2"/>',
+                      $cls, $k2, $x, $y);
         // Le libellé sort du cercle du côté où il y a de la place.
         $dy = $y < $cy ? -40 : 46;
         $o .= sprintf('<text class="t" x="%.1f" y="%.1f" text-anchor="middle">%s</text>',
                       $x, $y + $dy, e(mb_substr($nd['nom'], 0, 22)));
         $o .= sprintf('<text class="s" x="%.1f" y="%.1f" text-anchor="middle">%s</text>',
                       $x, $y + $dy + 14, e($nd['sous']));
-        $o .= sprintf('<text class="s" x="%.1f" y="%.1f" text-anchor="middle" style="font-size:15px">%s</text>',
-                      $x, $y + 5, !$actif ? '·' : ($nd['ok'] ? '✓' : '✕'));
+        $o .= sprintf('<text class="s" data-et="%s" x="%.1f" y="%.1f" text-anchor="middle" style="font-size:15px">%s</text>',
+                      $k2, $x, $y + 5, !$actif ? '·' : ($nd['ok'] ? '✓' : '✕'));
+        // Le débit mesuré, rempli en direct. Vide au premier affichage : il faut deux
+        // relevés pour qu'un débit existe, et afficher « 0 ko/s » avant serait faux.
+        $o .= sprintf('<text class="s" data-db="%s" x="%.1f" y="%.1f" text-anchor="middle" style="font-size:10px"></text>',
+                      $k2, $x, $y + $dy + 27);
     }
     return $o . '</svg>';
 }
@@ -244,13 +284,14 @@ $noeuds = [];
 if ($principal) {
     foreach ($sites as $s) {
         $hs = $vus[$s['cle']] ?? 0;
-        $noeuds[] = ['nom' => $s['nom'], 'sous' => $s['adresse'],
+        $noeuds[] = ['nom' => $s['nom'], 'sous' => $s['adresse'], 'cle' => $s['cle'],
                      'ok'  => $montee && $hs > 0 && (time() - $hs) < 300];
     }
     $centre = 'Principal'; $sousCentre = $dep !== '' ? $dep : '10.90.0.1';
 } elseif ($configuree) {
     // Vu d'un site : le centre, c'est le principal ; le seul nœud, c'est nous.
-    $noeuds[] = ['nom' => 'Ce commissariat', 'sous' => (string) ($e['adresse'] ?? ''), 'ok' => $vivante];
+    $noeuds[] = ['nom' => 'Ce commissariat', 'sous' => (string) ($e['adresse'] ?? ''),
+                 'cle' => 'moi', 'ok' => $vivante];
     $centre = 'Principal'; $sousCentre = (string) ($e['concentrateur'] ?? '');
 }
 if ($noeuds):
@@ -262,7 +303,7 @@ if ($noeuds):
       <?= $joignables ?>/<?= count($noeuds) ?> en liaison</span>
   </div>
   <div style="padding:.6rem 1.2rem 1rem">
-    <?= lien_carte($noeuds, $centre, $sousCentre, $montee) ?>
+    <div id="carteFlux"><?= lien_carte($noeuds, $centre, $sousCentre, $montee) ?></div>
     <p class="muted small" style="margin:.2rem 0 0;display:flex;gap:1.2rem;flex-wrap:wrap">
       <span><span style="color:#22c55e">━</span> liaison active (échange il y a moins de 5 min)</span>
       <span><span style="color:#f87171">╌</span> déclaré, jamais vu</span>
@@ -272,9 +313,101 @@ if ($noeuds):
       La carte ne montre pas ce qui est <em>déclaré</em> mais ce qui <strong>répond</strong>.
       Un trait rouge signifie que le site est enregistré ici et n'a encore rien échangé : point de contact
       erroné de son côté, clé mal recopiée, ou sortie UDP bloquée par son opérateur.
+      <span id="fluxMaj" class="muted"></span>
     </p>
   </div>
 </section>
+
+<script>
+/* Carte en direct.
+ *
+ * Le serveur ne rend que des COMPTEURS ; le débit se calcule ici, entre deux
+ * relevés. Cela évite de garder un état côté serveur, et surtout cela rend la
+ * mesure honnête : ce qui bouge à l'écran est ce qui a réellement circulé
+ * pendant l'intervalle, pas une animation décorative.
+ *
+ * Rien ne bouge tant qu'aucune donnée ne passe : un trait qui défile sur une
+ * liaison inactive laisserait croire à un tunnel vivant.
+ */
+(function () {
+  var svg = document.querySelector('#carteFlux svg');
+  if (!svg) { return; }
+  var maj = document.getElementById('fluxMaj');
+  var prec = null;          // relevé précédent : {t, par: {clé: {recu, emis}}}
+  var enCours = false;
+
+  function humain(o) {
+    if (o < 1024) { return Math.round(o) + ' o/s'; }
+    if (o < 1048576) { return (o / 1024).toFixed(o < 10240 ? 1 : 0) + ' ko/s'; }
+    return (o / 1048576).toFixed(1) + ' Mo/s';
+  }
+
+  function appliquer(d) {
+    var par = {}, sites = d.sites || {}, etat = d.etat || {};
+    (etat.pairs || []).forEach(function (p) { par[p.cle] = p; });
+    var montee = !!etat.montee, now = d.t;
+
+    Object.keys(sites).concat(Object.keys(par)).forEach(function (k) {
+      var lk = svg.querySelector('[data-k="' + CSS.escape(k) + '"]');
+      var fx = svg.querySelector('[data-fx="' + CSS.escape(k) + '"]');
+      var nd = svg.querySelector('[data-nd="' + CSS.escape(k) + '"]');
+      var et = svg.querySelector('[data-et="' + CSS.escape(k) + '"]');
+      var db = svg.querySelector('[data-db="' + CSS.escape(k) + '"]');
+      if (!lk) { return; }
+
+      var p = par[k] || {};
+      var hs = p.poignee || 0;
+      var vivant = montee && hs > 0 && (now - hs) < 300;
+
+      lk.setAttribute('class', 'lk ' + (!montee ? 'off' : (vivant ? '' : 'ko')));
+      if (nd) { nd.setAttribute('class', 'nd ' + (!montee ? '' : (vivant ? 'ok' : 'ko'))); }
+      if (et) { et.textContent = !montee ? '·' : (vivant ? '✓' : '✕'); }
+
+      // Débit : impossible au premier relevé, et on ne l'invente pas.
+      var deb = null;
+      if (prec && prec.par[k] && prec.t < now) {
+        var dt = now - prec.t;
+        var d1 = Math.max(0, (p.recu || 0) - (prec.par[k].recu || 0));
+        var d2 = Math.max(0, (p.emis || 0) - (prec.par[k].emis || 0));
+        deb = (d1 + d2) / dt;
+      }
+      if (db) { db.textContent = (deb === null || !vivant) ? '' : humain(deb); }
+
+      if (fx) {
+        if (!vivant || !deb || deb < 32) {
+          fx.style.opacity = '0';
+          fx.style.animation = 'none';
+        } else {
+          // La durée du défilement suit le débit : plus il passe de données, plus
+          // les pointillés vont vite. Bornée pour rester lisible à l'œil.
+          var s = Math.max(0.25, Math.min(3, 40000 / (deb + 8000)));
+          fx.style.opacity = '.9';
+          fx.style.animation = 'fl ' + s.toFixed(2) + 's linear infinite';
+        }
+      }
+    });
+
+    prec = { t: now, par: par };
+    if (maj) {
+      maj.textContent = ' — relevé ' + new Date().toLocaleTimeString('fr-FR');
+    }
+  }
+
+  function relever() {
+    if (enCours || document.hidden) { return; }   // onglet caché : on n'interroge pas pour rien
+    enCours = true;
+    fetch('lien.php?flux=1', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) { appliquer(d); } })
+      .catch(function () { if (maj) { maj.textContent = ' — relevé indisponible'; } })
+      .finally(function () { enCours = false; });
+  }
+
+  relever();
+  setInterval(relever, 3000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { relever(); } });
+})();
+</script>
 <?php endif; ?>
 <section class="panel">
   <div class="panel-head"><h2>🔗 Rôle de ce serveur</h2>
