@@ -218,6 +218,41 @@ if (Test-Path $racine) {
         $purges++
     }
 }
+
+# ── ET SURTOUT : REJOUER A L'OUVERTURE DE SESSION ────────────────────────────
+# Ce script ne tourne qu'au DEMARRAGE, et il decouvre les agents par leurs PROFILS
+# deja crees. Un agent qui se connecte pour la premiere fois n'a pas encore de
+# profil quand le script passe : sa photo n'apparaissait qu'au redemarrage suivant.
+# Meme chose pour une photo ajoutee dans la console apres coup.
+#
+# On enregistre donc une tache qui rejoue le meme script A CHAQUE OUVERTURE DE
+# SESSION, en SYSTEM — la cle de registre visee est sous HKLM, un agent ordinaire
+# ne peut pas l'ecrire lui-meme.
+#
+# Le script est recopie EN LOCAL : la tache ne doit pas dependre de la
+# disponibilite du SYSVOL au moment ou elle se declenche.
+try {
+    $local = Join-Path $dir 'photo-compte.ps1'
+    Copy-Item -LiteralPath $PSCommandPath -Destination $local -Force -ErrorAction Stop
+
+    $act = New-ScheduledTaskAction -Execute 'powershell.exe' `
+           -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $local + '"')
+    $trg = New-ScheduledTaskTrigger -AtLogOn
+    # Trente secondes de retard : a l'instant precis de l'ouverture, le profil est
+    # encore en cours de creation et n'apparait pas dans ProfileList.
+    $trg.Delay = 'PT30S'
+    $prc = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $set = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
+           -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+    Register-ScheduledTask -TaskName 'Bastion - photo de compte' -Action $act -Trigger $trg `
+           -Principal $prc -Settings $set -Force -ErrorAction Stop | Out-Null
+    Note 'Tache d ouverture de session enregistree.'
+} catch {
+    # Dit, pas avale : sans cette tache la photo n'arrive qu'au redemarrage suivant,
+    # et personne ne saurait pourquoi.
+    Note ('ECHEC enregistrement de la tache d ouverture de session : ' + $_.Exception.Message)
+}
+
 Note ("Fin : {0} profil(s) examine(s), {1} photo(s) mise(s) a jour, {2} purgee(s)." -f $comptes.Count, $n, $purges)
 """
 
