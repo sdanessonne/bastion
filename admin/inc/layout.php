@@ -45,6 +45,7 @@ function pf_nav_groups(): array {
             'groups.php'     => ['Groupes & quotas', '⚙', 'debit horaires limitation tunnel vpn'],
             'visiteurs.php'  => ['Accès visiteur', '🎟️', 'invite temporaire ticket'],
             'vpn.php'        => ['VPN', '🔒', 'tunnel wireguard proton ip sortie osint anonymat source ouverte'],
+            'lien.php'       => ['Liaison inter-sites', '🔗', 'flotte central commissariats tunnel wireguard concentrateur multi site'],
         ],
         'Protection' => [
             'filter.php'     => ['Filtrage', '⛔', 'blocage sites categories liste noire dns publicite'],

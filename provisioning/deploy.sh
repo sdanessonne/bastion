@@ -506,7 +506,7 @@ install -d -m 0750 -o www-data -g root /run/bastion
 printf 'd /run/bastion 0750 www-data root -
 ' > /usr/lib/tmpfiles.d/bastion.conf
 cat > /etc/sudoers.d/proxyfibre-vpn <<'SUD'
-www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-admx list, /usr/local/sbin/proxyfibre-maj state, /usr/local/sbin/proxyfibre-mail state, /usr/local/sbin/proxyfibre-mail test *, /usr/local/sbin/proxyfibre-mail config, /usr/local/sbin/proxyfibre-wanip state, /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-admx list, /usr/local/sbin/proxyfibre-maj state, /usr/local/sbin/proxyfibre-mail state, /usr/local/sbin/proxyfibre-mail test *, /usr/local/sbin/proxyfibre-mail config, /usr/local/sbin/proxyfibre-wanip state, /usr/local/sbin/proxyfibre-vpn state, /usr/local/sbin/proxyfibre-vpn check, /usr/local/sbin/proxyfibre-vpn clients, /usr/local/sbin/proxyfibre-vpn up, /usr/local/sbin/proxyfibre-vpn down, /usr/local/sbin/proxyfibre-vpn import /run/bastion/vpn-import.conf, /usr/local/sbin/proxyfibre-lien state, /usr/local/sbin/proxyfibre-lien init, /usr/local/sbin/proxyfibre-lien config, /usr/local/sbin/proxyfibre-lien up, /usr/local/sbin/proxyfibre-lien down, /usr/local/sbin/proxyfibre-lien check
 SUD
 chmod 440 /etc/sudoers.d/proxyfibre-vpn
 
@@ -762,6 +762,7 @@ install -m755 "${REPO_DIR}/services/scripts/gpo-kms.py"    /usr/local/sbin/proxy
 install -m755 "${REPO_DIR}/services/scripts/gpo-drives.py" /usr/local/sbin/proxyfibre-gpo-drives
 install -m755 "${REPO_DIR}/services/scripts/gpo-numlock.py" /usr/local/sbin/proxyfibre-gpo-numlock
 install -m755 "${REPO_DIR}/services/scripts/gpo-defaultapps.py" /usr/local/sbin/proxyfibre-gpo-defaultapps
+install -m755 "${REPO_DIR}/services/scripts/lien-ctl.sh" /usr/local/sbin/proxyfibre-lien
 # Store d'applications : dossier des installeurs (servi sur 2080) + limites d'upload PHP.
 install -d -o www-data -g www-data -m 755 /var/www/html/apps
 PHPCONF="$(ls -d /etc/php/*/apache2/conf.d 2>/dev/null | head -1)"
