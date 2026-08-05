@@ -21,6 +21,7 @@ $db->exec('CREATE TABLE IF NOT EXISTS pf_apps (id INT AUTO_INCREMENT PRIMARY KEY
 
 // ── Catalogue Bastion : applications courantes récupérables depuis leur source officielle ──
 $CATALOG = require __DIR__ . '/inc/app-catalog.php';
+require_once __DIR__ . '/inc/app-source.php';
 
 $flash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -33,20 +34,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = ['Application de catalogue inconnue.', 'err'];
         } else {
             $c = $CATALOG[$key];
-            $ext = $c['msi'] ? 'msi' : 'exe';
-            $fname = date('YmdHis') . '-' . $key . '.' . $ext;
-            $dest = APPS_DIR . '/' . $fname;
             @set_time_limit(600);
-            $rc = 1; $o = [];
-            exec('curl -fsSL --max-time 400 -o ' . escapeshellarg($dest) . ' ' . escapeshellarg($c['url']) . ' 2>&1', $o, $rc);
-            if ($rc === 0 && is_file($dest) && filesize($dest) > 10000) {
-                @chmod($dest, 0644);
-                $db->prepare('INSERT INTO pf_apps (name,description,filename,args,icon) VALUES (?,?,?,?,?)')
-                   ->execute([$c['name'], $c['desc'], $fname, $c['args'], $c['icon']]);
-                $flash = ['« ' . $c['name'] . ' » récupéré (' . round(filesize($dest) / 1048576, 1) . ' Mo) et ajouté au store. Activez-le puis « Appliquer sur les postes ».', 'ok'];
+
+            // 1. Résoudre la source. Une URL figée sur un numéro de version finit toujours
+            //    par disparaître du site de l'éditeur ; on demande la version du jour.
+            $src = app_src_resoudre($c);
+            if (isset($src['err'])) {
+                $flash = ['« ' . $c['name'] . ' » : ' . $src['err']
+                        . ' Vous pouvez ajouter l\'installeur manuellement.', 'err'];
             } else {
-                @unlink($dest);
-                $flash = ['Échec du téléchargement de « ' . $c['name'] . ' » (source indisponible ?). Vous pouvez ajouter l\'installeur manuellement.', 'err'];
+                $ext = $c['msi'] ? 'msi' : 'exe';
+                $fname = date('YmdHis') . '-' . $key . '.' . $ext;
+                $dest = APPS_DIR . '/' . $fname;
+                // Le code HTTP est demandé explicitement : sans lui, un échec ne dit pas
+                // s'il vient du réseau, d'un 404 ou d'une redirection — et le message se
+                // réduisait à « source indisponible ? », une supposition présentée comme
+                // un diagnostic.
+                $r = app_src_telecharger($src['url'], $dest);
+                $rc = $r['rc'];
+                $detail = $r['sortie'];
+                $taille = is_file($dest) ? (int) filesize($dest) : 0;
+
+                // 2. Vérifier ce qui a été reçu. « curl a réussi » ne veut pas dire
+                //    « c'est un installeur » : GitHub rend une page HTML de 210 Ko avec
+                //    un code 200, qui passait tous les contrôles de taille.
+                $mauvais = $rc !== 0 ? 'téléchargement interrompu (' . ($detail ?: 'code ' . $rc) . ')'
+                         : ($taille < 10000 ? 'fichier reçu trop petit (' . $taille . ' octets) pour être un installeur'
+                         : app_src_verifier($dest, (bool) $c['msi']));
+
+                if ($mauvais === '') {
+                    @chmod($dest, 0644);
+                    $db->prepare('INSERT INTO pf_apps (name,description,filename,args,icon) VALUES (?,?,?,?,?)')
+                       ->execute([$c['name'], $c['desc'], $fname, $c['args'], $c['icon']]);
+                    $v = ($src['version'] ?? '') !== '' ? ' version ' . $src['version'] . ',' : '';
+                    $flash = ['« ' . $c['name'] . ' »' . $v . ' récupéré (' . round($taille / 1048576, 1)
+                            . ' Mo) et ajouté au store. Activez-le puis « Appliquer sur les postes ».'
+                            . (($src['avert'] ?? '') !== '' ? ' ⚠ ' . $src['avert'] : ''), 'ok'];
+                } else {
+                    @unlink($dest);
+                    $flash = ['« ' . $c['name'] . ' » n\'a pas été ajouté : ' . $mauvais
+                            . '. Source : ' . $src['url']
+                            . ' — vous pouvez ajouter l\'installeur manuellement.', 'err'];
+                }
             }
         }
     }
@@ -243,6 +272,10 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
           <div class="app-meta"><?= $c['msi'] ? 'MSI' : 'EXE' ?> · silencieux <code><?= e($c['args']) ?: '—' ?></code></div>
           <div class="app-foot" style="justify-content:flex-end">
             <?php if ($have): ?><span class="badge on">✓ Dans le store</span>
+            <?php elseif (!empty($c['manuel'])): ?>
+              <?php /* Pas de bouton : cette source ne publie pas d'installeur récupérable.
+                        Mieux vaut le dire ici qu'offrir un bouton qui échouera. */ ?>
+              <span class="badge" title="<?= e((string) $c['manuel']) ?>">📥 À déposer à la main</span>
             <?php else: ?>
             <form method="post" onsubmit="this.querySelector('button').textContent='Téléchargement…';this.querySelector('button').disabled=true">
               <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="fetch"><input type="hidden" name="key" value="<?= e($k) ?>">
@@ -255,9 +288,11 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
     </div>
   <?php endforeach; ?>
   <p class="muted small" style="padding:1rem 1.2rem 1.2rem">💡 D'autres logiciels ? Ajoutez leur installeur manuellement
-  ci-dessous. <span style="opacity:.8">Note : les versions du catalogue évoluent ; les liens pointent vers la dernière
-  version connue de l'éditeur. Un lien « GitHub Releases » renvoie la page des versions : récupérez alors l'installeur
-  et ajoutez-le manuellement.</span></p>
+  ci-dessous. <span style="opacity:.8">Le catalogue ne fige plus les numéros de version : la version du jour est
+  demandée à l'éditeur au moment du clic (publications GitHub, flux SourceForge, index de l'éditeur). Le fichier reçu est
+  contrôlé avant d'être ajouté — une page web renvoyée à la place d'un installeur est refusée au lieu d'être déployée.
+  Les entrées marquées « à déposer à la main » ont une source qui ne publie pas de fichier récupérable ; l'installeur
+  doit être téléchargé depuis le site de l'éditeur puis ajouté ci-dessous.</span></p>
 </section>
 <script>
 (function(){
