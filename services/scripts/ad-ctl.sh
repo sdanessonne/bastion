@@ -230,6 +230,29 @@ PY
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid applications deployees"
         ;;
+      distance)
+        # Prise de main à distance : GPO de démarrage qui pose et configure le client
+        # sur les postes. $a = IP de la passerelle, $b = jeton d'API.
+        # La clé publique du relais n'est PAS passée en argument : on la lit sur la
+        # passerelle. Elle change si le relais est réinstallé, et une clé recopiée à la
+        # main dans une stratégie deviendrait fausse sans que rien ne le signale.
+        cle=$(sh /usr/local/sbin/proxyfibre-distance key 2>/dev/null || true)
+        [ -n "$cle" ] || { echo "ERROR: relais non installe (aucune cle publique)" >&2; exit 1; }
+        name="Bastion — Prise de main à distance"
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
+        python3 /usr/local/sbin/proxyfibre-gpo-distance "$guid" "$a" "$b" "$cle" >/dev/null 2>&1 \
+          || { echo "ERROR: generation du script echouee ($guid)" >&2; exit 1; }
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
+          || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
+        echo "$guid prise de main deployee"
+        ;;
       activation)
         # Activation KMS automatique : GPO script démarrage + enregistrements DNS
         # d'auto-découverte du serveur KMS. $a = IP de la passerelle (serveur KMS).

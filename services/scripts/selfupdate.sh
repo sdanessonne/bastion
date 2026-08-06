@@ -318,6 +318,8 @@ case "${1:-}" in
 755 lien                 services/scripts/lien-ctl.sh
 755 lien-veille          services/scripts/lien-veille.php
 755 gpo-photo            services/scripts/gpo-photo.py
+755 distance             services/scripts/setup-distance.sh
+755 gpo-distance         services/scripts/gpo-distance.py
 755 voucher-gc           services/scripts/voucher-gc.php
 755 time                 services/scripts/time-ctl.sh
 755 share-quota          services/scripts/share-quota.sh

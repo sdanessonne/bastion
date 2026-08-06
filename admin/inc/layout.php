@@ -57,6 +57,7 @@ function pf_nav_groups(): array {
         'Postes & réseau' => [
             'ad.php'         => ['Active Directory', '🗄️', 'domaine gpo strategies ou samba'],
             'parc.php'       => ['Parc informatique', '🗃️', 'inventaire machines conformite materiel'],
+            'distance.php'   => ['Prise de main à distance', '🖥️', 'depannage assistance controle ecran rustdesk relais consentement'],
             'dhcp.php'       => ['Réservations DHCP', '🔌', 'bail adresse ip mac appareil'],
             'apps.php'       => ['Store d\'applications', '🏪', 'logiciels deploiement installation'],
             'firefox.php'    => ['Firefox', '🦊', 'navigateur mozilla gpo admx accueil doh telemetrie extensions'],

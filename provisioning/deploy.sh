@@ -465,6 +465,7 @@ install -m755 "${REPO_DIR}/services/scripts/apply-filter.sh" /usr/local/sbin/pro
 [ -f "${REPO_DIR}/services/filter/categories.yaml" ] && install -D -m644 "${REPO_DIR}/services/filter/categories.yaml" /etc/proxyfibre/categories.yaml
 install -m755 "${REPO_DIR}/services/scripts/update-adblock.sh" /usr/local/sbin/proxyfibre-update-adblock
 cat > /etc/sudoers.d/proxyfibre-filter <<'SUD'
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-distance state, /usr/local/sbin/proxyfibre-distance key
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-apply-filter
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/proxyfibre-update-adblock enable, /usr/local/sbin/proxyfibre-update-adblock disable
 SUD

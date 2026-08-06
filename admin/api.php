@@ -97,7 +97,7 @@ $action = (string) ($_GET['action'] ?? $_POST['action'] ?? '');
 $actionsStation = ['station.report', 'station.clamdb', 'station.auth', 'station.bitlocker'];
 if ($estStation && !$estAdmin && !in_array($action, $actionsStation, true)) { jout(['error' => 'forbidden'], 403); }
 // Même principe pour le jeton POSTE : il n'ouvre QUE la remontée d'inventaire.
-$actionsPoste = ['poste.inventaire', 'poste.photo'];
+$actionsPoste = ['poste.inventaire', 'poste.photo', 'poste.distance'];
 if ($estPoste && !$estAdmin && !in_array($action, $actionsPoste, true)) { jout(['error' => 'forbidden'], 403); }
 $active = fn(string $u) => trim((string) shell_exec('systemctl is-active ' . escapeshellarg($u) . ' 2>/dev/null'));
 
@@ -404,6 +404,61 @@ switch ($action) {
         header('Content-Length: ' . strlen((string) $img));
         echo $img;
         exit;
+    }
+
+    case 'poste.distance': {
+        // Prise de main à distance, deux sens :
+        //   GET  → le poste demande son mode de consentement au démarrage
+        //   POST → le poste déclare son identifiant, seul lien entre un nom de
+        //          machine et l'identifiant que l'administrateur devra appeler.
+        $nom = strtoupper(substr(trim((string) ($_GET['poste'] ?? '')), 0, 64));
+
+        // Les colonnes vivent dans l'inventaire : un poste sans inventaire n'existe
+        // pas pour la console, et en créer une table séparée reviendrait à tenir
+        // deux listes de postes qui divergeraient.
+        foreach (['distance_id VARCHAR(32)', 'distance_mode VARCHAR(12)',
+                  'distance_vu TIMESTAMP NULL'] as $col) {
+            try { $db->exec('ALTER TABLE pf_inventaire ADD COLUMN ' . $col); } catch (Throwable $e) {}
+        }
+
+        // Le défaut est « accord » et il l'est à trois endroits : ici, dans le script
+        // du poste, et dans la console. Un réglage absent ou illisible ne doit jamais
+        // se traduire par une prise de main libre.
+        $defaut = 'accord';
+        try {
+            $v = $db->query("SELECT v FROM pf_settings WHERE k='distance_mode_defaut'")->fetchColumn();
+            if ($v === 'libre') { $defaut = 'libre'; }
+        } catch (Throwable $e) {}
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $raw = file_get_contents('php://input');
+            $d = json_decode((string) $raw, true);
+            if (!is_array($d)) { jout(['error' => 'json invalide'], 400); }
+            $nom = strtoupper(substr(trim((string) ($d['poste'] ?? '')), 0, 64));
+            $id  = substr(trim((string) ($d['distance_id'] ?? '')), 0, 32);
+            if ($nom === '' || !preg_match('/^[A-Z0-9._-]{1,64}$/', $nom)) { jout(['error' => 'nom de poste invalide'], 400); }
+            if (!preg_match('/^\d{6,16}$/', $id)) { jout(['error' => 'identifiant invalide'], 400); }
+            try {
+                // On ne crée pas la ligne : le poste doit d'abord s'être inventorié.
+                // Sans ce garde-fou, n'importe quel nom inventé peuplerait la liste.
+                $st = $db->prepare('UPDATE pf_inventaire SET distance_id=?, distance_vu=NOW() WHERE poste=?');
+                $st->execute([$id, $nom]);
+                if ($st->rowCount() === 0) { jout(['error' => 'poste inconnu de l inventaire'], 404); }
+            } catch (Throwable $e) { jout(['error' => 'stockage impossible'], 500); }
+            jout(['ok' => true, 'poste' => $nom]);
+        }
+
+        // GET : le mode propre au poste s'il en a un, sinon le défaut du parc.
+        $mode = $defaut;
+        if ($nom !== '') {
+            try {
+                $st = $db->prepare('SELECT distance_mode FROM pf_inventaire WHERE poste=?');
+                $st->execute([$nom]);
+                $m = $st->fetchColumn();
+                if ($m === 'accord' || $m === 'libre') { $mode = $m; }
+            } catch (Throwable $e) {}
+        }
+        jout(['ok' => true, 'mode' => $mode, 'defaut' => $defaut]);
     }
 
     case 'poste.inventaire': {
