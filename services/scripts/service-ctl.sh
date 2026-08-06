@@ -7,7 +7,7 @@
 #         proxyfibre-service logs <service> [nb_lignes]
 set -eu
 
-ALLOWED="opennds freeradius mariadb apache2 dnsmasq chrony nftables proxyfibre-weblog proxyfibre-walledgarden samba-ad-dc proxyfibre-kms clamav-daemon clamav-freshclam"
+ALLOWED="opennds freeradius mariadb apache2 dnsmasq chrony nftables proxyfibre-weblog proxyfibre-walledgarden samba-ad-dc proxyfibre-kms clamav-daemon clamav-freshclam bastion-hbbs bastion-hbbr"
 
 action="${1:-}"
 svc="${2:-}"

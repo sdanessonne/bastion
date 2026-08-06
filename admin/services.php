@@ -20,6 +20,11 @@ $SVCS = [
     'proxyfibre-kms'           => ['Activation KMS',       'Activation Windows / Office (vlmcsd)',          'daemon'],
     'clamav-daemon'            => ['Antivirus',            'Moteur ClamAV temps réel',                     'daemon'],
     'proxyfibre-walledgarden'  => ['Walled garden',        'Ouvre les serveurs de mise à jour / NTP',      'oneshot'],
+    // Prise de main a distance : DEUX unites, et il faut les deux. « hbbs » est
+    // l'annuaire ou les postes s'enregistrent ; « hbbr » achemine le flux. Si seul
+    // l'annuaire tourne, un poste s'affiche comme joignable et la connexion echoue.
+    'bastion-hbbs'             => ['Prise de main (annuaire)', 'Enregistrement des postes joignables',    'daemon'],
+    'bastion-hbbr'             => ['Prise de main (relais)',   'Achemine le flux entre poste et administrateur', 'daemon'],
 ];
 
 $flash = null;

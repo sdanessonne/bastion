@@ -614,6 +614,9 @@ $GROUPS = [
         <li><strong>Base de données</strong> — comptes, journaux, paramètres. Tout en dépend.</li>
         <li><strong>Contrôleur de domaine</strong> — ouverture de session Windows, stratégies, dossiers partagés.</li>
         <li><strong>Serveur web</strong> — cette console et le portail.</li>
+        <li><strong>Prise de main à distance</strong> — <strong>deux</strong> unités, et il faut les deux :
+        l\'<em>annuaire</em>, où les postes s\'enregistrent, et le <em>relais</em>, qui achemine le flux. Si seul
+        l\'annuaire tourne, un poste s\'affiche comme joignable et la connexion échoue sans explication.</li>
       </ul>
       <p class="tip">Redémarrez un service <strong>un par un</strong>, en vérifiant après chacun. Tout relancer d\'un
       bloc fait perdre l\'information la plus utile : lequel était réellement en cause.</p>'],
