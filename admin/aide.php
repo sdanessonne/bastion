@@ -406,7 +406,25 @@ $GROUPS = [
       <p class="tip">Deux voyants en haut de la page, et il faut les <strong>deux</strong> au vert. « Relais en
       service » dit que les processus tournent. « Postes autorisés à joindre le relais » dit que le portail captif
       les laisse passer — sans quoi les services tourneraient, les ports écouteraient, et pas un poste ne
-      s\'enregistrerait jamais.</p>'],
+      s\'enregistrerait jamais.</p>
+      <p><strong>Le relais est annoncé sur l\'adresse publique du service.</strong> C\'est ce qui permet de dépanner
+      un poste depuis l\'extérieur, et de raccorder d\'autres commissariats plus tard. L\'adresse exacte et la clé
+      sont affichées en haut de la page « Prise de main à distance » — elles ne sont écrites nulle part dans le
+      code, justement pour ne pas se retrouver publiées.</p>
+      <ul>
+        <li><strong>La box doit rediriger les ports</strong> vers la passerelle : <code>TCP 21115</code> à
+        <code>21119</code> et <code>UDP 21116</code>. Sans cette redirection, le relais écoute mais personne ne
+        l\'atteint du dehors — et rien sur la passerelle ne peut le signaler, puisque de son point de vue tout
+        fonctionne.</li>
+        <li><strong>Ce qui protège le relais, c\'est la clé</strong>, exigée de tout client. Le voyant « Clé exigée
+        des clients » doit être au vert. Sans elle, un service joignable depuis Internet serait un relais ouvert :
+        n\'importe qui pourrait s\'y enregistrer et s\'en servir.</li>
+        <li><strong>La clé se traite comme un secret de service.</strong> Elle est publique au sens
+        cryptographique, mais c\'est elle qui décide qui entre : la diffuser revient à ouvrir le relais.</li>
+      </ul>
+      <p class="tip">Le trafic reste chiffré de bout en bout entre les deux postes : le relais achemine sans
+      pouvoir lire. Mais il voit qui parle à qui, et il est désormais exposé — c\'est un service de plus à
+      surveiller sur la page Santé.</p>'],
 
     ['pxe', '📀', 'Serveur PXE (installation d\'OS)', '      <p>Le <strong>serveur PXE</strong> installe un système d\'exploitation par le réseau : le poste démarre sur sa
       carte réseau, un menu apparaît, et l\'installation part sans clé USB ni DVD. Pratique pour remettre à neuf une

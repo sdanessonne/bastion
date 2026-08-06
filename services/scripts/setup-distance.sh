@@ -19,7 +19,7 @@
 #   hbbs — annuaire : les clients s'y enregistrent et s'y retrouvent par leur identifiant
 #   hbbr — relais   : achemine le flux quand les deux pairs ne peuvent pas se joindre
 #
-# Usage : setup-distance.sh [install|start|stop|state|key]
+# Usage : setup-distance.sh [install|public [adresse]|start|stop|state|key]
 set -eu
 
 DIR=/opt/bastion-distance          # binaires
@@ -38,9 +38,28 @@ API="https://api.github.com/repos/rustdesk/rustdesk-server/releases/latest"
 #
 # Modifiable dans /etc/proxyfibre/distance.env (RELAIS_HOTE=…) si la topologie
 # change : autre plan d'adressage, ou raccordement multi-sites par le tunnel.
-RELAIS_HOTE=$(ip -4 -o addr show enp1s0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+#
+# Ordre de resolution :
+#   1. RELAIS_HOTE dans /etc/proxyfibre/distance.env — pose par le verbe « public »
+#      ou a la main. C'est la seule source qui survit a un changement de topologie.
+#   2. l'adresse du WAN, en repli. Elle ne convient QUE si tout le monde est sur le
+#      meme reseau local que la passerelle.
+#
+# L'adresse publique n'est PAS ecrite dans le depot : elle est detectee a
+# l'execution et rangee dans distance.env, qui n'est pas versionne.
+RELAIS_HOTE=""
 [ -r "$CONF" ] && . "$CONF"
+if [ -z "$RELAIS_HOTE" ]; then
+  RELAIS_HOTE=$(ip -4 -o addr show enp1s0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+fi
 RELAIS_HOTE=${RELAIS_HOTE:-192.168.182.1}
+
+# Une adresse publique change la nature du dispositif : le relais devient joignable
+# depuis Internet. On distingue les deux cas explicitement plutot que de deviner.
+case "$RELAIS_HOTE" in
+  10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|127.*) PUBLIC=0 ;;
+  *) PUBLIC=1 ;;
+esac
 
 msg() { printf '%s\n' "$*"; }
 err() { printf 'ERREUR: %s\n' "$*" >&2; exit 1; }
@@ -108,7 +127,10 @@ Type=simple
 WorkingDirectory=$VAR
 # « -r » annonce aux clients l'adresse du relais de flux (voir en tete du script :
 # elle doit etre joignable de l'administration ET des postes).
-ExecStart=$DIR/hbbs -r $RELAIS_HOTE:21117
+# « -k _ » EXIGE des clients la cle du relais. Sans cette option, n'importe quel
+# client peut s'enregistrer : tolerable sur un reseau ferme, inacceptable des lors
+# que le relais est joignable depuis Internet — ce serait un relais ouvert.
+ExecStart=$DIR/hbbs -r $RELAIS_HOTE:21117 -k _
 Restart=always
 RestartSec=3
 StandardOutput=append:$LOG
@@ -151,9 +173,16 @@ UNIT
 }
 
 # ── Pare-feu ────────────────────────────────────────────────────────────────────
-# Portée volontairement étroite : le LAN des postes et le réseau d'administration.
-# Jamais l'Internet — un annuaire de prise de main exposé au monde serait une
-# invitation, même protégé par une clé.
+# Deux portées, selon l'adresse annoncée.
+#
+# Adresse PRIVÉE : on n'ouvre qu'au LAN des postes et au réseau d'administration.
+#
+# Adresse PUBLIQUE : le relais doit être joignable depuis Internet — c'est la
+# condition pour dépanner un poste depuis l'extérieur ou raccorder un autre
+# commissariat. On l'ouvre donc largement, et ce n'est PAS anodin : le service
+# devient exposé. Ce qui le protège alors, c'est « -k _ » sur hbbs, qui exige de
+# tout client la clé du relais. Sans cette option, ouvrir les ports reviendrait à
+# offrir un relais public à qui le trouve.
 ouvrir_ports() {
   # ── 1. Le portail captif d'abord ─────────────────────────────────────────────
   # C'est LUI qui décide ce qu'un poste a le droit d'adresser à la passerelle. Sa
@@ -182,7 +211,20 @@ ouvrir_ports() {
   # ── 2. Nos propres règles ────────────────────────────────────────────────────
   command -v nft >/dev/null 2>&1 || { msg "nftables absent : ports non ouverts."; return 0; }
   nft list table inet bastion_distance >/dev/null 2>&1 && nft delete table inet bastion_distance
-  nft -f - <<'RULES'
+  if [ "$PUBLIC" = "1" ]; then
+    nft -f - <<'RULES'
+table inet bastion_distance {
+  chain input {
+    type filter hook input priority -50; policy accept;
+    tcp dport { 21115, 21116, 21117, 21118, 21119 } accept
+    udp dport 21116 accept
+  }
+}
+RULES
+    msg "Ports 21115-21119 ouverts SANS restriction d'origine (relais annonce en public)."
+    msg "  La cle du relais est exigee de tout client : c'est elle qui protege le service."
+  else
+    nft -f - <<'RULES'
 table inet bastion_distance {
   chain input {
     type filter hook input priority -50; policy accept;
@@ -191,7 +233,58 @@ table inet bastion_distance {
   }
 }
 RULES
-  msg "Ports 21115-21119 ouverts pour 192.168.182.0/24 et 10.91.22.0/24."
+    msg "Ports 21115-21119 ouverts pour 192.168.182.0/24 et 10.91.22.0/24 seulement."
+  fi
+}
+
+# ── Adresse publique ────────────────────────────────────────────────────────────
+# Fige l'adresse publique dans /etc/proxyfibre/distance.env, puis réapplique le
+# pare-feu et redémarre l'annuaire.
+#
+# L'adresse est détectée auprès d'un service extérieur et VÉRIFIÉE avant d'être
+# écrite : une réponse inattendue — page d'erreur, portail captif de l'opérateur —
+# donnerait une adresse fausse, et le relais annoncerait alors à tous les postes
+# une adresse où personne ne répond. Elle peut aussi être imposée en argument.
+publier() {
+  [ "$(id -u)" -eq 0 ] || err "à lancer en root"
+  ip="${1:-}"
+  if [ -z "$ip" ]; then
+    for src in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+      ip=$(curl -fsS --max-time 12 "$src" 2>/dev/null | tr -d ' \t\r\n')
+      printf '%s' "$ip" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' && break
+      ip=""
+    done
+  fi
+  printf '%s' "$ip" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' \
+    || err "adresse publique indéterminable — donnez-la en argument : $0 public <adresse>"
+  case "$ip" in
+    10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|127.*)
+      err "« $ip » est une adresse privée : elle ne conviendrait pas depuis l'extérieur" ;;
+  esac
+
+  mkdir -p /etc/proxyfibre
+  touch "$CONF"
+  # Remplacement si la ligne existe, ajout sinon : deux lignes RELAIS_HOTE feraient
+  # gagner la dernière, et c'est le genre de détail qu'on ne remarque jamais.
+  if grep -q '^RELAIS_HOTE=' "$CONF"; then
+    sed -i "s|^RELAIS_HOTE=.*|RELAIS_HOTE=$ip|" "$CONF"
+  else
+    printf 'RELAIS_HOTE=%s\n' "$ip" >> "$CONF"
+  fi
+  chmod 600 "$CONF"
+  RELAIS_HOTE="$ip"; PUBLIC=1
+
+  ecrire_units
+  ouvrir_ports
+  systemctl daemon-reload
+  systemctl restart bastion-hbbr.service bastion-hbbs.service
+  msg "Le relais annonce désormais $ip:21117."
+  msg ""
+  msg "IL RESTE UNE ÉTAPE QUE LA PASSERELLE NE PEUT PAS FAIRE."
+  msg "Sur la box, rediriger vers $(ip -4 -o addr show enp1s0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1) :"
+  msg "  TCP 21115, 21116, 21117, 21118, 21119"
+  msg "  UDP 21116"
+  msg "Sans cette redirection, le relais écoute mais personne ne l'atteint du dehors."
 }
 
 # ── État ────────────────────────────────────────────────────────────────────────
@@ -208,15 +301,21 @@ etat() {
   # partout trouvait notre propre table et répondait « ouvert » sans rien prouver.
   # Un contrôle qui se valide lui-même ne contrôle rien.
   portail=$(nft list ruleset 2>/dev/null | sed -n '/chain ndsRTR/,/^\t}/p' | grep -c 'dport 21116' || true)
-  printf '{"hbbs":"%s","hbbr":"%s","cle":"%s","ports_ecoutes":%s,"relais":"%s","portail_ouvert":%s}\n' \
-         "$hbbs" "$hbbr" "$cle" "${ecoute:-0}" "$RELAIS_HOTE:21117" "$([ "${portail:-0}" -gt 0 ] && echo true || echo false)"
+  # La clé est-elle vraiment exigée ? On le lit dans l'unité, pas dans nos intentions.
+  cle_exigee=$(systemctl cat bastion-hbbs.service 2>/dev/null | grep -c -- '-k _' || true)
+  printf '{"hbbs":"%s","hbbr":"%s","cle":"%s","ports_ecoutes":%s,"relais":"%s","portail_ouvert":%s,"public":%s,"cle_exigee":%s}\n' \
+         "$hbbs" "$hbbr" "$cle" "${ecoute:-0}" "$RELAIS_HOTE:21117" \
+         "$([ "${portail:-0}" -gt 0 ] && echo true || echo false)" \
+         "$([ "$PUBLIC" = "1" ] && echo true || echo false)" \
+         "$([ "${cle_exigee:-0}" -gt 0 ] && echo true || echo false)"
 }
 
 case "${1:-state}" in
   install) installer ;;
   start)   systemctl start bastion-hbbr.service bastion-hbbs.service; msg "démarré" ;;
   stop)    systemctl stop bastion-hbbs.service bastion-hbbr.service; msg "arrêté" ;;
+  public)  publier "${2:-}" ;;
   key)     [ -s "$VAR/id_ed25519.pub" ] && cat "$VAR/id_ed25519.pub" || err "aucune clé — le relais n'a jamais démarré" ;;
   state)   etat ;;
-  *)       err "usage: $0 [install|start|stop|state|key]" ;;
+  *)       err "usage: $0 [install|public [adresse]|start|stop|state|key]" ;;
 esac

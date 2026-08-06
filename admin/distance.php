@@ -99,7 +99,22 @@ pf_header('Prise de main à distance');
       <span class="badge <?= $ok ? 'on' : 'off' ?>"><?= $ok ? '✓ Relais en service' : '✗ Relais arrêté' ?></span>
       <span class="badge <?= $portail ? 'on' : 'off' ?>" title="Le portail captif doit autoriser les postes à joindre le relais">
         <?= $portail ? '✓ Postes autorisés à joindre le relais' : '✗ Portail captif : accès au relais fermé' ?></span>
+      <?php $pub = (bool) ($etat['public'] ?? false); $cleOk = (bool) ($etat['cle_exigee'] ?? false); ?>
+      <span class="badge"><?= $pub ? '🌐 Adresse publique' : '🏠 Adresse locale' ?></span>
+      <span class="badge <?= $cleOk ? 'on' : 'off' ?>" title="Le relais doit exiger sa clé de tout client">
+        <?= $cleOk ? '✓ Clé exigée des clients' : '✗ Clé non exigée' ?></span>
     </p>
+    <?php if ($pub && !$cleOk): ?>
+      <?php /* La combinaison la plus dangereuse : joignable du monde entier, et
+                n'importe qui peut s'y enregistrer. À dire fort, pas en note de bas de page. */ ?>
+      <p class="flash err">⚠ Le relais est annoncé sur une adresse publique <strong>sans exiger sa clé</strong> :
+      n'importe qui sur Internet peut s'y enregistrer et s'en servir. Relancez
+      <code>setup-distance.sh install</code> sur la passerelle, qui ajoute l'option manquante.</p>
+    <?php elseif ($pub): ?>
+      <p class="tip">Le relais est joignable depuis Internet — c'est ce qui permet de dépanner un poste depuis
+      l'extérieur et de raccorder d'autres commissariats. Ce qui le protège est la clé, exigée de tout client.
+      Elle doit rester connue des seuls postes du service : la diffuser revient à ouvrir le relais.</p>
+    <?php endif; ?>
     <?php if (!$portail): ?>
       <p class="tip">Les postes ne peuvent pas atteindre le relais : la chaîne <code>ndsRTR</code> du portail captif
       les rejette. Les services ont beau tourner, aucun poste ne s'enregistrera. Relancez
@@ -110,9 +125,32 @@ pf_header('Prise de main à distance');
       <tr><th>Clé publique</th><td><code style="word-break:break-all"><?= e((string) ($etat['cle'] ?? '—')) ?></code></td></tr>
       <tr><th>Ports en écoute</th><td><?= (int) ($etat['ports_ecoutes'] ?? 0) ?> sur 6</td></tr>
     </table>
-    <p class="muted small">Pour prendre la main : installez le client RustDesk sur votre poste d'administration,
-    et renseignez ce serveur et cette clé dans <em>Paramètres → Réseau</em>. Le poste distant se joint ensuite
-    par son identifiant, dans le tableau ci-dessous.</p>
+    <?php
+      // L'installeur est celui que la passerelle sert déjà aux postes : administrateur
+      // et postes emploient donc EXACTEMENT le même fichier et la même version. Aller
+      // le chercher sur Internet ferait diverger les deux côtés, et une version de
+      // client plus récente que le relais refuse parfois de s'y connecter.
+      $client = '/var/www/html/apps/rustdesk-client.exe';
+      $dispo  = is_file($client);
+      $poids  = $dispo ? round(filesize($client) / 1048576, 1) : 0;
+      $gwPub  = strtok((string) ($etat['relais'] ?? ''), ':');
+    ?>
+    <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;margin:.9rem 0 .3rem">
+      <?php if ($dispo): ?>
+        <a class="btn-sm" href="https://<?= e($gwPub ?: '') ?>:2443/apps/rustdesk-client.exe" download>
+          ⬇ Télécharger le client (<?= $poids ?> Mo)</a>
+        <span class="muted small">Windows 64 bits — le même installeur que celui posé sur les postes.</span>
+      <?php else: ?>
+        <span class="badge off">✗ Installeur absent de la passerelle</span>
+        <span class="muted small">Les postes ne pourront pas l'installer non plus : la stratégie le
+        télécharge depuis <code>/apps/rustdesk-client.exe</code>. Relancez
+        <code>setup-distance.sh install</code>, ou déposez le fichier à la main.</span>
+      <?php endif; ?>
+    </div>
+    <p class="muted small">Installez-le sur votre poste d'administration, puis renseignez le serveur et la clé
+    ci-dessus dans <em>Paramètres → Réseau</em> du client. Sans la clé, il se connecterait au serveur public
+    de l'éditeur au lieu du vôtre, et le dépannage sortirait du service. Le poste distant se joint ensuite par
+    son identifiant, dans le tableau ci-dessous.</p>
   </div>
 </div>
 
