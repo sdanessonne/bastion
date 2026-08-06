@@ -24,6 +24,98 @@ $GROUPS = [
       dans <em>Système</em> : un seul bouton vérifie et installe les deux.</p>'],
   ],
 
+  'Questions fréquentes' => [
+    ['faq-postes', '🖥️', 'FAQ — Les postes', '      <p><strong>Un logiciel activé dans le store n\'arrive pas sur les postes.</strong> Trois causes, dans l\'ordre de
+      fréquence. Le bouton <strong>« Appliquer sur les postes »</strong> n\'a pas été pressé — activer un logiciel ne
+      déploie rien tant que la stratégie n\'est pas réécrite. Le poste n\'a pas redémarré ni rouvert de session depuis.
+      Ou les <strong>arguments d\'installation silencieuse</strong> sont faux, et l\'installeur attend une réponse dans
+      une fenêtre que personne ne voit. Vérifiez le journal d\'installation sur le poste :
+      <code>C:\\ProgramData\\Bastion\\</code>.</p>
+      <p><strong>Comment savoir où en est une installation ?</strong> Le fichier
+      <code>C:\\ProgramData\\Bastion\\apps-progress.json</code> sur le poste indique le logiciel en cours, l\'étape et
+      l\'horodatage. C\'est ce fichier que lit la fenêtre de progression affichée à l\'agent.</p>
+      <p><strong>La fenêtre de progression ne s\'affiche jamais.</strong> C\'est le comportement normal quand il n\'y a
+      rien à installer : elle ne s\'ouvre pas pour annoncer qu\'elle n\'a rien à dire. Elle ne s\'affiche que s\'il reste
+      réellement des logiciels à poser.</p>
+      <p><strong>La photo de l\'agent n\'apparaît pas à l\'ouverture de session.</strong> À la <em>première</em> connexion
+      sur une machine, le profil Windows n\'existe pas encore quand la tâche passe : la photo apparaît à la connexion
+      suivante. Si elle manque toujours, vérifiez qu\'une photo est bien déposée dans la fiche du compte.</p>
+      <p><strong>Une stratégie de groupe ne s\'applique pas.</strong> Regardez d\'abord l\'<strong>heure du poste</strong>.
+      Un décalage de plus de cinq minutes fait échouer Kerberos, donc l\'authentification, donc les stratégies —
+      et le message d\'erreur affiché ne parle jamais d\'heure. C\'est fréquent sur machine virtuelle, dont l\'horloge
+      dérive au démarrage. Ensuite seulement : <code>gpupdate /force</code> puis <code>gpresult /r</code>.</p>
+      <p><strong>Windows reste « non activé ».</strong> Un serveur KMS n\'active rien avant d\'avoir vu 25 postes
+      distincts (5 pour Office). En deçà du seuil, rien n\'est cassé : le compteur monte à chaque nouvelle machine.
+      L\'état réel de chaque poste est dans « Inventaire des postes ».</p>'],
+    ['faq-acces', '🔑', 'FAQ — Comptes et accès', '      <p><strong>Un agent ne peut pas se connecter alors que son mot de passe est bon.</strong> Vérifiez dans l\'ordre :
+      le compte n\'a-t-il pas une <strong>date de fin d\'accès</strong> dépassée (il est alors désactivé, pas supprimé) ;
+      le service d\'authentification est-il actif (page Services) ; le poste est-il bien sur le réseau servi par la
+      passerelle.</p>
+      <p><strong>Un agent doit changer son mot de passe.</strong> Il le fait lui-même depuis le portail, sans passer par
+      un administrateur. C\'est volontaire : personne ne devrait avoir à confier son mot de passe à quelqu\'un.</p>
+      <p><strong>Donner un accès à un intervenant extérieur.</strong> Un <strong>bon visiteur</strong> — identifiant et
+      mot de passe temporaires, sans création de compte. Il expire seul. Il n\'ouvre <em>aucun</em> accès au domaine ni
+      aux dossiers partagés : uniquement Internet, filtré et journalisé comme pour tout le monde.</p>
+      <p><strong>J\'ai modifié un quota, l\'agent a toujours l\'ancien.</strong> Les quotas et les droits de groupe
+      s\'appliquent à la <strong>prochaine session</strong>. Fermez sa session en cours depuis la page des sessions pour
+      ne pas attendre.</p>
+      <p><strong>Quelle différence entre le compte d\'accès et le compte de domaine ?</strong> Le premier ouvre
+      Internet par le portail ; le second ouvre la session Windows et les dossiers partagés. Un agent a généralement
+      les deux, gérés depuis la même fiche — mais ils peuvent exister l\'un sans l\'autre.</p>
+      <p><strong>Un administrateur a fait une modification inexpliquée.</strong> Le <strong>journal d\'audit</strong>
+      dit qui, quand, depuis quelle adresse et quoi. Commencez toujours par là : la cause est presque toujours une
+      action humaine récente, pas une panne.</p>'],
+    ['faq-reseau', '🌐', 'FAQ — Réseau, filtrage et lenteurs', '      <p><strong>J\'ai bloqué un site, il reste accessible.</strong> Le poste garde les adresses DNS en mémoire quelques
+      minutes. <code>ipconfig /flushdns</code> sur le poste tranche immédiatement. Si ça persiste au-delà, le site est
+      probablement atteint par une autre adresse que celle bloquée.</p>
+      <p><strong>Un agent peut-il contourner le filtrage en changeant son DNS ?</strong> Non. Les requêtes DNS sortantes
+      sont redirigées vers la passerelle et le DNS chiffré (DoH/DoT) est bloqué. Un poste qui configure « un autre
+      DNS » reste filtré, sans s\'en apercevoir.</p>
+      <p><strong>Un site légitime est bloqué à tort.</strong> Ajoutez-le à la liste blanche plutôt que de désactiver
+      toute la catégorie — sinon vous rouvrez bien plus large que le besoin.</p>
+      <p><strong>« Internet rame ».</strong> Ouvrez le <strong>trafic en direct</strong> : vous voyez en quelques
+      secondes si la ligne sature et par qui. Regardez <em>vers quels domaines</em> avant d\'intervenir : une mise à
+      jour Windows sur dix postes ressemble à un abus et n\'en est pas un.</p>
+      <p><strong>Une machine ne reçoit pas d\'adresse IP.</strong> Si elle n\'apparaît dans aucun bail DHCP, le problème
+      est physique (câble, port, VLAN), pas dans la configuration. Attention aussi : le Wi-Fi et l\'Ethernet d\'un
+      portable ont <strong>deux adresses MAC différentes</strong> — une réservation ne vaut que pour l\'une des deux.</p>
+      <p><strong>Puis-je ouvrir la console d\'administration depuis un poste du service ?</strong> Non, et c\'est
+      délibéré : la console n\'est pas jointe depuis le réseau des postes. Cela évite qu\'un poste compromis puisse
+      atteindre l\'administration de la passerelle.</p>'],
+    ['faq-journaux', '⚖️', 'FAQ — Journaux et réquisitions', '      <p><strong>Un agent n\'apparaît pas dans les journaux.</strong> Vérifiez qu\'il s\'est authentifié au portail : un
+      poste non authentifié n\'a pas d\'accès, donc rien à journaliser. L\'absence de trace n\'est pas la preuve d\'une
+      absence d\'activité.</p>
+      <p><strong>Que contiennent exactement les journaux ?</strong> Date et heure, utilisateur, adresse IP, et le
+      <strong>domaine</strong> consulté. Pas le contenu des pages, pas les identifiants saisis, pas les mots de passe.
+      La journalisation répond à une obligation légale ; ce n\'est pas un outil de lecture du contenu.</p>
+      <p><strong>Comment répondre à une réquisition judiciaire ?</strong> La page dédiée produit un extrait sur une
+      période et un agent donnés, avec la <strong>preuve d\'intégrité</strong> associée. Les journaux sont chaînés et
+      scellés par signature : une ligne modifiée après coup rompt la chaîne et devient détectable — c\'est ce qui donne
+      sa valeur à l\'extrait.</p>
+      <p><strong>Combien de temps garde-t-on les journaux ?</strong> La durée est paramétrable, et la purge est
+      automatique au-delà. Conserver plus longtemps que la durée légale n\'est pas une précaution : c\'est une faute.</p>
+      <p><strong>Peut-on effacer l\'historique d\'un agent à sa demande ?</strong> Non. Ces journaux répondent à une
+      obligation de conservation ; ils ne sont pas à la disposition de la personne concernée ni de
+      l\'administrateur.</p>'],
+    ['faq-exploitation', '🛠️', 'FAQ — Exploitation quotidienne', '      <p><strong>Comment mettre Bastion à jour ?</strong> Page <em>Système</em> : un seul bouton vérifie et installe le
+      système Debian et l\'application. Faites une <strong>sauvegarde avant</strong>, systématiquement.</p>
+      <p><strong>Une fonction ne se comporte pas comme décrit ici.</strong> Vérifiez d\'abord la version installée en bas
+      de cette page. Une aide en avance sur le serveur décrit des choses qui n\'y sont pas encore.</p>
+      <p><strong>La console ne répond plus.</strong> Regardez si les <strong>alertes par courriel</strong> sont arrivées :
+      c\'est le seul canal qui fonctionne encore quand l\'interface est tombée. Cause la plus fréquente : le
+      <strong>disque plein</strong>, qui arrête la base de données et donc l\'authentification de tout le monde d\'un
+      coup.</p>
+      <p><strong>Faut-il redémarrer le serveur après un changement ?</strong> Presque jamais. Les modifications de la
+      console sont immédiates. Si un service semble figé, redémarrez <strong>ce service seul</strong> depuis la page
+      Services — tout relancer d\'un bloc fait perdre l\'information la plus utile : lequel était en cause.</p>
+      <p><strong>À quoi sert la sauvegarde si tout est sur la passerelle ?</strong> Justement à ça. Une sauvegarde qui
+      reste sur le disque qu\'elle protège ne sert à rien le jour où ce disque lâche : téléchargez l\'archive et
+      sortez-la de la machine. Et conservez son secret ailleurs — chiffrée sans son secret, elle est illisible.</p>
+      <p><strong>Comment savoir si une sauvegarde est bonne ?</strong> En la restaurant. Une sauvegarde jamais
+      restaurée est une hypothèse, pas une garantie ; faites l\'essai une fois hors urgence, c\'est le seul moment où
+      découvrir un problème ne coûte rien.</p>'],
+  ],
+
   'Accès & sécurité' => [
     ['utilisateurs', '👤', 'Utilisateurs, droits &amp; rôles', '
       <p><strong>Utilisateurs &amp; droits</strong> : un seul écran pour tout le cycle de vie d\'un agent —
@@ -44,19 +136,39 @@ $GROUPS = [
       <code>admin-0110480</code>. Le compte <code>admin</code> intégré garde toujours l\'accès complet. Les nouveaux
       quotas s\'appliquent à la <em>prochaine</em> connexion.</p>'],
 
-    ['annuaire', '📇', 'Annuaire, photos &amp; badges', '
-      <p><strong>Annuaire</strong> : trombinoscope visuel des fonctionnaires — photo, identité, service, commissariat,
-      droits et présence en ligne, avec recherche instantanée. La photo se règle dans la fiche du compte
-      (« Utilisateurs &amp; droits »).</p>
-      <p><strong>Badge</strong> : depuis une fiche de l\'annuaire, générez un badge de service <strong>imprimable</strong>
-      (photo, identité, QR code) — bouton « Imprimer » puis, au besoin, « Enregistrer au format PDF ».</p>'],
+    ['annuaire', '📇', 'Annuaire, photos &amp; badges', '      <p>L\'<strong>annuaire</strong> est le trombinoscope du service : photo, nom, prénom, service, commissariat, droits
+      et présence en ligne, avec une recherche instantanée par nom ou par service. Il sert autant à mettre un visage
+      sur un nom qu\'à vérifier d\'un coup d\'œil qui possède quels droits.</p>
+      <ul>
+        <li><strong>La photo</strong> se dépose dans la fiche du compte (« Utilisateurs &amp; droits »). Elle alimente
+        trois choses à la fois : l\'annuaire, le badge, et l\'image du compte Windows sur l\'écran d\'ouverture de session.</li>
+        <li><strong>Sur les postes</strong>, la photo est posée à l\'ouverture de session par une tâche dédiée. Un agent
+        qui se connecte pour la <em>première</em> fois sur une machine n\'a pas encore de profil : sa photo apparaît à la
+        connexion suivante, pas à celle-là.</li>
+        <li><strong>Badge de service imprimable</strong> : depuis une fiche, bouton « Imprimer » — photo, identité et
+        QR code. Le navigateur permet ensuite « Enregistrer au format PDF » si vous voulez le garder.</li>
+      </ul>
+      <p class="tip">Cadrez la photo <strong>serrée sur le visage</strong> et en format carré. Windows la recadre
+      lui-même pour l\'écran d\'ouverture de session, et une photo en pied y devient un point minuscule.</p>'],
 
-    ['filtrage', '⛔', 'Filtrage &amp; publicités', '
-      <p><strong>Filtrage</strong> : bloquez des domaines (un par un ou par import de liste) et des <strong>catégories
-      thématiques</strong> (adulte, jeux d\'argent, réseaux sociaux, streaming, malveillant). Activez le
-      <strong>bloqueur de publicités</strong> (liste communautaire, mise à jour hebdomadaire).</p>
-      <p>Le blocage est appliqué au niveau DNS : il fonctionne quel que soit le site (HTTP comme HTTPS) et prend effet
-      immédiatement pour tous les clients.</p>'],
+    ['filtrage', '⛔', 'Filtrage &amp; publicités', '      <p>Le filtrage s\'applique <strong>au niveau DNS</strong> : quand un poste demande l\'adresse d\'un site interdit, la
+      passerelle ne la lui donne pas. Conséquence pratique : ça marche en HTTP comme en HTTPS, pour tous les
+      navigateurs et toutes les applications, sans rien installer sur les postes.</p>
+      <ul>
+        <li><strong>Catégories</strong> : adulte, jeux d\'argent, réseaux sociaux, streaming, sites malveillants. Une
+        case à cocher par catégorie, effet immédiat pour tout le monde.</li>
+        <li><strong>Domaines</strong> : ajout un par un, ou import d\'une liste. Bloquer <code>exemple.fr</code> bloque
+        aussi ses sous-domaines.</li>
+        <li><strong>Bloqueur de publicités</strong> : liste communautaire, rafraîchie chaque semaine. Il allège les
+        pages et ferme une voie d\'infection courante — les régies publicitaires servent régulièrement de vecteur.</li>
+        <li><strong>Exceptions</strong> : un site légitime pris à tort dans une catégorie se débloque en l\'ajoutant à la
+        liste blanche, sans désactiver toute la catégorie.</li>
+      </ul>
+      <p class="tip">Le filtrage est <strong>incontournable</strong> : les requêtes DNS sortantes sont redirigées vers la
+      passerelle, et le DNS chiffré (DoH/DoT) est bloqué. Un poste qui configure « un autre DNS » dans ses paramètres
+      reste filtré — sans cela, contourner Bastion demanderait trente secondes.</p>
+      <p class="tip">Un site bloqué qui reste accessible pendant quelques minutes, c\'est le <strong>cache DNS du
+      poste</strong>, pas une règle inopérante. <code>ipconfig /flushdns</code> sur le poste, ou attendez l\'expiration.</p>'],
 
     ['visiteurs', '🎫', 'Accès visiteur (bons temporaires)', '
       <p><strong>Accès visiteur</strong> : délivrez un <strong>bon</strong> — un identifiant et un mot de passe à
@@ -71,14 +183,21 @@ $GROUPS = [
       <p class="tip">Un bon n\'ouvre <strong>aucun</strong> accès au domaine ni aux dossiers partagés : il ne
       donne que l\'accès Internet encadré. Pour un accès durable, créez un compte d\'agent.</p>'],
 
-    ['antivirus', '🛡️', 'Antivirus &amp; stations blanches', '
-      <p><strong>Antivirus</strong> (ClamAV) : état du moteur, mise à jour de la base virale, analyse à la demande des
-      dossiers partagés et de l\'espace web, historique. Une analyse complète est aussi <strong>planifiée chaque
-      nuit</strong>. Les fichiers déposés par les clients dans les partages sont analysés.</p>
-      <p><strong>Stations blanches</strong> (analyse de clés USB) : elles déposent leurs résultats ici et récupèrent
-      leur base virale sur la passerelle, sans Internet. Chaque poste reçoit son propre <strong>jeton</strong> :
-      vous voyez lequel se sert (et quand) et pouvez en <strong>révoquer un seul</strong> — poste volé ou remplacé —
-      sans reconfigurer les autres. Un bilan des analyses (30 j) est affiché.</p>'],
+    ['antivirus', '🛡️', 'Antivirus &amp; stations blanches', '      <p>Deux dispositifs distincts, souvent confondus.</p>
+      <p><strong>1. Analyse des supports amovibles (« station blanche »)</strong> — une clé USB ou un disque externe
+      apporté de l\'extérieur est analysé avant d\'être branché sur un poste du service. C\'est la voie d\'infection la
+      plus banale d\'un réseau fermé : le support voyage là où le réseau ne va pas.</p>
+      <ul>
+        <li>Chaque station d\'analyse possède son propre <strong>jeton</strong>, délivré depuis cette page. Il identifie
+        la station qui remonte un résultat — sans lui, n\'importe quoi pourrait déclarer une analyse.</li>
+        <li>Le <strong>tableau de bord</strong> liste les analyses : date, station, support, verdict, fichiers trouvés.
+        C\'est la trace à produire si un incident remonte plus tard.</li>
+      </ul>
+      <p><strong>2. Base de signatures</strong> — la passerelle télécharge et redistribue les mises à jour de signatures
+      aux stations, qui n\'ont donc pas besoin d\'accès Internet direct.</p>
+      <p class="tip">Une base de signatures périmée donne une analyse qui <strong>réussit sans rien voir</strong> — le
+      pire des résultats, parce qu\'il rassure à tort. La date de dernière mise à jour est affichée sur cette page :
+      c\'est elle qu\'il faut regarder, pas le nombre d\'analyses réussies.</p>'],
   ],
 
   'Réseau &amp; postes' => [
@@ -162,41 +281,99 @@ $GROUPS = [
       dès la 1<sup>re</sup> connexion. L\'heure du poste doit être synchronisée (GPO « Synchronisation de l\'heure »),
       sinon Kerberos et donc les GPO échouent.</p>'],
 
-    ['apps', '🏪', 'Store d\'applications', '
-      <p><strong>Store d\'applications</strong> : déployez des logiciels sur tous les postes du domaine. Un catalogue
-      d\'applications courantes se récupère en un clic depuis la source officielle ; vous pouvez ajouter votre propre
-      installeur (.msi/.exe). « Appliquer sur les postes » : une GPO les installe en silence au démarrage. Testez
-      d\'abord sur un poste pilote.</p>'],
+    ['apps', '🏪', 'Store d\'applications', '      <p>Le <strong>store d\'applications</strong> installe des logiciels sur les postes du domaine, en silence, sans
+      passer sur chaque machine. L\'installeur est hébergé sur la passerelle ; une stratégie de démarrage
+      (« Bastion — Applications ») le télécharge et l\'exécute au démarrage du poste et à chaque ouverture de session.</p>
+      <p><strong>Mettre un logiciel à disposition</strong></p>
+      <ul>
+        <li><strong>Depuis le catalogue</strong> (90 logiciels courants) : cliquez sur « Récupérer ». La passerelle
+        demande la <em>version du jour</em> à l\'éditeur — le catalogue ne fige aucun numéro de version, sinon les
+        liens tomberaient en panne dès la publication suivante.</li>
+        <li><strong>Un logiciel absent du catalogue</strong> : « Ajouter une application », déposez le <code>.msi</code>
+        ou le <code>.exe</code>, et donnez les <strong>arguments d\'installation silencieuse</strong>. C\'est le point le
+        plus délicat : un MSI veut généralement <code>/qn</code>, un exécutable <code>/S</code>, <code>/silent</code> ou
+        <code>/VERYSILENT</code> selon son fabricant d\'installeur. Un mauvais argument fait ouvrir une fenêtre que
+        personne ne verra jamais, et l\'installation reste bloquée là, indéfiniment.</li>
+        <li><strong>Activez</strong> le logiciel, puis <strong>« Appliquer sur les postes »</strong>. Rien ne part tant
+        que ce bouton n\'a pas été pressé : c\'est lui qui réécrit la stratégie.</li>
+        <li><strong>Désactiver</strong> un logiciel ne le retire pas des postes où il est déjà posé — il le
+        <strong>désinstalle</strong> à la prochaine application de la stratégie.</li>
+      </ul>
+      <p><strong>Ce que voit l\'agent</strong> — pendant une installation, une fenêtre s\'affiche dans sa session avec le
+      nom du logiciel en cours et une barre de progression. Elle ne s\'affiche <em>que</em> s\'il y a réellement quelque
+      chose à installer, et se ferme seule à la fin. Sur un poste déjà à jour : rien. C\'est normal.</p>
+      <p><strong>Entrées « à déposer à la main »</strong> — une quinzaine de logiciels du catalogue n\'ont pas de bouton :
+      leur éditeur ne publie aucun fichier récupérable automatiquement (page de téléchargement dynamique, archive ZIP,
+      paquet MSIX, lien signé valable deux heures). La raison est écrite sur la carte. Ce ne sont pas des liens à
+      rafraîchir : téléchargez l\'installeur depuis le site de l\'éditeur et ajoutez-le manuellement.</p>
+      <p class="tip">Si un téléchargement échoue, le message dit <strong>ce qui s\'est passé</strong> : le code HTTP,
+      l\'adresse exacte, ou la nature de ce qui a été reçu. Une page web renvoyée à la place d\'un installeur est
+      <strong>refusée</strong>, jamais enregistrée — sans ce contrôle, elle serait déployée sur tout le parc et
+      échouerait en silence sur chaque poste.</p>'],
 
-    ['kms', '🔑', 'Activation Windows / Office', '
-      <p>Activez le <strong>service KMS</strong> depuis l\'onglet Active Directory : les postes Windows et Office non
-      activés s\'activent automatiquement contre la passerelle (clé générique selon l\'édition), via une GPO et
-      l\'auto-découverte DNS. Les postes déjà activés (OEM/numérique) ne sont pas touchés.</p>'],
+    ['kms', '🔑', 'Activation Windows / Office', '      <p><strong>Activation Windows et Office</strong> par serveur KMS hébergé sur la passerelle : les postes du domaine
+      s\'activent tout seuls, sans clé à saisir sur chaque machine et sans accès aux serveurs de Microsoft.</p>
+      <ul>
+        <li><strong>Découverte automatique</strong> : la passerelle publie un enregistrement DNS
+        <code>_vlmcs._tcp</code> dans le domaine. Un poste fraîchement joint trouve le serveur seul, sans configuration.</li>
+        <li><strong>Bascule Pro → Entreprise</strong> : un poste livré en édition Professionnel peut être basculé en
+        édition Entreprise par stratégie. La clé employée est une <em>GVLK</em> publique de Microsoft — ce n\'est pas
+        une licence, c\'est l\'identifiant qui dit au poste de s\'adresser au KMS.</li>
+        <li><strong>Vérifier</strong> : la page « Inventaire des postes » affiche l\'état d\'activation et l\'édition de
+        chaque machine. C\'est là qu\'il faut regarder, pas sur le poste.</li>
+      </ul>
+      <p class="tip">Un KMS n\'active rien tant qu\'il n\'a pas atteint son <strong>seuil</strong> : 25 postes Windows
+      distincts (5 pour Office). En deçà, les postes répondent « non activé » sans que rien ne soit cassé — le compteur
+      monte à chaque nouvelle machine et l\'activation se débloque d\'elle-même. Sur un petit parc, ce seuil n\'est
+      jamais atteint : il faut alors des licences MAK, saisies poste par poste.</p>'],
 
-    ['dhcp', '🔌', 'Réservations DHCP', '
-      <p><strong>Réservations DHCP</strong> : attribuez toujours la même adresse IP à un appareil (repéré par son
-      adresse MAC) — imprimantes, serveurs, bornes. Le champ propose les appareils actuellement connectés ; l\'appareil
-      prend l\'IP réservée à son prochain renouvellement de bail.</p>'],
+    ['dhcp', '🔌', 'Réservations DHCP', '      <p><strong>Réservation DHCP</strong> : donner toujours la même adresse IP à un matériel, en l\'associant à son
+      adresse MAC. Utile pour une imprimante, un serveur, un poste que l\'on veut retrouver à la même place, ou une
+      machine citée dans une règle de filtrage.</p>
+      <ul>
+        <li>La liste des <strong>baux en cours</strong> montre ce qui est connecté maintenant, avec l\'adresse MAC et le
+        nom annoncé par la machine : le plus simple est de réserver depuis cette liste plutôt que de recopier une MAC à
+        la main.</li>
+        <li>L\'adresse réservée doit rester <strong>dans le réseau du LAN</strong>. La prendre hors de la plage
+        distribuée évite qu\'elle soit attribuée à quelqu\'un d\'autre entre-temps.</li>
+        <li>La réservation prend effet au <strong>renouvellement du bail</strong>, pas immédiatement : redémarrez la
+        machine, ou débranchez et rebranchez son câble, pour ne pas attendre.</li>
+      </ul>
+      <p class="tip">Une machine qui n\'apparaît dans aucun bail n\'a pas reçu d\'adresse : le problème est en amont
+      (câble, port, VLAN), pas dans la réservation. Et attention aux ordinateurs portables : leur Wi-Fi et leur
+      Ethernet ont <strong>deux adresses MAC différentes</strong> — une réservation ne vaut que pour l\'une des deux.</p>'],
 
-    ['quarantaine', '🚫', 'Quarantaine réseau', '
-      <p><strong>Quarantaine réseau</strong> : en cas d\'incident, isolez un poste — son accès Internet et tout son
-      trafic routé par la passerelle sont coupés immédiatement, sans toucher au portail. La quarantaine se lève d\'un
-      clic (bouton par poste ou « Tout lever »). La liste des postes connectés permet d\'isoler en un clic.</p>
-      <p class="tip">Limite : la passerelle route, elle ne fait pas de pont — le trafic entre deux postes du même
-      sous-réseau ne passe pas par elle et n\'est donc pas filtrable ici. La passerelle elle-même ne peut pas être isolée.</p>'],
+    ['quarantaine', '🚫', 'Quarantaine réseau', '      <p>La <strong>quarantaine</strong> coupe un poste du réseau sans se déplacer et sans le débrancher : à utiliser
+      quand une machine est suspectée d\'être compromise, ou quand une analyse remonte quelque chose.</p>
+      <ul>
+        <li>Le poste isolé <strong>perd Internet et l\'accès aux autres machines</strong>, y compris aux dossiers
+        partagés. Il garde l\'accès à la passerelle, ce qui permet de continuer à l\'inventorier et de le sortir de
+        quarantaine à distance.</li>
+        <li>L\'isolement est <strong>immédiat</strong> et n\'attend pas un redémarrage.</li>
+        <li>La mise en quarantaine et la levée sont <strong>tracées au journal d\'audit</strong>, avec l\'administrateur
+        qui les a décidées. Couper le réseau d\'un collègue est une décision qui doit rester nominative.</li>
+      </ul>
+      <p class="tip">Prévenez l\'utilisateur du poste. Vu de sa place, une quarantaine est indiscernable d\'une panne
+      réseau : sans un mot, il appellera l\'assistance, redémarrera, changera de câble, et vous perdrez une heure à
+      diagnostiquer ce que vous avez déclenché vous-même.</p>'],
 
-    ['pxe', '📀', 'Serveur PXE (installation d\'OS)', '
-      <p><strong>Serveur PXE</strong> : installez un système (Debian, Ubuntu, Windows) sur un poste par le réseau.
-      Paramétrez le menu (titre, délai, entrées, protection), prévisualisez-le, changez la bannière. Sur le poste :
-      démarrer en <strong>amorçage réseau (PXE)</strong>. Menu protégé par les identifiants administrateur, clavier
-      en <strong>AZERTY</strong>.</p>
-      <p><strong>Images master</strong> : le panneau « Images master » liste les images de déploiement
-      (<code>.wim</code>, <code>.iso</code>…) — nom, taille, date de dépôt — et l\'espace restant sur leur volume.
-      Une image se dépose depuis un poste dans le dossier partagé <strong>ImagesRW</strong> ; elle apparaît
-      aussitôt dans la liste. Le bouton « Supprimer » libère la place, après confirmation nominative.</p>
-      <p class="tip">La suppression d\'une image est <strong>définitive</strong> : la passerelle n\'en garde
-      aucune copie. Vérifiez qu\'une sauvegarde existe ailleurs avant de supprimer. Les fichiers de réponse
-      <code>unattend-*.xml</code> sont protégés et n\'apparaissent pas dans la liste.</p>'],
+    ['pxe', '📀', 'Serveur PXE (installation d\'OS)', '      <p>Le <strong>serveur PXE</strong> installe un système d\'exploitation par le réseau : le poste démarre sur sa
+      carte réseau, un menu apparaît, et l\'installation part sans clé USB ni DVD. Pratique pour remettre à neuf une
+      machine, ou en préparer plusieurs de suite.</p>
+      <ul>
+        <li><strong>Déposez les images</strong> (Windows 11, Ubuntu) depuis cette page ; elles apparaissent ensuite au
+        menu de démarrage des postes.</li>
+        <li><strong>Côté poste</strong> : activez le démarrage réseau dans le BIOS/UEFI, et prenez l\'entrée réseau au
+        menu de démarrage (souvent <code>F12</code>, parfois <code>F9</code> ou <code>Échap</code> selon le fabricant).</li>
+        <li>Le poste doit être sur le <strong>réseau du LAN</strong>, celui que la passerelle sert : le PXE s\'appuie sur
+        le DHCP, il ne traverse pas un routeur.</li>
+        <li>Une image Windows occupe <strong>plusieurs gigaoctets</strong>. Surveillez l\'espace disque de la passerelle
+        avant d\'en déposer une seconde.</li>
+      </ul>
+      <p class="tip">Le démarrage réseau échoue le plus souvent pour trois raisons, dans cet ordre : le
+      <strong>démarrage sécurisé</strong> (Secure Boot) est actif, le poste est branché sur le <strong>mauvais
+      port</strong>, ou l\'image est incomplète. Le menu qui n\'apparaît pas du tout désigne les deux premières ; le menu
+      qui apparaît puis échoue désigne la troisième.</p>'],
   ],
 
   'Flotte multi-sites' => [
@@ -233,17 +410,34 @@ $GROUPS = [
   ],
 
   'Journalisation' => [
-    ['navigation', '🌐', 'Navigation, journaux &amp; recherche', '
-      <p>La <strong>Journalisation</strong> réunit ses outils en onglets. <strong>Navigation</strong> : historique des
-      sites par utilisateur, statistiques, export CSV. <strong>Journaux légaux</strong> : traçabilité des connexions
-      (RGPD), filtrable et exportable. <strong>Recherche agent</strong> : fiche complète d\'un agent (identité, comptes,
-      postes de connexion, navigation). Purge automatique après un an.</p>'],
+    ['navigation', '🌐', 'Navigation, journaux &amp; recherche', '      <p>L\'<strong>historique de navigation</strong> conserve, par agent et par poste, les sites consultés : date et
+      heure, domaine, utilisateur, adresse IP. C\'est ce qui permet de répondre à « qui a consulté quoi, et quand ».</p>
+      <ul>
+        <li><strong>Recherche</strong> par agent, par domaine ou par période ; les <strong>statistiques</strong> montrent
+        les domaines les plus visités et le volume par utilisateur.</li>
+        <li>Ce sont les <strong>domaines</strong> qui sont enregistrés, pas le contenu des pages ni les mots de passe :
+        la journalisation répond à une obligation légale, elle n\'est pas un outil de surveillance du contenu.</li>
+        <li>Les journaux sont <strong>chaînés et scellés</strong> par signature : une ligne modifiée ou supprimée après
+        coup rompt la chaîne et devient détectable. Sans cela, un journal ne vaudrait rien devant un magistrat.</li>
+        <li>La <strong>durée de conservation</strong> est paramétrable ; au-delà, les entrées sont purgées
+        automatiquement. Conserver plus longtemps que nécessaire est une faute, pas une précaution.</li>
+      </ul>
+      <p class="tip">Un agent absent des journaux n\'a pas forcément « rien fait » : vérifiez d\'abord qu\'il s\'est
+      authentifié au portail. Un poste non authentifié n\'a pas d\'accès — donc rien à journaliser.</p>'],
 
-    ['audit', '🕵️', 'Journal d\'audit des administrateurs', '
-      <p><strong>Audit console</strong> : trace <em>qui</em> (quel administrateur) a fait <em>quoi</em> et <em>quand</em>
-      dans la console — création/suppression de comptes, modification de GPO, révocation de jetons, changement du mot
-      de passe système, mises à jour. Aucun secret n\'est enregistré, seulement l\'action et sa cible. Filtres par
-      administrateur, action, période, et export CSV.</p>'],
+    ['audit', '🕵️', 'Journal d\'audit des administrateurs', '      <p>Le <strong>journal d\'audit</strong> enregistre ce que font les <em>administrateurs</em> dans cette console — à
+      ne pas confondre avec l\'historique de navigation, qui concerne les agents.</p>
+      <ul>
+        <li>Chaque entrée porte <strong>qui</strong>, <strong>quand</strong>, <strong>depuis quelle adresse</strong>,
+        <strong>quoi</strong> : création ou suppression de compte, changement de droits, publication d\'une actualité,
+        mise en quarantaine, modification du filtrage, déploiement d\'une stratégie.</li>
+        <li>Il répond à deux questions qui reviennent toujours après coup : « qui a changé ça », et « depuis
+        quand ». Sans lui, un droit accordé par erreur est intraçable.</li>
+        <li>Il est <strong>consultable, pas modifiable</strong> — y compris par un administrateur complet.</li>
+      </ul>
+      <p class="tip">Quand un comportement inattendu apparaît (un agent qui perd un accès, un site qui se bloque tout
+      seul), commencez par ce journal plutôt que par les fichiers de configuration : neuf fois sur dix, la cause est
+      une action humaine récente et elle est écrite ici.</p>'],
 
     ['requisition', '⚖️', 'Réquisition judiciaire', '
       <p><strong>Réquisition</strong> : en cas de réquisition judiciaire ou administrative, extrayez toute la
@@ -259,44 +453,70 @@ $GROUPS = [
   ],
 
   'Intranet' => [
-    ['intranet', '🏠', 'Portail intranet &amp; contenu', '
-      <p><strong>Portail intranet</strong> (onglets) : « Accueil » personnalise la page d\'accueil interne (titre,
-      message, liens rapides) ; « Pages » et « Actualités » se rédigent dans un <strong>éditeur visuel</strong> —
-      on met en forme directement (gras, titres, listes, liens, images), sans aucun code à connaître, et l\'aperçu
-      est permanent. « Médiathèque » stocke les images (ré-encodées à l\'import pour la sécurité) : le bouton
-      « Insérer une image » y puise directement. Les pages sont visibles par les agents après connexion.
-      L\'<strong>Assistance</strong> (demandes des agents) reste une entrée séparée.</p>
-      <p class="tip">Le contenu collé depuis un traitement de texte est <strong>nettoyé automatiquement</strong> :
-      seule la mise en forme sûre est conservée. C\'est volontaire — cela protège le portail.</p>'],
+    ['intranet', '🏠', 'Portail intranet &amp; contenu', '      <p>L\'<strong>intranet</strong> est la page d\'accueil des agents après connexion au portail : actualités du
+      service, pages d\'information, liens utiles, annuaire, assistance.</p>
+      <ul>
+        <li><strong>Actualités</strong> : chaque publication a un <strong>permalien</strong> et rejoint une
+        <strong>archive</strong> consultable — une note de service reste retrouvable des mois plus tard.</li>
+        <li><strong>Pages</strong> : consignes, procédures, numéros utiles. Elles vivent dans Bastion, donc elles
+        restent accessibles même quand l\'accès extérieur est coupé.</li>
+        <li><strong>Bandeau d\'annonce</strong> : un message en haut de toutes les pages, avec une <strong>date
+        d\'expiration</strong> — il disparaît seul, ce qui évite les avis de fête nationale encore affichés en octobre.</li>
+        <li><strong>Recherche</strong> : un seul champ qui interroge actualités, pages, annuaire et documentation.</li>
+        <li>Chaque publication est <strong>tracée au journal d\'audit</strong>, avec son auteur.</li>
+      </ul>
+      <p class="tip">Une page modifiée qui semble inchangée côté agent, c\'est le cache du navigateur : un
+      <strong>Ctrl+F5</strong> tranche la question en une seconde.</p>'],
   ],
 
   'Supervision &amp; exploitation' => [
-    ['sante', '💓', 'Santé, rapport &amp; tableau de bord', '
-      <p><strong>Système</strong> affiche la <strong>santé de la passerelle</strong> (processeur, mémoire, disque, durée
-      de service) avec alerte si le disque se remplit, ainsi que l\'état de toutes les fonctions et les deux mises à jour
-      (système + Bastion) réunies.</p>
-      <p><strong>Rapport de conformité</strong> (Supervision) : bilan périodique imprimable / PDF — comptes, activité
-      réseau, antivirus, GPO, actions d\'audit, dernière sauvegarde, rétention légale — à remettre à la hiérarchie.</p>'],
+    ['sante', '💓', 'Santé, rapport &amp; tableau de bord', '      <p>La page <strong>Santé</strong> montre l\'état de la passerelle en direct : processeur, mémoire, disque,
+      température, durée de fonctionnement, et l\'état de chaque service essentiel.</p>
+      <ul>
+        <li><strong>Alertes par courriel</strong> : au franchissement d\'un seuil (disque presque plein, service arrêté),
+        un message part. C\'est le seul canal qui fonctionne encore quand la console, elle, ne répond plus — une alerte
+        qui ne s\'affiche que dans l\'interface ne sert à rien le jour où l\'interface tombe.</li>
+        <li><strong>Le disque est la panne la plus courante</strong> : journaux, images d\'installation et installeurs du
+        store grossissent sans bruit. Un disque plein arrête la base de données, et donc l\'authentification de tout le
+        monde d\'un coup.</li>
+        <li><strong>Rapport de conformité</strong> : un PDF récapitulant configuration, comptes, stratégies appliquées
+        et état des postes — à produire lors d\'un contrôle, plutôt que de faire des copies d\'écran.</li>
+        <li><strong>Tableau de bord</strong> : la vue d\'ensemble d\'ouverture — sessions actives, alertes, postes non
+        conformes.</li>
+      </ul>
+      <p class="tip">Vérifiez que les alertes <strong>partent réellement</strong> : envoyez un message d\'essai depuis la
+      configuration du courriel. Une alerte silencieuse par erreur de configuration est pire que pas d\'alerte du tout,
+      parce qu\'on croit être couvert.</p>'],
 
-    ['sauvegarde', '💾', 'Sauvegarde &amp; restauration', '
-      <p><strong>Sauvegarde</strong> : créez une archive complète (base, configuration, médias intranet,
-      <strong>sauvegarde du domaine AD</strong>), téléchargez-la, ou restaurez une sauvegarde antérieure. Une
-      <strong>sauvegarde automatique hebdomadaire</strong> est active par défaut.</p>
-      <p><strong>Sauvegarde hors-site</strong> : une archive qui ne quitte jamais la passerelle disparaît avec
-      elle. La dernière archive, <strong>déjà chiffrée</strong>, peut être recopiée automatiquement vers un
-      <strong>dossier partagé</strong> du réseau (NAS, seconde passerelle). Renseignez l\'hôte, le partage, un
-      compte et le sous-dossier, puis « <strong>Tester la connexion</strong> » avant d\'activer l\'envoi
-      automatique. Rien ne part sur Internet : la copie <strong>reste sur votre réseau</strong>.</p>
-      <p class="tip">Conservez la <strong>phrase secrète ailleurs que sur le support</strong> de sauvegarde :
-      sans elle, l\'archive chiffrée est inexploitable — y compris par vous.</p>'],
+    ['sauvegarde', '💾', 'Sauvegarde &amp; restauration', '      <p><strong>Sauvegarde</strong> : une archive <strong>chiffrée</strong> contenant la base de données (comptes,
+      groupes, quotas, journaux), la configuration des services, le contenu de l\'intranet et les paramètres du domaine.</p>
+      <ul>
+        <li><strong>Lancez-la à la main</strong> avant toute intervention lourde : mise à jour, changement de
+        configuration réseau, manipulation de l\'annuaire.</li>
+        <li><strong>Téléchargez l\'archive et sortez-la de la machine.</strong> Une sauvegarde qui dort sur le disque
+        qu\'elle est censée protéger ne sert à rien le jour où ce disque lâche.</li>
+        <li><strong>Restauration</strong> : déposez l\'archive et confirmez. L\'opération <strong>écrase</strong> l\'état
+        actuel — comptes, journaux, réglages. Ce n\'est pas une fusion.</li>
+        <li>L\'archive étant chiffrée, elle est <strong>inutilisable sans son secret</strong>. Conservez-le ailleurs que
+        sur la passerelle, sinon les deux disparaîtront ensemble.</li>
+      </ul>
+      <p class="tip">Une sauvegarde jamais restaurée est une <strong>hypothèse</strong>, pas une garantie. Essayez la
+      restauration une fois, hors production, avant d\'en avoir besoin en urgence — c\'est le seul moment où découvrir
+      un problème ne coûte rien.</p>'],
 
-    ['trafic', '📡', 'Trafic réseau en direct', '
-      <p><strong>Trafic réseau</strong> : ce qui passe par la passerelle <strong>en temps réel</strong> — débit
-      montant et descendant vers Internet, et <strong>classement des postes</strong> qui consomment le plus.
-      La page se rafraîchit toute seule.</p>
-      <p>C\'est l\'écran à ouvrir quand « Internet rame » : il montre en quelques secondes si la ligne est saturée
-      et, le cas échéant, par quel poste. Un poste peut être <strong>déconnecté</strong> d\'un clic depuis la liste
-      des clients (il devra se reconnecter au portail).</p>'],
+    ['trafic', '📡', 'Trafic réseau en direct', '      <p><strong>Trafic réseau en direct</strong> : qui consomme quoi, maintenant. Chaque poste actif y apparaît avec
+      son débit montant et descendant, son utilisateur et son volume de session.</p>
+      <ul>
+        <li>Sert surtout à répondre à « Internet rame » : en quelques secondes on voit si la ligne est saturée, et
+        par qui — téléchargement, sauvegarde en ligne, mise à jour massive.</li>
+        <li>Les <strong>limites de débit par groupe</strong> se règlent dans « Groupes &amp; quotas » : plutôt que de
+        couper quelqu\'un, on plafonne une catégorie d\'usage.</li>
+        <li>Une session peut être <strong>fermée</strong> depuis la page des sessions ; l\'agent devra se réidentifier au
+        portail.</li>
+      </ul>
+      <p class="tip">Un débit élevé n\'est pas un abus. Avant d\'intervenir, regardez <em>vers quels domaines</em> il va :
+      une mise à jour Windows sur dix postes ressemble beaucoup à un téléchargement massif, et ce n\'est pas la même
+      conversation à avoir.</p>'],
 
     ['temps', '🕒', 'Serveur de temps (heure)', '
       <p>L\'heure est <strong>critique</strong> : au-delà de 5 minutes d\'écart entre un poste et le serveur,
@@ -313,16 +533,36 @@ $GROUPS = [
       Dans ce cas, l\'outil <code>Install-BastionTimeGuard.cmd</code> (dossier « Commun ») corrige le poste
       durablement — voir « Outils à lancer sur un poste ».</p>'],
 
-    ['services', '🧰', 'Services', '
-      <p><strong>Services</strong> : état de tous les services (portail, base, DNS, web, domaine, antivirus, KMS…), avec
-      démarrage / arrêt / redémarrage, consultation du <strong>journal</strong> de chaque service, et actualisation
-      automatique.</p>'],
+    ['services', '🧰', 'Services', '      <p>La page <strong>Services</strong> donne l\'état de chaque brique de la passerelle et permet de la redémarrer
+      sans ligne de commande.</p>
+      <ul>
+        <li><strong>Portail captif</strong> — redirige les postes non authentifiés et ouvre l\'accès après connexion.
+        Arrêté, plus personne n\'obtient d\'accès.</li>
+        <li><strong>Authentification</strong> — vérifie les identifiants. Arrêtée, les connexions sont refusées alors
+        que les mots de passe sont bons.</li>
+        <li><strong>DNS / DHCP</strong> — distribue les adresses et applique le filtrage. Arrêté, les postes ne
+        reçoivent plus d\'adresse et ne résolvent plus rien : la panne la plus visible de toutes.</li>
+        <li><strong>Base de données</strong> — comptes, journaux, paramètres. Tout en dépend.</li>
+        <li><strong>Contrôleur de domaine</strong> — ouverture de session Windows, stratégies, dossiers partagés.</li>
+        <li><strong>Serveur web</strong> — cette console et le portail.</li>
+      </ul>
+      <p class="tip">Redémarrez un service <strong>un par un</strong>, en vérifiant après chacun. Tout relancer d\'un
+      bloc fait perdre l\'information la plus utile : lequel était réellement en cause.</p>'],
 
-    ['central', '🏢', 'Serveur central (multi-sites)', '
-      <p>Le <strong>Bastion Central</strong> (machine dédiée, <code>https://&lt;central&gt;:9443</code>) supervise et
-      pilote toutes les passerelles d\'un département depuis un point unique : vue d\'ensemble, détail par site, et
-      <strong>actions groupées</strong> (pousser un blocage, créer un compte, piloter un service sur plusieurs sites).
-      Chaque passerelle est ajoutée avec son URL admin et son jeton d\'API.</p>'],
+    ['central', '🏢', 'Serveur central (multi-sites)', '      <p>Le <strong>serveur central</strong> est le point de rendez-vous d\'une flotte de plusieurs commissariats. Chaque
+      site ouvre vers lui un tunnel <em>sortant</em>, ce qui évite d\'avoir à ouvrir un port sur la box de chaque
+      commissariat — et donc d\'exposer chaque site depuis Internet.</p>
+      <ul>
+        <li>Déclarez ce serveur comme <strong>principal du département</strong> dans « Liaison inter-sites » ; les
+        autres se déclarent comme <strong>site</strong> et pointent vers lui.</li>
+        <li>Le principal voit l\'état de chaque site, la date du dernier contact et les flux en direct sur la
+        <strong>cartographie</strong>.</li>
+        <li>Un site dont l\'adresse publique change (box redémarrée, bail renouvelé) se <strong>re-raccroche seul</strong> :
+        c\'est lui qui appelle, donc son changement d\'adresse n\'a pas d\'importance.</li>
+      </ul>
+      <p class="tip">La liaison sert à la <strong>supervision</strong> et à la distribution. Elle ne fusionne pas les
+      annuaires : chaque commissariat garde son domaine et ses comptes. Voir « Liaison inter-sites » pour le détail
+      du raccordement.</p>'],
   ],
 
   'Dépannage' => [
@@ -516,6 +756,17 @@ function aideFilter(q){
   document.querySelectorAll(".aide .doc .grp-title").forEach(function(g){
     var any=false, n=g.nextElementSibling;
     while(n && n.tagName==="SECTION"){ if(n.style.display!==""){}else{any=true;} n=n.nextElementSibling; }
+    g.style.display = any ? "" : "none";
+  });
+  // Le sommaire suit le filtre. Sans cela il continuait de proposer des liens vers
+  // des sections masquees : on cliquait, et rien ne se passait.
+  document.querySelectorAll(".aide .toc a[href^='#']").forEach(function(a){
+    var s = document.getElementById(a.getAttribute("href").slice(1));
+    a.style.display = (s && s.style.display === "none") ? "none" : "";
+  });
+  document.querySelectorAll(".aide .toc .grp").forEach(function(g){
+    var any=false, n=g.nextElementSibling;
+    while(n && n.tagName==="A"){ if(n.style.display!=="none"){any=true;} n=n.nextElementSibling; }
     g.style.display = any ? "" : "none";
   });
 }
