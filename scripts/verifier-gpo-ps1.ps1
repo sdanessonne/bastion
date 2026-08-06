@@ -30,6 +30,10 @@ $cas = @(
     @{ f = 'gpo-kms.py';       a = "'192.168.182.1', False"; s = 'sans-montee' }
     @{ f = 'gpo-timesync.py';  a = "'192.168.182.1'" }
     @{ f = 'gpo-numlock.py';   a = "" }
+    # Prise de main a distance : la cle publique du relais contient « / » et « + » et se
+    # termine par « = ». Elle est injectee dans une chaine PowerShell — un caractere mal
+    # place la rendrait inanalysable, et l'echec n'apparaitrait qu'au demarrage du poste.
+    @{ f = 'gpo-distance.py';  a = "'10.91.22.250', 'JETON', 'zIkQ/GYNv+TU7WHlvVBP7VxbJbDUEz2ZUAjUqBIHyw2Pw='" }
     # Trois tailles de liste pour les applications : c'est la VIRGULE de fin qui avait
     # rendu le script inanalysable, et elle ne se manifeste qu'au dernier élément.
     @{ f = 'gpo-apps.py'; a = "[]";                                                                   s = 'aucune appli' }
