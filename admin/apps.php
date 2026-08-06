@@ -274,8 +274,11 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
             <?php if ($have): ?><span class="badge on">✓ Dans le store</span>
             <?php elseif (!empty($c['manuel'])): ?>
               <?php /* Pas de bouton : cette source ne publie pas d'installeur récupérable.
-                        Mieux vaut le dire ici qu'offrir un bouton qui échouera. */ ?>
-              <span class="badge" title="<?= e((string) $c['manuel']) ?>">📥 À déposer à la main</span>
+                        La raison est écrite en clair, pas cachée dans une infobulle — c'est
+                        elle qui dit à l'administrateur s'il doit chercher ailleurs ou non. */ ?>
+              <span class="badge" style="white-space:normal;text-align:right;line-height:1.35">
+                📥 À déposer à la main<br><span class="muted small" style="font-weight:400"><?= e((string) $c['manuel']) ?></span>
+              </span>
             <?php else: ?>
             <form method="post" onsubmit="this.querySelector('button').textContent='Téléchargement…';this.querySelector('button').disabled=true">
               <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="fetch"><input type="hidden" name="key" value="<?= e($k) ?>">

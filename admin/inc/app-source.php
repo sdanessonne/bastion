@@ -218,6 +218,84 @@ function app_src_index(string $spec): array
 }
 
 /**
+ * Index à DEUX niveaux : un répertoire par version, puis un sous-répertoire par système,
+ * et un nom de fichier qu'on ne peut pas deviner (KDE : « 26.04/windows/kdenlive-26.04.2.exe »).
+ * On lit les deux index et on choisit le fichier au score, en départageant par la version
+ * la plus haute — sans quoi on récupérerait la première publication du cycle, pas la dernière.
+ * Spécification : « dirscan:<index>|<sous-chemin> ».
+ */
+function app_src_dirscan(string $spec, bool $veutMsi): array
+{
+    [$base, $sous] = array_pad(explode('|', $spec, 2), 2, '');
+    if ($base === '') {
+        return ['err' => 'Source « dirscan: » mal formée.'];
+    }
+    $h = app_src_get($base);
+    if ($h === null) {
+        return ['err' => 'Index de l\'éditeur injoignable (' . $base . ').'];
+    }
+    if (!preg_match_all('~>([0-9]+(?:\.[0-9]+){1,3})/~', $h, $m)) {
+        return ['err' => 'Aucune version lisible dans l\'index (' . $base . ').'];
+    }
+    $vs = array_values(array_unique($m[1]));
+    usort($vs, 'version_compare');
+    $v = (string) end($vs);
+
+    $rep = $base . $v . '/' . ($sous !== '' ? rtrim($sous, '/') . '/' : '');
+    $l = app_src_get($rep);
+    if ($l === null) {
+        return ['err' => 'Répertoire de version injoignable (' . $rep . ').'];
+    }
+    if (!preg_match_all('~"([^"/]+\.(?:exe|msi))"~i', $l, $f)) {
+        return ['err' => 'Aucun installeur listé dans ' . $rep . '.'];
+    }
+
+    $best = null; $bestS = 0; $bestV = '0';
+    foreach (array_unique($f[1]) as $nom) {
+        $s = app_src_note($nom, $veutMsi);
+        if ($s <= 0) {
+            continue;
+        }
+        preg_match('~([0-9]+(?:\.[0-9]+){1,3})~', $nom, $mv);
+        $nv = $mv[1] ?? '0';
+        // Score d'abord, version ensuite : un installeur du bon type mais plus ancien
+        // reste préférable à un fichier du mauvais type plus récent.
+        if ($s > $bestS || ($s === $bestS && version_compare($nv, $bestV, '>'))) {
+            $bestS = $s; $bestV = $nv; $best = $nom;
+        }
+    }
+    if ($best === null) {
+        return ['err' => 'Aucun installeur Windows 64 bits dans ' . $rep . '.'];
+    }
+    return ['url' => $rep . $best, 'version' => $bestV, 'avert' => ''];
+}
+
+/**
+ * Application empaquetée avec electron-builder : la version du jour est publiée dans un
+ * manifeste « latest.yml » à côté des fichiers. On la lit et on fabrique le nom du fichier.
+ *
+ * Attention : la clé « path » du manifeste ne désigne PAS forcément la version 64 bits
+ * (chez Signal elle pointe sur l'ARM64). On ne prend donc que le numéro de version, et
+ * le gabarit dit explicitement quelle architecture on veut.
+ * Spécification : « electronyml:<base>|<gabarit avec {v}> ».
+ */
+function app_src_electronyml(string $spec): array
+{
+    [$base, $gabarit] = array_pad(explode('|', $spec, 2), 2, '');
+    if ($base === '' || strpos($gabarit, '{v}') === false) {
+        return ['err' => 'Source « electronyml: » mal formée (gabarit avec {v} attendu).'];
+    }
+    $y = app_src_get($base . 'latest.yml');
+    if ($y === null) {
+        return ['err' => 'Manifeste latest.yml injoignable (' . $base . ').'];
+    }
+    if (!preg_match('~^version:\s*([0-9][^\s]*)~mi', $y, $m)) {
+        return ['err' => 'Aucune version lisible dans ' . $base . 'latest.yml.'];
+    }
+    return ['url' => $base . str_replace('{v}', $m[1], $gabarit), 'version' => $m[1], 'avert' => ''];
+}
+
+/**
  * Projet hébergé sur SourceForge.
  *
  * On n'utilise PAS « files/latest/download » : ce raccourci rend le fichier le plus
@@ -288,6 +366,12 @@ function app_src_resoudre(array $c): array
     }
     if (strncmp($u, 'index:', 6) === 0) {
         return app_src_index(substr($u, 6));
+    }
+    if (strncmp($u, 'dirscan:', 8) === 0) {
+        return app_src_dirscan(substr($u, 8), $msi);
+    }
+    if (strncmp($u, 'electronyml:', 12) === 0) {
+        return app_src_electronyml(substr($u, 12));
     }
     if ($u === '') {
         return ['err' => 'Entrée de catalogue sans source.'];
