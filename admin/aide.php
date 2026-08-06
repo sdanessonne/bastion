@@ -104,7 +104,30 @@ $GROUPS = [
       ça s\'est arrêté : installation, configuration, redémarrage du service ou remontée de l\'identifiant.</p>
       <p><strong>La connexion échoue alors que l\'identifiant est bon.</strong> Vérifiez les deux voyants en haut de
       la page « Prise de main à distance ». Si « Postes autorisés à joindre le relais » est au rouge, le portail
-      captif bloque : relancez <code>setup-distance.sh install</code> sur la passerelle.</p>'],
+      captif bloque : relancez <code>setup-distance.sh install</code> sur la passerelle.</p>
+      <p><strong>L\'arrêt et le démarrage du poste sont très longs.</strong> Regardez d\'abord le
+      <strong>démarrage rapide</strong> de Windows. La stratégie du pavé numérique le désactivait, parce qu\'il
+      restaure l\'état du clavier de la session précédente et faisait ignorer le réglage un démarrage sur deux.
+      Le calcul était mauvais : cela imposait à chaque poste un arrêt et un démarrage complets, tous les jours,
+      pour un confort sur l\'écran de connexion. Il est rétabli. Vérifiez sur un poste que
+      <code>HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power\\HiberbootEnabled</code> vaut
+      <strong>1</strong> ; s\'il vaut encore 0, la stratégie n\'a pas été rejouée depuis la correction.</p>
+      <p>Ensuite, comptez les <strong>scripts de démarrage</strong>. Windows les exécute l\'un après l\'autre et
+      <em>attend</em> chacun avant d\'ouvrir la session. Cinq stratégies en portent un ; celle des applications
+      est la plus lourde, puisqu\'elle télécharge et installe.</p>
+
+      <p><strong>L\'ouverture de session est lente, tous les jours.</strong> Presque toujours la même cause : une
+      application du store qui n\'arrive pas à s\'installer. Le poste retente celles dont le marqueur manque, donc
+      un seul installeur défectueux fait recommencer tout le reste à chaque fois. Ouvrez
+      <code>C:\\ProgramData\\Bastion\\apps.log</code> : la ligne <code>ABANDONNE après 3 échecs</code> nomme la
+      coupable. Le plus souvent son fichier n\'est pas un installeur — une page web enregistrée comme
+      <code>.exe</code> par une source qui ne publiait pas de binaire. Récupérez-la de nouveau depuis le store,
+      ou désactivez-la.</p>
+
+      <p><strong>gpupdate prend un temps interminable.</strong> Chaque stratégie liée au domaine est traitée à
+      chaque passage. Au-delà d\'une vingtaine, cela se sent, et les stratégies portant un script pèsent bien plus
+      que les autres. Avant de chercher un problème réseau, comptez-les : c\'est souvent une accumulation, pas une
+      panne.</p>'],
     ['faq-acces', '🔑', 'FAQ — Comptes et accès', '      <p><strong>Un agent ne peut pas se connecter alors que son mot de passe est bon.</strong> Vérifiez dans l\'ordre :
       le compte n\'a-t-il pas une <strong>date de fin d\'accès</strong> dépassée (il est alors désactivé, pas supprimé) ;
       le service d\'authentification est-il actif (page Services) ; le poste est-il bien sur le réseau servi par la
