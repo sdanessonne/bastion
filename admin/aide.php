@@ -620,6 +620,43 @@ $GROUPS = [
       <p class="tip">Une sauvegarde jamais restaurée est une <strong>hypothèse</strong>, pas une garantie. Essayez la
       restauration une fois, hors production, avant d\'en avoir besoin en urgence — c\'est le seul moment où découvrir
       un problème ne coûte rien.</p>'],
+    ['fonctions', '🧩', 'Fonctions optionnelles', '      <p>Tout ce que fait Bastion n\'est pas indispensable partout. Cette page permet de couper ce dont vous
+      n\'avez pas l\'usage — et surtout de le rallumer sans ligne de commande.</p>
+
+      <p><strong>Ce qui n\'y figure pas.</strong> Le portail captif, le DNS/DHCP, la base de données et le
+      contrôleur de domaine n\'apparaissent pas ici : les couper n\'est pas un réglage, c\'est une panne. Pour un
+      redémarrage ponctuel de ceux-là, voyez la page <em>Services</em>.</p>
+
+      <p><strong>Chaque fonction annonce trois choses</strong> : ce qu\'elle fait, ce qui cesse de marcher si vous
+      la coupez, et ce que ça libère. C\'est la seule information qui permette de décider — un interrupteur sans
+      conséquence affichée n\'aide personne.</p>
+      <ul>
+        <li><strong>Antivirus</strong> — le premier consommateur de mémoire de la passerelle, et de loin : il
+        charge toute sa base de signatures en RAM. Le couper libère près d\'un gigaoctet, mesuré. En échange, les
+        stations d\'analyse ne rendent plus de verdict, et les clés USB apportées de l\'extérieur entrent sans
+        contrôle.</li>
+        <li><strong>Prise de main à distance</strong> — consommation négligeable, mais le relais est joignable
+        depuis Internet. Le couper referme cette porte quand personne n\'en a besoin.</li>
+        <li><strong>Activation Windows / Office</strong> — attention au décalage : les postes déjà activés le
+        restent environ 180 jours avant de repasser en « non activé ». La panne apparaîtra des mois après la
+        décision, et plus personne ne fera le lien.</li>
+        <li><strong>Point d\'accès Wi-Fi</strong> — le réseau sans fil disparaît ; les appareils sans port réseau
+        perdent tout accès.</li>
+        <li><strong>Historique de navigation</strong> — listé, mais <strong>verrouillé</strong> : il répond à une
+        obligation légale de conservation, et c\'est une des raisons d\'être de la passerelle. Il ne se coupe pas
+        d\'un clic depuis une page web.</li>
+      </ul>
+
+      <p class="tip">L\'état affiché est relu sur le système à chaque ouverture de la page, jamais mémorisé dans
+      un réglage. Un indicateur qui annonce « activé » pendant que le service est mort ferait chercher la panne
+      ailleurs — il coûterait plus cher que pas d\'indicateur du tout.</p>
+
+      <p class="tip">Guettez l\'état <strong>« Partielle »</strong>. Deux fonctions reposent sur deux composants :
+      si un seul tourne, tout a l\'apparence de marcher et rien ne marche. C\'est le cas le plus déroutant, donc
+      celui qui est signalé le plus fort.</p>
+
+      <p>Activer ou couper une fonction est <strong>immédiat et survit au redémarrage</strong>, et chaque
+      basculement part au journal d\'audit avec le nom de celui qui l\'a décidé.</p>'],
 
     ['trafic', '📡', 'Trafic réseau en direct', '      <p><strong>Trafic réseau en direct</strong> : qui consomme quoi, maintenant. Chaque poste actif y apparaît avec
       son débit montant et descendant, son utilisateur et son volume de session.</p>

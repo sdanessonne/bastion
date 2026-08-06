@@ -53,6 +53,7 @@ function pf_nav_groups(): array {
             'chiffrement.php' => ['Chiffrement des postes', '🔐', 'bitlocker tpm disque'],
             'quarantaine.php' => ['Quarantaine réseau', '🚫', 'isoler poste couper bloquer'],
             'sauvegarde.php' => ['Sauvegarde', '💾', 'restauration archive cle usb'],
+            'fonctions.php'  => ['Fonctions', '🧩', 'activer desactiver antivirus clamav prise de main distance wifi kms module option'],
         ],
         'Postes & réseau' => [
             'ad.php'         => ['Active Directory', '🗄️', 'domaine gpo strategies ou samba'],
