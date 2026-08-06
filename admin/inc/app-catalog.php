@@ -26,7 +26,27 @@ return [
     'libre'     => ['name'=>'LibreOffice','icon'=>'📄','cat'=>'Bureautique & PDF','msi'=>true,'args'=>'/qn','url'=>'index:https://download.documentfoundation.org/libreoffice/stable/|{v}/win/x86_64/LibreOffice_{v}_Win_x86-64.msi','desc'=>'Suite bureautique complète (texte, tableur, présentation, dessin).'],
     'onlyoffice'=> ['manuel'=>'page de telechargement dynamique','name'=>'ONLYOFFICE Desktop','icon'=>'📝','cat'=>'Bureautique & PDF','msi'=>false,'args'=>'/silent','url'=>'https://download.onlyoffice.com/install/desktop/editors/windows/onlyoffice-desktopeditors-x64.exe','desc'=>'Suite bureautique compatible avec les formats Microsoft Office.'],
     'sumatra'   => ['name'=>'SumatraPDF','icon'=>'📕','cat'=>'Bureautique & PDF','msi'=>false,'args'=>'-s','url'=>'https://www.sumatrapdfreader.org/dl/rel/3.5.2/SumatraPDF-3.5.2-64-install.exe','desc'=>'Lecteur PDF, ePub, MOBI, CBZ… ultra-léger.'],
-    'foxit'     => ['manuel'=>'liens signes valables 2 h seulement, aucune URL durable a mettre au catalogue','name'=>'Foxit PDF Reader','icon'=>'📗','cat'=>'Bureautique & PDF','msi'=>false,'args'=>'/quiet','url'=>'https://cdn01.foxitsoftware.com/pub/foxit/reader/desktop/win/2024.1/FoxitPDFReader20241_enu_Setup.exe','desc'=>'Lecteur PDF complet (annotations, formulaires).'],
+
+/*
+ * Foxit PDF Reader — source Clubic, choisie explicitement par l'exploitant le 2026-08-06.
+ *
+ * Foxit ne publie plus d'URL durable : son site ne sert que des liens signés valables
+ * deux heures. Le lien Clubic ci-dessous a été retenu à sa place, en connaissance de
+ * trois points vérifiés le jour du choix :
+ *
+ *  - le fichier est AUTHENTIQUE : signature Authenticode valide, « FOXIT SOFTWARE INC. »,
+ *    émise par DigiCert. Clubic rediffuse l'installeur d'origine sans le modifier ;
+ *  - il est ANCIEN : 2024.4.0.27683, quand Foxit publie 2026.1.2. Un lecteur PDF est une
+ *    surface d'attaque courante ; cette version n'a pas les correctifs des deux dernières
+ *    années ;
+ *  - l'adresse porte des JETONS (« /generate/<jeton>/<jeton>/ »). Elle peut cesser de
+ *    fonctionner sans préavis. Ce n'est pas grave : le store contrôle désormais ce qu'il
+ *    reçoit, et refusera une page d'erreur au lieu de l'enregistrer comme installeur.
+ *    L'échec sera visible et nommé, pas silencieux.
+ *
+ * À ne pas « corriger » en remettant une URL foxit.com : elles ne fonctionnent pas.
+ */
+    'foxit'     => ['name'=>'Foxit PDF Reader','icon'=>'📗','cat'=>'Bureautique & PDF','msi'=>false,'args'=>'/quiet','url'=>'https://dl.clubic.com/generate/850105ebbf28b589120e4c5c56662a2b/6a75c062/soft/logiciel/foxit-reader-windows-2024.4.0-32494.exe','desc'=>'Lecteur PDF complet (annotations, formulaires). Source Clubic, version 2024.4.0 : choix de l\'exploitant, voir la note du catalogue.'],
     'pdfsam'    => ['name'=>'PDFsam Basic','icon'=>'✂️','cat'=>'Bureautique & PDF','msi'=>false,'args'=>'/S','url'=>'github:torakiki/pdfsam','desc'=>'Fusionner, découper, faire pivoter des PDF (GitHub Releases).'],
     'notepadpp' => ['name'=>'Notepad++','icon'=>'🗒️','cat'=>'Bureautique & PDF','msi'=>false,'args'=>'/S','url'=>'https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.6.9/npp.8.6.9.Installer.x64.exe','desc'=>'Éditeur de texte et de code avec coloration syntaxique.'],
     'thunderbird'=>['name'=>'Mozilla Thunderbird','icon'=>'🐦','cat'=>'Bureautique & PDF','msi'=>false,'args'=>'-ms','url'=>'https://download.mozilla.org/?product=thunderbird-latest-ssl&os=win64&lang=fr','desc'=>'Client de messagerie (courriel, agenda, contacts).'],
