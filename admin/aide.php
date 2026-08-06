@@ -46,7 +46,17 @@ $GROUPS = [
       dérive au démarrage. Ensuite seulement : <code>gpupdate /force</code> puis <code>gpresult /r</code>.</p>
       <p><strong>Windows reste « non activé ».</strong> Un serveur KMS n\'active rien avant d\'avoir vu 25 postes
       distincts (5 pour Office). En deçà du seuil, rien n\'est cassé : le compteur monte à chaque nouvelle machine.
-      L\'état réel de chaque poste est dans « Inventaire des postes ».</p>'],
+      L\'état réel de chaque poste est dans « Inventaire des postes ».</p>
+      <p><strong>Un poste n\'apparaît pas dans la liste des postes joignables.</strong> Il doit d\'abord s\'être
+      <em>inventorié</em> — la console refuse d\'enregistrer un identifiant pour une machine qu\'elle ne connaît pas,
+      sinon n\'importe quel nom inventé peuplerait la liste. Vérifiez qu\'il figure dans « Parc informatique », puis
+      qu\'il a redémarré depuis le déploiement de la stratégie.</p>
+      <p><strong>Le poste est dans la liste mais sans identifiant.</strong> Le client est installé mais ne s\'est pas
+      encore annoncé. Le journal <code>C:\\ProgramData\\Bastion\\distance.log</code> sur le poste dit à quelle étape
+      ça s\'est arrêté : installation, configuration, redémarrage du service ou remontée de l\'identifiant.</p>
+      <p><strong>La connexion échoue alors que l\'identifiant est bon.</strong> Vérifiez les deux voyants en haut de
+      la page « Prise de main à distance ». Si « Postes autorisés à joindre le relais » est au rouge, le portail
+      captif bloque : relancez <code>setup-distance.sh install</code> sur la passerelle.</p>'],
     ['faq-acces', '🔑', 'FAQ — Comptes et accès', '      <p><strong>Un agent ne peut pas se connecter alors que son mot de passe est bon.</strong> Vérifiez dans l\'ordre :
       le compte n\'a-t-il pas une <strong>date de fin d\'accès</strong> dépassée (il est alors désactivé, pas supprimé) ;
       le service d\'authentification est-il actif (page Services) ; le poste est-il bien sur le réseau servi par la
@@ -356,6 +366,47 @@ $GROUPS = [
       <p class="tip">Prévenez l\'utilisateur du poste. Vu de sa place, une quarantaine est indiscernable d\'une panne
       réseau : sans un mot, il appellera l\'assistance, redémarrera, changera de câble, et vous perdrez une heure à
       diagnostiquer ce que vous avez déclenché vous-même.</p>'],
+    ['distance', '🖥️', 'Prise de main à distance', '      <p>Prendre la main sur l\'écran d\'un poste du domaine pour dépanner un agent, sans se déplacer.</p>
+
+      <p><strong>Pourquoi ça passe par un relais.</strong> Les postes sont sur un réseau
+      (<code>192.168.182.0/24</code>) qu\'aucune route ne relie au réseau d\'administration : c\'est cette coupure qui
+      empêche un poste compromis d\'atteindre la console. Une prise de main « directe » — bureau à distance,
+      assistance Windows — obligerait à percer cet isolement. Ici, le poste <em>et</em> l\'administrateur se
+      connectent en <strong>sortant</strong> vers un relais hébergé sur la passerelle : rien n\'entre dans le réseau
+      des postes. C\'est aussi ce qui permettra de dépanner un poste d\'un autre commissariat par le tunnel.</p>
+
+      <p><strong>Préparer votre poste d\'administration</strong> (une seule fois)</p>
+      <ul>
+        <li>Installez le client <strong>RustDesk</strong> sur votre machine.</li>
+        <li>Dans <em>Paramètres → Réseau</em>, renseignez le <strong>serveur</strong> et la <strong>clé</strong>
+        affichés en haut de la page « Prise de main à distance » de la console. Sans la clé, le client se
+        connecterait au serveur public de l\'éditeur au lieu du vôtre — et le dépannage sortirait du service.</li>
+      </ul>
+
+      <p><strong>Dépanner un poste</strong></p>
+      <ul>
+        <li>Le tableau de la console donne, pour chaque poste, son <strong>identifiant</strong>. C\'est le seul lien
+        entre un nom de machine et le numéro à composer : sans lui il faudrait aller lire l\'écran du poste, ce que
+        la prise de main est censée éviter.</li>
+        <li>Saisissez cet identifiant dans votre client, connectez-vous.</li>
+        <li>Renseignez le <strong>motif</strong> et cliquez « Déclarer » : l\'intervention est inscrite au journal
+        d\'audit à votre nom. La prise de main a lieu dans le client, hors du navigateur — sans cette déclaration,
+        la console ne saurait pas dire qui est intervenu sur quel poste.</li>
+      </ul>
+
+      <p><strong>Consentement de l\'agent</strong> — deux régimes, réglables globalement puis poste par poste.
+      En <strong>accord obligatoire</strong> (le défaut), une fenêtre demande à l\'agent d\'accepter et une bannière
+      reste visible pendant toute l\'intervention. En <strong>sans accord</strong>, la main se prend directement.</p>
+      <p class="tip">Le second régime n\'a de sens que sur un poste <em>sans utilisateur</em> : borne, poste
+      technique, salle libre-service. Sur le poste d\'un agent, prendre la main sans son accord ni information
+      préalable expose le service — les constatations faites ainsi sont contestables, et la démarche doit figurer
+      au registre RGPD. Le défaut reste « accord » partout où le réglage est absent, illisible ou injoignable :
+      une panne ne doit jamais ouvrir un poste par accident.</p>
+
+      <p class="tip">Deux voyants en haut de la page, et il faut les <strong>deux</strong> au vert. « Relais en
+      service » dit que les processus tournent. « Postes autorisés à joindre le relais » dit que le portail captif
+      les laisse passer — sans quoi les services tourneraient, les ports écouteraient, et pas un poste ne
+      s\'enregistrerait jamais.</p>'],
 
     ['pxe', '📀', 'Serveur PXE (installation d\'OS)', '      <p>Le <strong>serveur PXE</strong> installe un système d\'exploitation par le réseau : le poste démarre sur sa
       carte réseau, un menu apparaît, et l\'installation part sans clé USB ni DVD. Pratique pour remettre à neuf une
