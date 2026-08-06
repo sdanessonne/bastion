@@ -51,3 +51,15 @@ config opennds 'ndsconfig'
 	# l'annuaire » laisse passer en entier ; la protection reste le mot de passe.
 	list users_to_router 'allow tcp port 8443'
 	list users_to_router 'allow udp port 69'
+	# 21115-21119 : PRISE DE MAIN À DISTANCE. Le poste doit joindre le relais hébergé
+	# sur la passerelle — annuaire (21115, 21116 tcp+udp, 21118) et relais de flux
+	# (21117, 21119). Sans ces lignes, la chaîne ndsRTR rejette tout à sa règle finale
+	# et AUCUN poste ne s'enregistre : les services tournent, les ports écoutent, et
+	# rien ne se connecte jamais. Le genre de panne qui ressemble à une installation
+	# réussie.
+	list users_to_router 'allow tcp port 21115'
+	list users_to_router 'allow tcp port 21116'
+	list users_to_router 'allow udp port 21116'
+	list users_to_router 'allow tcp port 21117'
+	list users_to_router 'allow tcp port 21118'
+	list users_to_router 'allow tcp port 21119'
