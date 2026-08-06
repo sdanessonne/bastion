@@ -22,6 +22,54 @@ $GROUPS = [
       </ul>
       <p class="tip">Une <strong>mise à jour tout-en-un</strong> (système Debian + application Bastion) est disponible
       dans <em>Système</em> : un seul bouton vérifie et installe les deux.</p>'],
+    ['materiel', '🧰', 'Prérequis matériels', '      <p>Bastion tient sur une machine modeste, mais deux ressources décident du résultat : la <strong>mémoire</strong>
+      et surtout le <strong>disque</strong>. Les valeurs ci-dessous ne sont pas des estimations de brochure : elles
+      sont mesurées sur une passerelle en service.</p>
+
+      <table style="max-width:720px">
+        <thead><tr><th></th><th>Minimum</th><th>Recommandé</th></tr></thead>
+        <tbody>
+          <tr><th>Processeur</th><td>2 cœurs x86-64</td><td>4 cœurs</td></tr>
+          <tr><th>Mémoire</th><td>4 Go</td><td>8 Go</td></tr>
+          <tr><th>Disque</th><td>120 Go</td><td>250 Go (SSD)</td></tr>
+          <tr><th>Réseau</th><td colspan="2">Deux interfaces filaires : une vers la box, une vers le parc</td></tr>
+        </tbody>
+      </table>
+
+      <p><strong>Ce qui consomme la mémoire</strong>, relevé sur une passerelle de production équipée de 4 Go :</p>
+      <ul>
+        <li><strong>Antivirus (ClamAV) : ~1,1 Go</strong> à lui seul — il charge toute sa base de signatures en
+        mémoire. C\'est de loin le premier poste. Sur une machine à 4 Go, ne l\'activez qu\'en connaissance de
+        cause ; sur 8 Go il ne pose aucun problème.</li>
+        <li>Serveur web (console + portail) : ~800 Mo.</li>
+        <li>Contrôleur de domaine : ~320 Mo. Base de données : ~170 Mo. DNS/DHCP : ~70 Mo.</li>
+      </ul>
+      <p>Au repos, sans image d\'installation en cours, l\'ensemble occupe environ <strong>2 Go</strong>. Un
+      processeur d\'entrée de gamme suffit : une charge moyenne de 1,5 sur 4 cœurs a été relevée en fonctionnement
+      normal. Le processeur n\'est pas le facteur limitant.</p>
+
+      <p><strong>Le disque est le vrai piège.</strong> Il se remplit lentement, par trois côtés à la fois, et rien
+      ne s\'en alarme avant la panne :</p>
+      <ul>
+        <li>une <strong>image d\'installation Windows</strong> pèse à elle seule <strong>7 à 8 Go</strong> ;</li>
+        <li>les <strong>installeurs du store</strong> s\'accumulent — plusieurs centaines de mégaoctets dès une
+        dizaine de logiciels, et rien ne les supprime tout seuls ;</li>
+        <li>les <strong>journaux</strong> grossissent tous les jours, d\'autant plus que le parc est actif.</li>
+      </ul>
+      <p class="tip">Un disque plein arrête la base de données, et donc l\'authentification de <strong>tout le
+      monde</strong>, d\'un seul coup. C\'est la panne la plus fréquente de ce type d\'installation, et la plus
+      brutale. Surveillez l\'espace libre sur la page <em>Santé</em>, et vérifiez que les alertes par courriel
+      partent réellement — c\'est le seul canal qui fonctionne encore quand la console, elle, ne répond plus.</p>
+
+      <p><strong>Réseau.</strong> Il faut deux liens : un vers la box de l\'opérateur, un vers le switch du parc.
+      Le Wi-Fi est facultatif ; si vous en voulez un, la clé USB doit supporter le <strong>mode point d\'accès</strong>
+      — toutes ne le font pas, et celles qui ne le font pas ne le disent pas : elles s\'installent normalement et
+      refusent seulement de créer un réseau.</p>
+
+      <p class="tip">Le <strong>chiffrement du disque</strong> n\'est pas un prérequis technique mais une exigence
+      de fond : la passerelle contient les comptes, les journaux de navigation et l\'annuaire. Il se décide à
+      <em>l\'installation</em> et ne peut pas être ajouté après coup sans tout réinstaller. Une installation faite
+      à la main, hors de l\'image fournie, laisse le disque en clair par défaut.</p>'],
   ],
 
   'Questions fréquentes' => [
@@ -771,6 +819,14 @@ pf_header('Aide', 'aide.php');
   .aide .doc section{background:var(--card,#1e293b);border:1px solid var(--line);border-radius:14px;padding:1.2rem 1.4rem;margin-bottom:1rem;scroll-margin-top:1rem}
   .aide .doc p,.aide .doc li{color:var(--muted);line-height:1.7}
   .aide .doc strong{color:var(--text)}
+  /* Les tableaux de l'aide se stylent ICI : la classe « .tbl » des autres pages n'est
+     pas chargée sur celle-ci, et un tableau non stylé passe pour un défaut d'affichage. */
+  .aide .doc table{width:100%;border-collapse:collapse;margin:.7rem 0 1rem;font-size:.9rem}
+  .aide .doc table th,.aide .doc table td{border:1px solid var(--line);padding:.45rem .7rem;text-align:left}
+  .aide .doc table thead th{background:var(--bg);color:var(--text);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+  .aide .doc table tbody th{color:var(--text);font-weight:600;white-space:nowrap}
+  .aide .doc table td{color:var(--muted)}
+  @media(max-width:600px){.aide .doc table{display:block;overflow-x:auto}}
   .aide .doc code{background:var(--bg);padding:.1rem .35rem;border-radius:5px;font-size:.85em}
   .aide .doc .tip{background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);color:#bae6fd;padding:.6rem .8rem;border-radius:10px;margin:.6rem 0 0}
   .aide input.search{width:100%;padding:.6rem .7rem;margin-bottom:.7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;font-size:.9rem}
