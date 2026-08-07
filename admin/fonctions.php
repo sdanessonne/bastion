@@ -145,7 +145,7 @@ pf_header('Fonctions');
   <div style="padding:1rem 1.2rem">
     <p style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
       <span class="badge <?= $badge ?>"><?= $libelle ?></span>
-      <?php if ($mo > 0): ?><span class="badge"><?= $mo ?> Mo de mémoire</span><?php endif; ?>
+      <?php if ($mo > 0): ?><span class="badge" data-num="<?= $mo ?>"><?= $mo ?> Mo de mémoire</span><?php endif; ?>
       <?php if (($e['auto'] ?? 0) > 0 && $etat === 'arretee'): ?>
         <span class="badge off" title="Elle repartira au prochain démarrage">⚠ Redémarre au prochain boot</span>
       <?php endif; ?>

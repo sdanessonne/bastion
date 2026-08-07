@@ -286,6 +286,49 @@ function pf_footer(): void {
     </div>
   </main>
   <script>
+    // ── Chiffres animés, pour TOUTE la console ────────────────────────────────
+    // Un élément portant « data-num » compte de 0 jusqu'à sa valeur à l'affichage.
+    //
+    // Le mécanisme vit ICI et non dans chaque page : le tableau de bord avait le
+    // sien, et le recopier ailleurs aurait donné des animations qui divergent —
+    // durées différentes, arrondis différents, et un jour l'une qui casse sans
+    // qu'on s'en aperçoive sur les autres.
+    //
+    // Le texte déjà rendu par le serveur sert de MODÈLE : on ne réécrit que les
+    // chiffres et on garde ce qu'il y a autour (« 1 145 Mo », « 8 sur 16 »). Une
+    // page qui n'aurait pas de JavaScript affiche donc la bonne valeur, tout de
+    // suite : l'animation est un ornement, jamais la source de l'information.
+    (function () {
+      var REDUIT = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var cibles = document.querySelectorAll('[data-num]');
+      if (!cibles.length) { return; }
+
+      cibles.forEach(function (el) {
+        var modele = el.textContent;
+        var fin = parseFloat(String(el.dataset.num).replace(',', '.'));
+        if (!isFinite(fin)) { return; }
+        // Autant de décimales que la valeur d'origine en portait.
+        var dec = (String(el.dataset.num).split(/[.,]/)[1] || '').length;
+        if (REDUIT) { return; }
+
+        var t0 = null, duree = 700;
+        function ecrire(v) {
+          var n = v.toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+          // On remplace le PREMIER nombre du texte, en gardant unités et suffixes.
+          el.textContent = modele.replace(/[0-9][0-9  .,]*/, n);
+        }
+        function pas(t) {
+          if (t0 === null) { t0 = t; }
+          var p = Math.min(1, (t - t0) / duree);
+          ecrire(fin * (1 - Math.pow(1 - p, 3)));   // ralentit en fin de course
+          if (p < 1) { requestAnimationFrame(pas); }
+          else { el.textContent = modele; }         // on rétablit le rendu serveur, au caractère près
+        }
+        ecrire(0);
+        requestAnimationFrame(pas);
+      });
+    })();
+
     // ── Barre de chargement, en haut de l'écran ───────────────────────────────
     (function () {
       var b = document.getElementById('pf-load');

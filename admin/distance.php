@@ -175,7 +175,7 @@ pf_header('Prise de main à distance');
 </div>
 
 <div class="panel">
-  <div class="panel-head"><h2>💻 Postes joignables (<?= $actifs ?> sur <?= count($postes) ?>)</h2></div>
+  <div class="panel-head"><h2>💻 Postes joignables (<span data-num="<?= $actifs ?>"><?= $actifs ?></span> sur <?= count($postes) ?>)</h2></div>
   <div style="padding:.4rem 1.2rem 1.2rem;overflow-x:auto">
     <?php if (!$postes): ?>
       <p class="muted">Aucun poste inventorié. Les postes apparaissent ici après leur premier démarrage
