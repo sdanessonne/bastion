@@ -334,6 +334,38 @@ $accueil = (string) ($actuel['accueil'] ?? '');
 $deploye = (string) ($actuel['deploye'] ?? '');
 
 $flash = null;
+const FF_EXT_DIR = '/var/www/html/extensions';
+
+/**
+ * Extensions (.xpi) déposées sur la passerelle, avec leur identité LUE DANS LE FICHIER.
+ *
+ * L'identifiant ne se devine pas d'après le nom du fichier : Firefox n'installe une
+ * extension que si la clé de registre porte l'identifiant EXACT déclaré dans son
+ * manifeste. Une faute de frappe donne une stratégie qui s'applique sans rien
+ * installer, et rien ne le signale — ni sur le poste, ni dans la console.
+ */
+function ff_extensions(): array
+{
+    $out = [];
+    foreach (glob(FF_EXT_DIR . '/*.xpi') ?: [] as $f) {
+        $e = ['fichier' => basename($f), 'taille' => filesize($f),
+              'id' => '', 'nom' => basename($f, '.xpi'), 'version' => ''];
+        $z = new ZipArchive();
+        if ($z->open($f) === true) {
+            $m = json_decode((string) $z->getFromName('manifest.json'), true);
+            $z->close();
+            if (is_array($m)) {
+                $e['nom']     = (string) ($m['name'] ?? $e['nom']);
+                $e['version'] = (string) ($m['version'] ?? '');
+                $g = $m['browser_specific_settings']['gecko'] ?? $m['applications']['gecko'] ?? [];
+                $e['id'] = (string) ($g['id'] ?? '');
+            }
+        }
+        $out[$e['fichier']] = $e;
+    }
+    return $out;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'deployer') {
     csrf_check();
     $coche   = array_values(array_intersect(array_keys($REGLAGES), (array) ($_POST['r'] ?? [])));
@@ -361,6 +393,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'deployer'
                       'class' => 'MACHINE', 'type' => 'REG_SZ', 'data' => 'homepage'];
             $pol[] = ['keyname' => FF_KEY . '\\Homepage', 'valuename' => 'Locked',
                       'class' => 'MACHINE', 'type' => 'REG_DWORD', 'data' => 1];
+        }
+
+        // ── Extensions ────────────────────────────────────────────────────
+        // L'adresse est servie en HTTP sur 2080, pas en HTTPS sur 2443 : le
+        // certificat du portail est auto-signé, et Firefox REFUSE d'installer une
+        // extension depuis une adresse dont il ne valide pas le certificat. Le port
+        // 2080 est déjà celui des installeurs du store, et le portail le laisse passer.
+        $extDispo = ff_extensions();
+        foreach ((array) ($_POST['ext'] ?? []) as $fic) {
+            $x = $extDispo[$fic] ?? null;
+            if (!$x || $x['id'] === '') { continue; }
+            $base = FF_KEY . '\\ExtensionSettings\\' . $x['id'];
+            $pol[] = ['keyname' => $base, 'valuename' => 'installation_mode',
+                      'class' => 'MACHINE', 'type' => 'REG_SZ', 'data' => 'force_installed'];
+            $pol[] = ['keyname' => $base, 'valuename' => 'install_url', 'class' => 'MACHINE',
+                      'type' => 'REG_SZ',
+                      'data' => 'http://' . pf_lan_ip() . ':2080/extensions/' . rawurlencode($x['fichier'])];
         }
 
         if (!$pol) {
@@ -489,6 +538,33 @@ pf_header('Firefox', 'firefox.php');
                placeholder="https://192.168.182.1:2443/portal/intranet.php">
         <span class="hint">Laisser vide pour ne rien imposer. L'intranet Bastion est un choix naturel.</span>
       </label>
+
+      <?php $EXTS = ff_extensions(); ?>
+      <h3 style="margin:1.6rem 0 .4rem;font-size:1rem">Extensions imposées</h3>
+      <?php if (!$EXTS): ?>
+        <p class="muted small">Aucune extension déposée. Copiez le fichier <code>.xpi</code> dans
+        <code><?= FF_EXT_DIR ?></code> sur la passerelle ; il apparaîtra ici.</p>
+      <?php else: foreach ($EXTS as $fic => $x): ?>
+        <label style="display:flex;gap:.6rem;align-items:flex-start;padding:.4rem 0">
+          <input type="checkbox" name="ext[]" value="<?= e($fic) ?>"
+                 <?= $x['id'] === '' ? 'disabled' : '' ?>>
+          <span>
+            <strong><?= e($x['nom']) ?></strong>
+            <?= $x['version'] !== '' ? '<span class="muted small"> ' . e($x['version']) . '</span>' : '' ?>
+            <br>
+            <?php if ($x['id'] === ''): ?>
+              <span class="muted small">⚠ Identifiant illisible dans le fichier — Firefox ne pourrait pas
+              l'installer. Vérifiez que c'est bien une extension et non une archive renommée.</span>
+            <?php else: ?>
+              <code class="muted small"><?= e($x['id']) ?></code>
+              <span class="muted small"> · <?= round($x['taille'] / 1024) ?> Ko</span>
+            <?php endif; ?>
+          </span>
+        </label>
+      <?php endforeach; endif; ?>
+      <p class="muted small">Une extension cochée est <strong>imposée</strong> : l'agent ne peut ni la retirer ni
+      la désactiver. Firefox n'installe que des extensions <strong>signées</strong> — une extension non signée
+      s'ignore en silence, sans message sur le poste.</p>
 
       <div class="form-actions" style="margin-top:1.2rem">
         <button class="btn">Déployer sur le domaine</button>
