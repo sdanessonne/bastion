@@ -15,8 +15,11 @@ $GROUPS = [
       <ul>
         <li><strong>Console d\'administration</strong> : <code>https://&lt;passerelle&gt;:8443</code> (ou <code>https://bastion.pn.int:8443</code>).</li>
         <li><strong>Portail utilisateur</strong> : les postes sont redirigés automatiquement à la connexion au réseau.</li>
-        <li>Le menu de gauche regroupe les fonctions par domaine (Supervision, Accès &amp; sécurité, Réseau &amp; postes,
-        Intranet, Journalisation). Les changements sont <strong>immédiats</strong>.</li>
+        <li>Le <strong>menu</strong> s\'ouvre par le bouton <strong>☰</strong>, en haut à gauche — sur grand écran
+        comme sur téléphone. Il se retire ensuite pour rendre toute la largeur au contenu, ce qui compte sur les
+        pages denses : inventaire du parc, journaux, annuaire. Un clic à côté, la touche <kbd>Échap</kbd>, ou le
+        choix d\'une page le referment. Les fonctions y sont groupées par domaine (Surveiller, Accès &amp; droits,
+        Protection, Postes &amp; réseau, Intranet, Aide). Les changements sont <strong>immédiats</strong>.</li>
         <li>Menu du haut à droite : votre profil &amp; sécurité (photo, mot de passe, double authentification),
         redémarrer / arrêter le serveur, se déconnecter.</li>
       </ul>

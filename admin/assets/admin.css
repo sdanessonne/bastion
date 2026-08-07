@@ -123,7 +123,7 @@ html.rail .nav-search{display:none}
 .rail-toggle:hover,.nav-toggle:hover{color:var(--text);border-color:var(--accent)}
 .rail-toggle{width:100%}
 .rail-toggle .rt-open{display:none}
-.nav-toggle{display:none;font-size:1.2rem;padding:.3rem .55rem;line-height:1;flex:none}
+.nav-toggle{display:inline-flex;font-size:1.2rem;padding:.3rem .55rem;line-height:1;flex:none}
 .nav-backdrop{display:none}
 /* Rail : icônes seules */
 html.rail .sidebar{width:66px;padding-left:.5rem;padding-right:.5rem}
@@ -138,21 +138,36 @@ html.rail .sidebar nav a.active::before{display:none}
 html.rail .sidebar nav a.active{background:rgba(56,189,248,.2)}
 html.rail .nav-group-label{height:0;padding:.35rem 0 0;margin:.15rem .4rem 0;overflow:hidden;border-top:1px solid var(--line);opacity:.5}
 /* Mobile : tiroir coulissant + hamburger */
-@media (max-width:900px){
-  .nav-toggle{display:inline-flex}
-  .rail-toggle{display:none}
-  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:60;width:250px;transform:translateX(-104%);
-    box-shadow:0 0 50px rgba(0,0,0,.55)}
-  html.nav-open .sidebar{transform:none}
-  /* le rail ne s'applique pas en mobile : on garde le menu complet dans le tiroir */
-  html.rail .sidebar{width:250px;padding:1.2rem .9rem}
-  html.rail .sidebar .brand{justify-content:flex-start;padding:.3rem .4rem 1.2rem}
-  html.rail .sidebar .brand .btxt,html.rail .sidebar nav a .lbl,html.rail .sidebar-foot .credit{display:revert}
-  html.rail .sidebar nav a{justify-content:flex-start;padding:.55rem .7rem;gap:.7rem}
-  html.rail .nav-group-label{height:auto;padding:.7rem .7rem .25rem;margin:0;border-top:0;opacity:.65}
-  .nav-backdrop{position:fixed;inset:0;background:rgba(2,8,18,.55);z-index:55}
-  html.nav-open .nav-backdrop{display:block}
-}
+/* ── MENU EN TIROIR PERMANENT ────────────────────────────────────────────────
+   Le menu se retire à TOUTES les largeurs, pas seulement sur téléphone.
+
+   Pourquoi : une barre fixe de 230 px prend de la place en permanence pour une
+   navigation qu'on utilise quelques secondes par heure. Les pages les plus
+   denses — inventaire du parc, journaux, annuaire — sont celles qui souffrent
+   le plus de cette amputation, et ce sont celles qu'on regarde le plus
+   longtemps. Le tiroir rend cette largeur au contenu.
+
+   Le mécanisme n'est PAS dupliqué : ce sont exactement les règles qui servaient
+   déjà au mobile, sorties de leur requête média. Deux implémentations auraient
+   dérivé l'une de l'autre à la première retouche. */
+.rail-toggle{display:none}
+.sidebar{position:fixed;left:0;top:0;bottom:0;z-index:60;width:250px;transform:translateX(-104%);
+  box-shadow:0 0 50px rgba(0,0,0,.55)}
+html.nav-open .sidebar{transform:none}
+/* Le mode « rail » (menu réduit aux icônes) n'a plus d'objet : le menu est soit
+   ouvert en entier, soit absent. On neutralise ses règles plutôt que de les
+   supprimer, pour ne pas casser les pages qui posent encore la classe. */
+html.rail .sidebar{width:250px;padding:1.2rem .9rem}
+html.rail .sidebar .brand{justify-content:flex-start;padding:.3rem .4rem 1.2rem}
+html.rail .sidebar .brand .btxt,html.rail .sidebar nav a .lbl,html.rail .sidebar-foot .credit{display:revert}
+html.rail .sidebar nav a{justify-content:flex-start;padding:.55rem .7rem;gap:.7rem}
+html.rail .nav-group-label{height:auto;padding:.7rem .7rem .25rem;margin:0;border-top:0;opacity:.65}
+.nav-backdrop{position:fixed;inset:0;background:rgba(2,8,18,.55);z-index:55}
+html.nav-open .nav-backdrop{display:block}
+
+/* Le contenu récupère toute la largeur, mais on la borne : une ligne de texte
+   qui traverse un écran de 27 pouces devient pénible à lire. */
+.page{max-width:1500px}
 
 .content{flex:1;min-width:0}
 .topbar{padding:1.3rem 1.8rem;border-bottom:1px solid var(--line)}
