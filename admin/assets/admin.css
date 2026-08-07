@@ -167,7 +167,11 @@ html.nav-open .nav-backdrop{display:block}
 
 /* Le contenu récupère toute la largeur, mais on la borne : une ligne de texte
    qui traverse un écran de 27 pouces devient pénible à lire. */
-.page{max-width:1500px}
+/* Colonne de contenu CENTRÉE. La borne et le centrage sont posés sur « .content »,
+   pas sur « .page » : ainsi l'en-tête (titre, menu du compte) et le corps de page
+   partagent exactement la même colonne. Les mettre séparément aurait fini par les
+   désaligner à la première retouche de l'un des deux. */
+.content{max-width:1500px;margin-inline:auto;width:100%}
 
 .content{flex:1;min-width:0}
 .topbar{padding:1.3rem 1.8rem;border-bottom:1px solid var(--line)}
