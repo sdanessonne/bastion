@@ -93,9 +93,16 @@ body:has(.sidebar){display:flex}
    un daltonisme rouge-vert, rien ne distinguerait « à surveiller » de « en
    panne ». L'anomalie critique bat donc lentement — le mouvement se perçoit
    indépendamment de la couleur. */
-.nav-dot{margin-left:auto;width:8px;height:8px;border-radius:50%;flex:none}
-.nav-dot.warn{background:#eab308}
-.nav-dot.danger{background:#f87171;animation:navPulse 2s ease-in-out infinite}
+/* Pastille d'état d'une entrée de menu.
+   Elle était collée au bord droit par « margin-left:auto », donc à moitié cachée
+   sous la barre de défilement du menu : on voyait un croissant rouge, pas un point.
+   D'où la marge à droite, la taille un peu plus franche, et le halo — sur un fond
+   sombre, 8 px de rouge mat se remarquent mal. Un indicateur qu'on ne voit pas ne
+   sert à rien : autant ne pas l'afficher. */
+.nav-dot{margin-left:auto;margin-right:.35rem;width:10px;height:10px;border-radius:50%;flex:none}
+.nav-dot.warn{background:#facc15;box-shadow:0 0 0 3px rgba(250,204,21,.22)}
+.nav-dot.danger{background:#f87171;box-shadow:0 0 0 3px rgba(248,113,113,.28);
+  animation:navPulse 2s ease-in-out infinite}
 @keyframes navPulse{0%,100%{opacity:1}50%{opacity:.35}}
 @media(prefers-reduced-motion:reduce){.nav-dot.danger{animation:none;box-shadow:0 0 0 3px rgba(248,113,113,.25)}}
 /* Menu réduit en rail : le libellé disparaît, la pastille doit rester visible et
