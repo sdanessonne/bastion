@@ -369,7 +369,19 @@ def main():
     p_ps1 = psfile.ecrire_ps1(os.path.join(startup, 'bastion-apps.ps1'), ps1(apps, retraits))
     # 2) Lanceur .cmd (contourne la politique d'exécution PowerShell) : ASCII, sans marque.
     p_cmd = psfile.ecrire_cmd(os.path.join(startup, 'bastion-apps.cmd'),
-                              '@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass '
+                              # « start /b » : on lance SANS attendre.
+                              #
+                              # Windows exécute les scripts de démarrage de façon SYNCHRONE et les
+                              # ATTEND — à l'ouverture de session comme à chaque « gpupdate /force ».
+                              # Or ce script télécharge et installe jusqu'à neuf logiciels, avec dix
+                              # minutes de patience par installeur. Il gelait donc gpupdate, qui ne
+                              # se terminait jamais.
+                              #
+                              # L'installation n'a aucune raison de bloquer qui que ce soit : elle se
+                              # signale par sa fenêtre de progression et par son journal. On la
+                              # détache, et le démarrage rend la main tout de suite.
+                              '@echo off\r\nstart "Bastion" /b powershell -NoProfile '
+                              '-ExecutionPolicy Bypass -WindowStyle Hidden '
                               '-File "%~dp0bastion-apps.ps1"\r\n')
     # 3) scripts.ini (UTF-16LE + BOM, comme GPMC) référencant le .cmd.
     p_ini = os.path.join(sysvol, 'Machine', 'Scripts', 'scripts.ini')
