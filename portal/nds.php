@@ -56,7 +56,23 @@ function pf_nds_dernier_cache(?bool $set = null): bool
     return $v;
 }
 
-function pf_nds_client(string $ip, int $ttl = 10): ?array
+/**
+ * @param int $ttl Durée de validité du cache, en secondes. 0 = interroger OpenNDS.
+ *
+ * Trente secondes par défaut, contre dix auparavant. Mesuré le 2026-08-08 : un
+ * appel à « ndsctl » coûte 549 ms — un prix FIXE, indépendant du nombre de
+ * clients — et la page d'intranet mettait 0,4 s à répondre sur la passerelle
+ * elle-même, avant même de traverser le réseau. Sur un lien Wi-Fi médiocre,
+ * l'agent additionnait les deux.
+ *
+ * Le risque de rallonger : un agent déconnecté reste vu comme autorisé pendant
+ * trente secondes au plus. Sans conséquence — le pare-feu, lui, a déjà coupé son
+ * accès ; seul l'affichage est en retard. L'inverse, un « non autorisé » périmé,
+ * serait autrement plus gênant : il tomberait au moment précis où l'agent vient
+ * de s'identifier. C'est pourquoi seules les réponses POSITIVES sont mises en
+ * cache (voir plus bas), et pourquoi rallonger ce délai est sans danger.
+ */
+function pf_nds_client(string $ip, int $ttl = 30): ?array
 {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) { return null; }
     $f   = '/dev/shm/pf-nds-' . preg_replace('/[^0-9a-fA-F:.]/', '', $ip) . '.cache';
