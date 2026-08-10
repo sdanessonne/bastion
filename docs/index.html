@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bastion — contrôleur d'accès réseau pour un service isolé</title>
+<meta name="description" content="Bastion : portail captif, annuaire, filtrage et journalisation légale sur une seule passerelle Debian, pour un parc qui n'a pas d'accès au réseau de l'administration.">
+<style>
+  :root{
+    color-scheme:dark;
+    --bg:#0b1120; --panel:#151f32; --panel2:#1c2942; --line:#28374f;
+    --text:#e6edf6; --muted:#8ea2bd; --accent:#38bdf8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);line-height:1.65;
+       font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:860px;margin-inline:auto;padding:0 1.4rem}
+  a{color:var(--accent)}
+  header{padding:4.5rem 0 3rem;text-align:center;
+    background:radial-gradient(900px 400px at 50% -10%,#16305a,var(--bg))}
+  h1{font-size:2.6rem;margin:.2rem 0 .4rem;letter-spacing:-.02em}
+  .tag{color:var(--muted);font-size:1.15rem;max-width:34rem;margin:0 auto}
+  .ecu{width:76px;height:76px;margin:0 auto .8rem;display:grid;place-items:center;
+    border-radius:20px;background:var(--panel2);border:1px solid var(--line);font-size:2.2rem}
+  h2{font-size:1.35rem;margin:2.8rem 0 .6rem;padding-bottom:.4rem;border-bottom:1px solid var(--line)}
+  h3{font-size:1rem;margin:1.4rem 0 .3rem}
+  p,li{color:var(--muted)}
+  strong{color:var(--text)}
+  .grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin:1.2rem 0}
+  .carte{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.1rem 1.2rem}
+  .carte h3{margin-top:0;color:var(--text)}
+  .carte p{margin:.3rem 0 0;font-size:.92rem}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+      padding:1rem 1.1rem;overflow-x:auto;font-size:.86rem;color:var(--text)}
+  code{font-family:ui-monospace,"Cascadia Code",monospace}
+  p code,li code{background:var(--panel2);padding:.1rem .35rem;border-radius:5px;font-size:.88em}
+  .note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+        border-radius:0 12px 12px 0;padding:.9rem 1.1rem;margin:1.2rem 0}
+  .note strong{color:var(--accent)}
+  footer{margin-top:4rem;padding:2rem 0 3rem;border-top:1px solid var(--line);
+         color:var(--muted);font-size:.88rem;text-align:center}
+  @media(max-width:600px){h1{font-size:2rem}header{padding:3rem 0 2rem}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="ecu">🛡️</div>
+    <h1>Bastion</h1>
+    <p class="tag">Contrôleur d'accès réseau pour un parc qui n'est <em>pas</em> raccordé
+    au réseau de l'administration.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <p>Bastion réunit sur une seule passerelle Debian ce qu'un service isolé doit assurer
+  lui-même : authentifier les agents, filtrer les accès, journaliser ce que la loi impose
+  de conserver, et administrer les postes du domaine. Sans dépendre d'une infrastructure
+  extérieure, ni d'un service en ligne.</p>
+
+  <h2>Ce qu'il fait</h2>
+  <div class="grid">
+    <div class="carte">
+      <h3>Portail captif</h3>
+      <p>Aucun accès sans authentification. Comptes nominatifs, bons visiteurs à durée
+      limitée, quotas et plages horaires par groupe.</p>
+    </div>
+    <div class="carte">
+      <h3>Annuaire &amp; postes</h3>
+      <p>Contrôleur de domaine intégré : ouverture de session Windows, stratégies de
+      groupe, dossiers partagés, inventaire du parc, déploiement de logiciels.</p>
+    </div>
+    <div class="carte">
+      <h3>Filtrage</h3>
+      <p>Blocage par catégories et par domaines, au niveau DNS — donc valable pour tous
+      les navigateurs et toutes les applications, sans rien installer sur les postes.</p>
+    </div>
+    <div class="carte">
+      <h3>Journalisation légale</h3>
+      <p>Traces de navigation chaînées et scellées par signature, avec purge automatique
+      au terme de la durée de conservation.</p>
+    </div>
+    <div class="carte">
+      <h3>Console web</h3>
+      <p>Tout se pilote depuis une seule interface : comptes, filtrage, stratégies,
+      supervision, sauvegardes. Chaque action d'administrateur est tracée.</p>
+    </div>
+    <div class="carte">
+      <h3>Multi-sites</h3>
+      <p>Plusieurs passerelles se raccordent à un serveur principal par un tunnel
+      <em>sortant</em>, sans ouvrir le moindre port sur les box des sites.</p>
+    </div>
+  </div>
+
+  <h2>Ce qui a guidé sa conception</h2>
+
+  <h3>Rendre visible ce qui échoue en silence</h3>
+  <p>Les pannes coûteuses de ce projet ne s'annonçaient pas : un port rejeté par le
+  portail, une stratégie jamais appliquée, une page web enregistrée comme installeur, un
+  service systemd « actif » dont la radio n'émettait plus. Chaque correction s'accompagne
+  donc d'un moyen de <strong>constater</strong> — journal nommé, indicateur d'état, ou
+  contrôle automatique qui refuse de valider une réussite apparente.</p>
+
+  <h3>Dire le pourquoi, pas seulement le comment</h3>
+  <p>L'aide intégrée explique les causes : pourquoi un serveur KMS n'active rien avant
+  vingt-cinq postes, pourquoi une réservation DHCP rate sur un portable, pourquoi une
+  sauvegarde restée sur le disque qu'elle protège ne sert à rien. Une réponse qui n'explique
+  pas la cause ne sert qu'une fois.</p>
+
+  <h3>Des harnais de vérification, parce qu'ils ont rattrapé de vraies pannes</h3>
+  <p>Les scripts de stratégie sont analysés sous PowerShell 5.1 avant d'être déposés, chaque
+  entrée du catalogue de logiciels est contrôlée pour vérifier qu'elle rend un installeur et
+  non une page web, et le HTML de l'aide est validé — une balise non fermée n'y casse rien
+  visiblement, elle avale silencieusement les sections suivantes.</p>
+
+  <h2>Installation</h2>
+  <p>Sur une Debian 12 ou 13 neuve, en une commande :</p>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/&lt;compte&gt;/bastion/main/provisioning/bootstrap.sh \
+  | sudo BASTION_TOKEN=&lt;jeton&gt; bash</code></pre>
+
+  <div class="note">
+    <p><strong>Le dépôt est privé.</strong> Sans jeton d'accès, GitHub répond
+    <code>404</code> — « n'existe pas », et non « accès refusé ». Le script d'installation
+    teste ce cas et le nomme, au lieu d'échouer sur un message qui ferait croire à une
+    erreur d'adresse. Trois modes d'accès sont prévus : jeton, clé SSH, ou fichier
+    <em>bundle</em> déposé à la main pour une machine sans Internet.</p>
+  </div>
+
+  <p>Le script s'arrête après avoir créé le fichier de configuration, et demande de le
+  renseigner. Installer avec les valeurs d'exemple produirait une passerelle en apparence
+  fonctionnelle, avec des mots de passe connus de tous.</p>
+
+  <h2>Matériel</h2>
+  <p>Deux ressources décident du résultat, et ce ne sont pas celles qu'on attend.</p>
+  <ul>
+    <li>La <strong>mémoire</strong> : 4 Go au minimum, 8 recommandés. L'antivirus, s'il est
+    activé, charge à lui seul plus d'un gigaoctet de signatures.</li>
+    <li>Le <strong>disque</strong> : 250 Go recommandés. Il se remplit par trois côtés à la
+    fois — images d'installation, installeurs de logiciels, journaux — et un disque plein
+    arrête la base de données, donc l'authentification de tout le monde.</li>
+  </ul>
+  <p>Le processeur n'est pas le facteur limitant : un modèle d'entrée de gamme à quatre
+  cœurs suffit largement.</p>
+
+  <h2>État</h2>
+  <p>Bastion est en service dans un commissariat. Le développement suit les besoins réels
+  du terrain plutôt qu'une feuille de route : chaque fonction ajoutée répond à une panne
+  rencontrée ou à une obligation à satisfaire.</p>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Bastion — © 2026 Mickaël MONESTIER. Tous droits réservés.<br>
+    Le nom « Bastion » désigne le produit ; les identifiants internes conservent le nom
+    d'origine du projet.</p>
+  </div>
+</footer>
+
+</body>
+</html>
