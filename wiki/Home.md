@@ -10,9 +10,11 @@ accessible quand Internet ne l'est pas.
 
 ## Pages
 
+- **[Fonctionnalités](Fonctionnalites)** — le panorama complet de ce que fait Bastion
 - **[Installation](Installation)** — depuis une Debian neuve ou une machine nue
 - **[Dépannage](Depannage)** — les pannes rencontrées, leur cause et leur signe
 - **[Exploitation](Exploitation)** — les gestes réguliers
+- **[Cartes du projet](Projet-cartes)** — ce qui reste à faire, prêt à coller dans un tableau
 
 ## Les trois choses à savoir avant tout
 
