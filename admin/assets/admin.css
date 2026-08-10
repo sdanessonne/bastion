@@ -197,7 +197,12 @@ html.nav-open .nav-backdrop{display:block}
 .panel-head{display:flex;justify-content:space-between;align-items:center;
   padding:1rem 1.2rem;border-bottom:1px solid var(--line)}
 .panel-head h2{margin:0;font-size:1rem}
-.table-wrap{overflow-x:auto}
+/* « min-width:0 » est indispensable, pas decoratif : dans une grille ou une
+   flexbox, un enfant refuse par defaut de retrecir sous la largeur de son
+   contenu. Le conteneur s elargissait donc au lieu de defiler, et la derniere
+   colonne — les boutons Modifier/Supprimer — sortait du cadre du tableau.
+   Signale le 2026-08-08 sur la page Utilisateurs. */
+.table-wrap{overflow-x:auto;min-width:0;max-width:100%}
 .grid-table{width:100%;border-collapse:collapse;font-size:.9rem}
 .grid-table th,.grid-table td{padding:.7rem 1.2rem;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 .grid-table th{color:var(--muted);font-weight:500;font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
