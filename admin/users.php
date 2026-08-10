@@ -459,7 +459,13 @@ $siteOptions = function (int $sel) use ($sites) {
   <div class="panel-head"><h2>Comptes (<?= count($all) ?>)</h2>
     <div style="display:flex;gap:.6rem">
       <?php if ($dcUp): ?>
-        <form method="post" style="margin:0" title="Reporte nom et prénom dans l'annuaire, pour que les agents voient leur identité sur les postes au lieu de leur matricule">
+        <?php /* « display:flex » sur le FORMULAIRE, pas seulement « margin:0 » : le
+                 conteneur au-dessus est une flexbox, donc ses enfants DIRECTS s'étirent
+                 à la hauteur du plus grand. Les deux autres boutons en profitent ; celui-ci,
+                 enveloppé dans un formulaire, gardait sa hauteur naturelle et paraissait
+                 plus petit. Le formulaire devient flex à son tour pour transmettre
+                 l'étirement à son bouton. */ ?>
+        <form method="post" style="margin:0;display:flex" title="Reporte nom et prénom dans l'annuaire, pour que les agents voient leur identité sur les postes au lieu de leur matricule">
           <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
           <input type="hidden" name="action" value="sync_identity">
           <button class="btn-sm">🪪 Publier les identités sur les postes</button>
