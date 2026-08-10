@@ -94,7 +94,7 @@ function pf_header(string $title, string $active = ''): void {
   <link rel="icon" type="image/svg+xml" href="/assets/bastion-icon.svg">
   <link rel="stylesheet" href="/assets/admin.css">
   <style>
-    .topbar{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
     .usermenu{position:relative}
     .userbtn{display:flex;align-items:center;gap:.55rem;background:var(--panel2);border:1px solid var(--line);
              color:var(--text);padding:.4rem .7rem .4rem .45rem;border-radius:24px;cursor:pointer;font:inherit}

@@ -178,10 +178,11 @@ html.nav-open .nav-backdrop{display:block}
    pas sur « .page » : ainsi l'en-tête (titre, menu du compte) et le corps de page
    partagent exactement la même colonne. Les mettre séparément aurait fini par les
    désaligner à la première retouche de l'un des deux. */
-.content{max-width:1500px;margin-inline:auto;width:100%}
 
-.content{flex:1;min-width:0}
-.topbar{padding:1.3rem 1.8rem;border-bottom:1px solid var(--line)}
+
+.content{flex:1;min-width:0;max-width:1500px;margin-inline:auto;width:100%}
+.topbar{padding:1.3rem 1.8rem;border-bottom:1px solid var(--line);overflow-x:hidden}
+.topbar>*{min-width:0}
 .topbar h1{margin:0;font-size:1.3rem}
 .page{padding:1.6rem 1.8rem;display:grid;gap:1.4rem}
 
