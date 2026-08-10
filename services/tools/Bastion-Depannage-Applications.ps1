@@ -1,4 +1,4 @@
-﻿# Bastion — © 2026 Mickaël MONESTIER (Mle 110.480). Tous droits réservés.
+﻿# Bastion - © 2026 Mickaël MONESTIER (Mle 110.480). Tous droits réservés.
 #
 # Débloquer l'installation des logiciels sur un poste.
 #
@@ -8,7 +8,7 @@
 #
 # POURQUOI CET OUTIL
 # La stratégie installe les logiciels l'un après l'autre. Si un installeur ne rend
-# jamais la main — cas vécu avec SumatraPDF le 2026-08-07 — le script l'attend
+# jamais la main - cas vécu avec SumatraPDF le 2026-08-07 - le script l'attend
 # indéfiniment : il n'écrit aucun marqueur, et TOUS les logiciels suivants restent
 # non installés. Au démarrage d'après, tout recommence depuis le début.
 #
@@ -21,10 +21,10 @@ $base = 'HKLM:\Software\Bastion\Apps'
 
 function Titre($t) { Write-Host ""; Write-Host $t -ForegroundColor Cyan; Write-Host ('-' * $t.Length) -ForegroundColor DarkGray }
 
-Write-Host "Bastion — diagnostic d'installation des logiciels" -ForegroundColor White
+Write-Host "Bastion - diagnostic d'installation des logiciels" -ForegroundColor White
 Write-Host "Poste : $env:COMPUTERNAME    $(Get-Date -Format 'dd/MM/yyyy HH:mm')"
 
-# ── 1. Un installeur est-il resté en suspens ? ────────────────────────────────
+# -- 1. Un installeur est-il resté en suspens ? --------------------------------
 Titre 'Installeur bloque'
 # Les installeurs deposes par la strategie vivent dans le TEMP du compte SYSTEM et
 # portent le prefixe « bastion_ ». C'est ce prefixe qui permet de ne PAS toucher a
@@ -44,7 +44,7 @@ if (-not $suspects) {
         Write-Host "    $($s.Path)" -ForegroundColor DarkGray
         if ($age -ge 10) {
             # Dix minutes : au-dela, aucun installeur silencieux legitime ne tourne
-            # encore. En dessous, on ne touche a rien — tuer une installation en cours
+            # encore. En dessous, on ne touche a rien - tuer une installation en cours
             # laisserait le logiciel a moitie pose, ce qui est pire que d'attendre.
             $r = Read-Host "    Arreter ce processus bloque ? (o/N)"
             if ($r -eq 'o') {
@@ -57,7 +57,7 @@ if (-not $suspects) {
     }
 }
 
-# ── 2. Ce qui est pose, et ce qui manque ──────────────────────────────────────
+# -- 2. Ce qui est pose, et ce qui manque --------------------------------------
 Titre 'Logiciels'
 $marqueurs = @{}
 if (Test-Path $base) {
@@ -77,7 +77,7 @@ if (-not $marqueurs.Count) {
     }
 }
 
-# ── 3. La derniere passe s est-elle terminee ? ────────────────────────────────
+# -- 3. La derniere passe s est-elle terminee ? --------------------------------
 Titre 'Derniere passe'
 if (-not (Test-Path $jrn)) {
     Write-Host "  Journal absent ($jrn) : la strategie ne s est jamais executee ici." -ForegroundColor Yellow
@@ -98,11 +98,11 @@ if (-not (Test-Path $jrn)) {
     $lignes | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 }
 
-# ── 4. La strategie est-elle bien arrivee ? ───────────────────────────────────
+# -- 4. La strategie est-elle bien arrivee ? -----------------------------------
 Titre 'Strategie'
 $gp = gpresult /r /scope:computer 2>$null | Select-String -SimpleMatch 'Bastion'
 if ($gp) { $gp | ForEach-Object { Write-Host "  $($_.Line.Trim())" } }
-else { Write-Host "  Aucune strategie Bastion appliquee — lancez : gpupdate /force" -ForegroundColor Yellow }
+else { Write-Host "  Aucune strategie Bastion appliquee - lancez : gpupdate /force" -ForegroundColor Yellow }
 
 Write-Host ""
 Write-Host "Pour relancer l installation : gpupdate /force puis redemarrer le poste." -ForegroundColor White
