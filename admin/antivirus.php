@@ -205,6 +205,33 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
       <p class="muted small" style="margin-top:0">Les stations d'analyse de clés USB déposent leurs
       résultats ici et récupèrent leur base virale sur cette passerelle — elles n'ont pas besoin d'Internet.</p>
 
+      <?php
+        // Logiciel de station blanche, servi PAR LA PASSERELLE.
+        //
+        // Servi en HTTP sur 2080 : c'est le port que le portail captif laisse passer, et
+        // le certificat de la console est auto-signé — un navigateur refuserait le
+        // téléchargement depuis le 2443 sans avertissement.
+        //
+        // Le binaire n'est pas versionné : il se construit depuis « station-blanche/ »
+        // (dotnet publish). Tant qu'il n'est pas déposé, on le DIT — avec la commande —
+        // plutôt que d'afficher un bouton qui rendrait une erreur 404.
+        $sb = null;
+        foreach (glob('/var/www/html/apps/BastionStationBlanche*.exe') ?: [] as $f) { $sb = $f; break; }
+      ?>
+      <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;margin:.9rem 0 1.1rem">
+        <?php if ($sb): ?>
+          <a class="btn-sm" href="http://<?= e(pf_lan_ip()) ?>:2080/apps/<?= e(basename($sb)) ?>" download>
+            ⬇ Télécharger le logiciel de station blanche (<?= round(filesize($sb) / 1048576, 1) ?> Mo)</a>
+          <span class="muted small">À installer sur le poste d'analyse, puis à configurer avec un jeton
+          de station généré ci-dessous.</span>
+        <?php else: ?>
+          <span class="badge off">✗ Logiciel absent de la passerelle</span>
+          <span class="muted small">Il se construit depuis <code>station-blanche/</code> puis se dépose
+          dans <code>/var/www/html/apps/</code> :<br>
+          <code>dotnet publish -c Release -o publish</code> — le bouton apparaîtra tout seul.</span>
+        <?php endif; ?>
+      </div>
+
       <!-- Activité récente déposée par les stations -->
       <div class="st-stats">
         <div class="st-stat"><div class="v"><?= $stStats['n30'] ?></div><div class="muted small">analyses (30 j)</div></div>
