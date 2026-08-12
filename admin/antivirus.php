@@ -215,13 +215,20 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
         // Le binaire n'est pas versionné : il se construit depuis « station-blanche/ »
         // (dotnet publish). Tant qu'il n'est pas déposé, on le DIT — avec la commande —
         // plutôt que d'afficher un bouton qui rendrait une erreur 404.
+        // Le MSI d'abord : il s'installe et se désinstalle proprement, et se déploie
+        // par stratégie de groupe. L'exécutable nu ne sert qu'en dépannage, sur un poste
+        // où l'on ne peut pas passer par l'installeur.
         $sb = null;
-        foreach (glob('/var/www/html/apps/BastionStationBlanche*.exe') ?: [] as $f) { $sb = $f; break; }
+        foreach (['msi', 'exe'] as $ext) {
+            foreach (glob('/var/www/html/apps/BastionStationBlanche*.' . $ext) ?: [] as $f) {
+                if (is_file($f)) { $sb = $f; break 2; }
+            }
+        }
       ?>
       <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;margin:.9rem 0 1.1rem">
         <?php if ($sb): ?>
           <a class="btn-sm" href="http://<?= e(pf_lan_ip()) ?>:2080/apps/<?= e(basename($sb)) ?>" download>
-            ⬇ Télécharger le logiciel de station blanche (<?= round(filesize($sb) / 1048576, 1) ?> Mo)</a>
+            ⬇ Télécharger le logiciel de station blanche (<?= strtoupper(pathinfo($sb, PATHINFO_EXTENSION)) ?>, <?= round(filesize($sb) / 1048576, 1) ?> Mo)</a>
           <span class="muted small">À installer sur le poste d'analyse, puis à configurer avec un jeton
           de station généré ci-dessous.</span>
         <?php else: ?>
