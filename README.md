@@ -19,6 +19,19 @@ Le moteur réseau n'est pas réécrit : Bastion **orchestre** des briques éprou
 FreeRADIUS, dnsmasq, Samba AD, nftables — et y ajoute la console, les stratégies et les
 garde-fous qui manquent quand on les assemble à la main.
 
+## Architecture
+
+<div align="center">
+  <img src="docs/architecture.svg" alt="Deux réseaux séparés par la passerelle Bastion, sans route entre eux" width="820">
+</div>
+
+Le choix structurant est la **coupure au centre** : aucune route ne relie le réseau
+d'administration à celui des postes. Un poste compromis ne peut pas atteindre la console.
+
+C'est pourquoi tout ce qui doit traverser passe par des flux **sortants** — la prise de main
+à distance comme la liaison inter-sites : les deux extrémités se connectent vers la
+passerelle, et aucun port n'est ouvert en entrée sur la box.
+
 ## Ce qu'il fait
 
 | | |

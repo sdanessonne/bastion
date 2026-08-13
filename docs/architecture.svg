@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" width="900" height="620"
+     font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" role="img"
+     aria-label="Architecture réseau de Bastion : deux réseaux séparés par la passerelle, sans route entre eux">
+  <title>Bastion — architecture réseau</title>
+  <desc>La passerelle Bastion sépare le réseau d'administration du réseau des postes.
+        Aucune route ne relie les deux : tous les flux vers l'extérieur partent en sortant.</desc>
+
+  <style>
+    .fond   { fill: #0b1120; }
+    .zone   { fill: #151f32; stroke: #28374f; stroke-width: 1.5; rx: 14; }
+    .zone-a { fill: #1a2438; stroke: #3b5478; }
+    .boite  { fill: #1c2942; stroke: #28374f; stroke-width: 1.5; rx: 10; }
+    .cle    { fill: #14283f; stroke: #38bdf8; stroke-width: 1.5; rx: 12; }
+    .t      { fill: #e6edf6; font-size: 14px; }
+    .tb     { fill: #e6edf6; font-size: 15px; font-weight: 600; }
+    .tm     { fill: #8ea2bd; font-size: 12px; }
+    .ta     { fill: #38bdf8; font-size: 12px; font-weight: 600; }
+    .titre  { fill: #8ea2bd; font-size: 11px; font-weight: 700; letter-spacing: .09em; }
+    .lien   { stroke: #3b5478; stroke-width: 2; fill: none; }
+    .sortant{ stroke: #38bdf8; stroke-width: 2; fill: none; }
+    .coupe  { stroke: #f87171; stroke-width: 2.5; stroke-dasharray: 7 6; fill: none; }
+    .rouge  { fill: #f87171; font-size: 12px; font-weight: 600; }
+  </style>
+
+  <rect class="fond" width="900" height="620" />
+
+  <!-- ─────────── Internet ─────────── -->
+  <rect class="boite" x="352" y="24" width="196" height="46" />
+  <text class="tb" x="450" y="46" text-anchor="middle">Internet</text>
+  <text class="tm" x="450" y="62" text-anchor="middle">box de l'opérateur</text>
+
+  <!-- ─────────── Réseau d'administration ─────────── -->
+  <rect class="zone zone-a" x="40" y="118" width="330" height="122" />
+  <text class="titre" x="60" y="142">RÉSEAU D'ADMINISTRATION</text>
+  <rect class="boite" x="60" y="156" width="140" height="62" />
+  <text class="t" x="130" y="180" text-anchor="middle">Poste</text>
+  <text class="t" x="130" y="198" text-anchor="middle">d'administration</text>
+  <text class="tm" x="228" y="180">Console web</text>
+  <text class="ta" x="228" y="198">port 8443</text>
+
+  <!-- ─────────── La passerelle ─────────── -->
+  <rect class="cle" x="290" y="286" width="320" height="150" />
+  <text class="tb" x="450" y="314" text-anchor="middle">Passerelle Bastion</text>
+  <text class="tm" x="450" y="333" text-anchor="middle">Debian · deux interfaces réseau</text>
+
+  <rect class="boite" x="308" y="348" width="138" height="34" />
+  <text class="tm" x="377" y="369" text-anchor="middle">Portail captif · DNS</text>
+  <rect class="boite" x="454" y="348" width="138" height="34" />
+  <text class="tm" x="523" y="369" text-anchor="middle">Annuaire · Journaux</text>
+  <rect class="boite" x="308" y="390" width="138" height="34" />
+  <text class="tm" x="377" y="411" text-anchor="middle">Filtrage · Quotas</text>
+  <rect class="boite" x="454" y="390" width="138" height="34" />
+  <text class="tm" x="523" y="411" text-anchor="middle">Stratégies · Store</text>
+
+  <!-- ─────────── Réseau des postes ─────────── -->
+  <rect class="zone" x="40" y="488" width="820" height="106" />
+  <text class="titre" x="60" y="512">RÉSEAU DES POSTES</text>
+  <rect class="boite" x="60" y="524" width="150" height="52" />
+  <text class="t" x="135" y="555" text-anchor="middle">Postes du domaine</text>
+  <rect class="boite" x="226" y="524" width="150" height="52" />
+  <text class="t" x="301" y="555" text-anchor="middle">Wi-Fi du service</text>
+  <rect class="boite" x="392" y="524" width="150" height="52" />
+  <text class="t" x="467" y="555" text-anchor="middle">Station blanche</text>
+  <rect class="boite" x="558" y="524" width="150" height="52" />
+  <text class="t" x="633" y="555" text-anchor="middle">Visiteurs</text>
+  <rect class="boite" x="724" y="524" width="116" height="52" />
+  <text class="t" x="782" y="548" text-anchor="middle">Amorçage</text>
+  <text class="tm" x="782" y="565" text-anchor="middle">PXE</text>
+
+  <!-- ─────────── Liens ─────────── -->
+  <!-- passerelle vers Internet -->
+  <line class="lien" x1="450" y1="286" x2="450" y2="70" />
+  <!-- administration vers passerelle -->
+  <path class="lien" d="M 205 190 H 250 V 340 H 290" />
+  <!-- postes vers passerelle -->
+  <path class="lien" d="M 135 524 V 470 H 450 V 436" />
+  <path class="lien" d="M 301 524 V 490" />
+  <path class="lien" d="M 467 524 V 490" />
+  <path class="lien" d="M 633 524 V 470 H 450" />
+
+  <!-- ─────────── LE POINT CENTRAL : aucune route entre les deux ─────────── -->
+  <path class="coupe" d="M 130 240 V 300 Q 130 470 130 470" />
+  <circle cx="130" cy="352" r="17" fill="#0b1120" stroke="#f87171" stroke-width="2.5" />
+  <line x1="121" y1="343" x2="139" y2="361" stroke="#f87171" stroke-width="2.5" />
+  <line x1="139" y1="343" x2="121" y2="361" stroke="#f87171" stroke-width="2.5" />
+  <text class="rouge" x="155" y="345">Aucune route</text>
+  <text class="rouge" x="155" y="362">entre les deux réseaux</text>
+  <text class="tm" x="155" y="382">Un poste compromis ne peut pas</text>
+  <text class="tm" x="155" y="398">atteindre l'administration.</text>
+
+  <!-- ─────────── Flux sortants ─────────── -->
+  <path class="sortant" d="M 610 360 H 700 V 100 H 548" />
+  <text class="ta" x="712" y="230">Flux SORTANTS uniquement</text>
+  <text class="tm" x="712" y="248">Prise de main à distance,</text>
+  <text class="tm" x="712" y="264">liaison inter-sites.</text>
+  <text class="tm" x="712" y="280">Aucun port ouvert</text>
+  <text class="tm" x="712" y="296">en entrée sur la box.</text>
+</svg>
