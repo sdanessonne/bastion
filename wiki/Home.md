@@ -11,6 +11,7 @@ accessible quand Internet ne l'est pas.
 ## Pages
 
 - **[Fonctionnalités](Fonctionnalites)** — le panorama complet de ce que fait Bastion
+- **[Tutoriel](Tutoriel)** — installer de zéro, pas à pas, jusqu'au premier poste raccordé
 - **[Installation](Installation)** — depuis une Debian neuve ou une machine nue
 - **[Dépannage](Depannage)** — les pannes rencontrées, leur cause et leur signe
 - **[Exploitation](Exploitation)** — les gestes réguliers
