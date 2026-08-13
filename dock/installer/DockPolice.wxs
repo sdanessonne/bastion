@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DockPolice - Installeur MSI (WiX 6)
+
+  Build :
+    cd installer
+    wix build DockPolice.wxs -arch x64 -o DockPolice.msi -bf -d "DistDir=..\..\dist\DockPolice"
+
+  L'option -bf bind les fichiers au moment de la compilation.
+  La variable DistDir doit pointer vers le dossier contenant DockPolice.exe et apps.json.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="DockPolice"
+    Manufacturer="DIPN Essonne - Service informatique"
+    Version="1.0.0"
+    UpgradeCode="D90557B7-6371-40DD-8E60-621D00CF6E4B"
+    Scope="perMachine"
+    Compressed="yes"
+    InstallerVersion="500">
+
+    <SummaryInformation Description="DockPolice - Lanceur d'applications et systeme SAV pour les commissariats" />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Empeche les downgrades, autorise les upgrades par-dessus -->
+    <MajorUpgrade DowngradeErrorMessage="Une version plus recente de DockPolice est deja installee." />
+
+    <!-- Icone affichee dans le Panneau de configuration -->
+    <Icon Id="DockPoliceIcon.ico" SourceFile="$(var.DistDir)\DockPolice.exe" />
+    <Property Id="ARPPRODUCTICON" Value="DockPoliceIcon.ico" />
+    <Property Id="ARPHELPLINK"    Value="http://localhost/" />
+    <Property Id="ARPNOMODIFY"    Value="1" />
+    <Property Id="ARPNOREPAIR"    Value="1" />
+
+    <!-- Structure des dossiers -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="DockPolice" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="StartupFolder" />
+
+    <!-- Composants principaux -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+
+      <Component Id="MainExecutable" Bitness="always64">
+        <File Id="DockPoliceExe"
+              Source="$(var.DistDir)\DockPolice.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="ConfigFile" Bitness="always64">
+        <File Id="AppsJson"
+              Source="$(var.DistDir)\apps.json"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="CertificateFile" Bitness="always64">
+        <File Id="CertCer"
+              Source="$(var.DistDir)\DockPolice-CodeSign.cer"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- Raccourci Menu Demarrer (tous utilisateurs) -->
+      <Component Id="StartMenuShortcut" Bitness="always64">
+        <Shortcut Id="StartMenuShortcutItem"
+                  Directory="ProgramMenuFolder"
+                  Name="DockPolice"
+                  Description="Lanceur d'applications et SAV"
+                  Target="[#DockPoliceExe]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="DockPoliceIcon.ico" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\DockPolice"
+                       Name="StartMenuInstalled"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+
+      <!-- Raccourci demarrage automatique -->
+      <Component Id="StartupShortcut" Bitness="always64">
+        <Shortcut Id="StartupShortcutItem"
+                  Directory="StartupFolder"
+                  Name="DockPolice"
+                  Description="DockPolice (demarrage automatique)"
+                  Target="[#DockPoliceExe]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="DockPoliceIcon.ico" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\DockPolice"
+                       Name="StartupInstalled"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
+    <!-- ================================================================ -->
+    <!-- Custom Actions : installation/desinstallation du certificat       -->
+    <!-- via certutil.exe (deferred + impersonate=no = privileges admin)   -->
+    <!-- ================================================================ -->
+
+    <SetProperty Id="InstallCertRoot"
+                 Value='"[System64Folder]certutil.exe" -addstore -f Root "[#CertCer]"'
+                 Before="InstallCertRoot"
+                 Sequence="execute" />
+    <CustomAction Id="InstallCertRoot"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+
+    <SetProperty Id="InstallCertPublisher"
+                 Value='"[System64Folder]certutil.exe" -addstore -f TrustedPublisher "[#CertCer]"'
+                 Before="InstallCertPublisher"
+                 Sequence="execute" />
+    <CustomAction Id="InstallCertPublisher"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+
+    <SetProperty Id="UninstallCertRoot"
+                 Value='"[System64Folder]certutil.exe" -delstore Root DockPolice'
+                 Before="UninstallCertRoot"
+                 Sequence="execute" />
+    <CustomAction Id="UninstallCertRoot"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+
+    <SetProperty Id="UninstallCertPublisher"
+                 Value='"[System64Folder]certutil.exe" -delstore TrustedPublisher DockPolice'
+                 Before="UninstallCertPublisher"
+                 Sequence="execute" />
+    <CustomAction Id="UninstallCertPublisher"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+
+    <InstallExecuteSequence>
+      <!-- Installation : juste apres copie des fichiers (le .cer existe deja sur disque) -->
+      <Custom Action="InstallCertRoot"      After="InstallFiles"      Condition="NOT Installed" />
+      <Custom Action="InstallCertPublisher" After="InstallCertRoot"   Condition="NOT Installed" />
+
+      <!-- Desinstallation : avant la suppression des fichiers -->
+      <Custom Action="UninstallCertRoot"      Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="UninstallCertPublisher" After="UninstallCertRoot" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+
+    <!-- Feature unique englobant tout -->
+    <Feature Id="MainFeature"
+             Title="DockPolice"
+             Level="1"
+             AllowAbsent="no">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+
+  </Package>
+</Wix>

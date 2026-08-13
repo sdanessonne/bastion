@@ -1,0 +1,36 @@
+<Window x:Class="DockLite.Views.BroadcastBannerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bandeau DockPolice"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        AllowsTransparency="False"
+        Background="#0ea5e9"
+        Height="32"
+        Width="800">
+    <Grid x:Name="Root">
+        <Border x:Name="AccentBorder" BorderThickness="0,0,0,1" BorderBrush="#00000022"/>
+        <Canvas x:Name="TickerCanvas" ClipToBounds="True">
+            <TextBlock x:Name="TickerText"
+                       Canvas.Top="6"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       Foreground="White"
+                       Text=""/>
+        </Canvas>
+        <Button x:Name="DismissBtn"
+                Content="&#xE894;"
+                FontFamily="Segoe MDL2 Assets"
+                FontSize="12"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Stretch"
+                Width="34"
+                Background="#00000022"
+                Foreground="White"
+                BorderThickness="0"
+                Cursor="Hand"
+                Click="DismissBtn_Click"/>
+    </Grid>
+</Window>

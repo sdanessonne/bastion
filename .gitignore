@@ -48,3 +48,21 @@ provisioning/iso/*.iso
 
 # Bac a sable de controle visuel (jamais versionne)
 .essai-css/
+
+# ── DOCK DES POSTES (dock/) ──────────────────────────────────────────────────
+# CE QUE CES REGLES PROTEGENT, ET POURQUOI
+#
+# Le code d'origine transportait deux fichiers porteurs de secrets, decouverts a
+# l'import : « apps.json » (config du poste) contenait une cle d'API en clair ET
+# une chaine de connexion MySQL en compte root sans mot de passe, et
+# « agent.json » la meme cle. Ils sont installes SUR CHAQUE POSTE, donc lisibles
+# par n'importe quel agent connecte.
+#
+# Ils ne sont pas versionnes ici. « agent.json » figure au depot sous forme de
+# GABARIT a champs vides (le projet Agent le reference, son absence casserait la
+# compilation) : ne jamais y ecrire de vraie valeur. Un secret pousse une seule
+# fois reste dans l'historique Git meme apres suppression, et doit alors etre
+# considere comme compromis et change.
+dock/**/apps.json
+dock/**/*.pfx
+dock/**/*.snk

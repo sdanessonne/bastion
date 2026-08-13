@@ -1,0 +1,6 @@
+# Ne JAMAIS commiter la clé privée du certificat
+*.pfx
+*.p12
+*.key
+
+# Le .cer (clé publique) peut être commité si distribution interne

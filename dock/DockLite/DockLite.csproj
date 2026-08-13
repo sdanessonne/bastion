@@ -1,0 +1,145 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>DockPolice</AssemblyName>
+    <RootNamespace>DockLite</RootNamespace>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <ApplicationIcon>Assets\DockPolice.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Product>DockPolice</Product>
+    <Company>DIPN Essonne — Service informatique</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MySqlConnector" Version="2.4.0" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+    <PackageReference Include="System.DirectoryServices.AccountManagement" Version="8.0.0" />
+    <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Include="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </ApplicationDefinition>
+    <Page Include="Views\MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\SystemInfoWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\TicketWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\ToastWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\BroadcastBannerWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\RemoteControlBanner.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\AnnotateWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\ProfileWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Compile Include="App.xaml.cs">
+      <DependentUpon>App.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Views\MainWindow.xaml.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Views\DockIcon.cs" />
+    <Compile Include="Views\TicketConverters.cs" />
+    <Compile Include="Views\SystemInfoWindow.xaml.cs">
+      <DependentUpon>SystemInfoWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Services\SystemInfo.cs" />
+    <Compile Include="Services\TicketService.cs" />
+    <Compile Include="Views\TicketWindow.xaml.cs">
+      <DependentUpon>TicketWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Views\ToastWindow.xaml.cs">
+      <DependentUpon>ToastWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Services\NotificationStateService.cs" />
+    <Compile Include="Services\ScreenCapture.cs" />
+    <Compile Include="Services\AttachmentApi.cs" />
+    <Compile Include="Services\MachineSnapshot.cs" />
+    <Compile Include="Services\MachineLive.cs" />
+    <Compile Include="Services\MachineReporter.cs" />
+    <Compile Include="Services\AntivirusInfo.cs" />
+    <Compile Include="Services\TrellixInfo.cs" />
+    <Compile Include="Services\RemoteCommandService.cs" />
+    <Compile Include="Services\ScreenStreamService.cs" />
+    <Compile Include="Services\RemoteInputService.cs" />
+    <Compile Include="Models\SupportTicket.cs" />
+    <Compile Include="Models\Commissariat.cs" />
+    <Compile Include="Models\DockItem.cs" />
+    <Compile Include="Models\DockConfig.cs" />
+    <Compile Include="Models\UserDockPrefs.cs" />
+    <Compile Include="Models\Broadcast.cs" />
+    <Compile Include="Services\ConfigService.cs" />
+    <Compile Include="Services\UserPrefsSync.cs" />
+    <Compile Include="Services\BroadcastService.cs" />
+    <Compile Include="Views\BroadcastBannerWindow.xaml.cs">
+      <DependentUpon>BroadcastBannerWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Views\RemoteControlBanner.xaml.cs">
+      <DependentUpon>RemoteControlBanner.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Views\AnnotateWindow.xaml.cs">
+      <DependentUpon>AnnotateWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Services\IconExtractor.cs" />
+    <Compile Include="Services\VisualHelper.cs" />
+    <Compile Include="Services\AppDiscovery.cs" />
+    <Compile Include="Services\UpdateChecker.cs" />
+    <Compile Include="Services\TicketIntelligence.cs" />
+    <Compile Include="Services\OfflineTicketQueue.cs" />
+    <Compile Include="Services\ActiveDirectoryService.cs" />
+    <Compile Include="Services\DirectoryProfileService.cs" />
+    <Compile Include="Services\SmartCardService.cs" />
+    <Compile Include="Services\LapsService.cs" />
+    <Compile Include="Services\EventLogService.cs" />
+    <Compile Include="Services\LocalAdminsService.cs" />
+    <Compile Include="Services\UpdateCheckerService.cs" />
+    <Compile Include="Services\WindowsUpdateService.cs" />
+    <Compile Include="Services\HabilitationService.cs" />
+    <Compile Include="Services\PoliceGrades.cs" />
+    <Compile Include="Services\RemoteAssistCodeService.cs" />
+    <Compile Include="Services\WindowsThemeService.cs" />
+    <Compile Include="Services\AutoUpdateService.cs" />
+    <Compile Include="Services\ThunderbirdService.cs" />
+    <Compile Include="Views\ProfileWindow.xaml.cs">
+      <DependentUpon>ProfileWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\DockPolice.ico" />
+  </ItemGroup>
+
+</Project>

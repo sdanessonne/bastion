@@ -1,0 +1,70 @@
+<Window x:Class="DockLite.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DockPolice"
+        Icon="pack://application:,,,/Assets/DockPolice.ico"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight"
+        AllowDrop="True"
+        Drop="Window_Drop"
+        DragEnter="Window_DragEnter">
+
+    <StackPanel x:Name="RootStack" Orientation="Vertical">
+
+        <Border x:Name="DockBorder"
+                Padding="12,8"
+                CornerRadius="14"
+                MouseLeave="DockBorder_MouseLeave">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#CC2A2A2A" Offset="0"/>
+                    <GradientStop Color="#CC1A1A1A" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="20" ShadowDepth="0" Opacity="0.6" Color="Black"/>
+            </Border.Effect>
+
+            <ItemsControl x:Name="ItemsHost" MouseMove="ItemsHost_MouseMove" MouseLeave="ItemsHost_MouseLeave">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+            </ItemsControl>
+        </Border>
+
+        <Border x:Name="ArrowTrigger"
+                Width="56" Height="16"
+                HorizontalAlignment="Center"
+                CornerRadius="0,0,8,8"
+                Cursor="Hand"
+                MouseEnter="ArrowTrigger_MouseEnter"
+                MouseLeave="ArrowTrigger_MouseLeave"
+                Visibility="Collapsed">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#E62A2A2A" Offset="0"/>
+                    <GradientStop Color="#E61A1A1A" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="8" ShadowDepth="0" Opacity="0.5" Color="Black"/>
+            </Border.Effect>
+            <Path Data="M 0 0 L 5 5 L 10 0"
+                  Stroke="White"
+                  StrokeThickness="1.8"
+                  StrokeStartLineCap="Round"
+                  StrokeEndLineCap="Round"
+                  StrokeLineJoin="Round"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"/>
+        </Border>
+
+    </StackPanel>
+</Window>
