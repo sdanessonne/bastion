@@ -217,7 +217,18 @@ html.nav-open .nav-backdrop{display:block}
 
 
 .content{flex:1;min-width:0;max-width:1500px;margin-inline:auto;width:100%}
-.topbar{padding:1.3rem 1.8rem;border-bottom:1px solid var(--line);overflow-x:hidden}
+/* ── NE PAS REMETTRE « overflow » SUR CETTE BARRE ────────────────────────────
+   Elle portait « overflow-x:hidden » pour empêcher un titre long d'élargir la
+   page. Mais dès qu'un axe cesse d'être « visible », l'autre passe de
+   « visible » à « auto » : la barre devenait une boîte de rognage, et TOUT ce
+   qui pend en dessous en position absolue était coupé — le menu « Mon profil »
+   s'ouvrait bel et bien, invisible, et la liste de la recherche subissait le
+   même sort. Rien ne le signalait : le clic marchait, la classe « open » était
+   posée, et il ne s'affichait rien.
+   Le titre est désormais contenu par « min-width:0 » et l'ellipse posée sur le
+   h1 (voir .tb-left h1), ce qui l'empêche d'élargir la page sans rogner quoi
+   que ce soit. */
+.topbar{padding:1.3rem 1.8rem;border-bottom:1px solid var(--line)}
 .topbar>*{min-width:0}
 .topbar h1{margin:0;font-size:1.3rem}
 .page{padding:1.6rem 1.8rem;display:grid;gap:1.4rem}
