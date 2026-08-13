@@ -63,6 +63,17 @@ body:has(.sidebar){display:flex}
 .sidebar .brand{display:flex;align-items:center;gap:.7rem;font-weight:700;font-size:1.1rem;
   padding:.2rem .4rem .9rem;line-height:1.1;flex:none}
 .sidebar .brand small{color:var(--muted);font-weight:400;font-size:.72rem}
+/* ── Écusson de marque ────────────────────────────────────────────────────────
+   Le logo était posé nu sur le fond du menu, où il se lisait comme une image
+   laissée là par erreur. Le socle en dégradé lui donne un poids d'en-tête. */
+.brand-shield{width:38px;height:38px;flex:none;border-radius:11px;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--accent),#1e3a8a);box-shadow:0 4px 12px rgba(56,189,248,.28)}
+.brand-shield .logo{width:24px;height:24px}
+.sidebar .brand .btxt{display:block;line-height:1.15}
+/* Majuscules espacées : le sous-titre cesse de concurrencer le nom du produit
+   et se lit comme une étiquette. */
+.sidebar .brand .btxt small{display:block;font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin-top:.15rem}
 /* Seule la navigation défile — la marque et le pied restent visibles. Ascenseur discret. */
 .sidebar nav{display:grid;gap:.08rem;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
   scrollbar-width:thin;scrollbar-color:var(--line) transparent}
@@ -76,17 +87,8 @@ body:has(.sidebar){display:flex}
   color:var(--muted);font-weight:500;font-size:.92rem}
 .sidebar nav a:hover{background:var(--panel2);color:var(--text)}
 
-/* ── Champ de recherche du menu ────────────────────────────────────────────── */
-.nav-search{padding:.15rem .1rem .45rem}
-.nav-search input{width:100%;padding:.4rem .6rem;font-size:.82rem;border-radius:8px;
-  background:var(--bg);border:1px solid var(--line);color:var(--text)}
-.nav-search input:focus{border-color:var(--accent,#38bdf8);outline:none}
-.nav-vide{font-size:.78rem;color:var(--muted);padding:.5rem .7rem;display:flex;flex-direction:column;gap:.3rem}
-.nav-vide a{color:var(--acc,#38bdf8);text-decoration:none}
-.nav-vide a:hover{text-decoration:underline}
-/* Première correspondance : elle est ce qu'ouvre la touche Entrée, il faut donc
-   la voir avant d'appuyer. */
-.sidebar nav a.nav-hit{background:var(--panel2);box-shadow:inset 2px 0 0 var(--accent,#38bdf8)}
+/* Le champ de recherche a quitté la barre latérale pour la barre du haut :
+   voir « .tb-search » plus bas. Il y reste visible quand le menu est replié. */
 
 /* ── Pastille d'anomalie ───────────────────────────────────────────────────────
    Un point coloré ne suffit pas seul : sur un écran en niveaux de gris, ou pour
@@ -109,12 +111,46 @@ body:has(.sidebar){display:flex}
    ne plus être poussée à droite par un texte absent. */
 html.rail .nav-dot{position:absolute;top:.3rem;right:.3rem;margin:0}
 html.rail .sidebar nav a{position:relative}
-html.rail .nav-search{display:none}
 
 .nav-group-label.nav-freq{color:var(--accent,#38bdf8);opacity:.85}
 .sidebar nav a.active{background:rgba(56,189,248,.14);color:var(--accent)}
 .sidebar .ico{width:1.3rem;text-align:center}
 .sidebar-foot{flex:none;padding-top:.8rem;margin-top:.4rem;border-top:1px solid var(--line);display:grid;gap:.5rem}
+
+/* ── Voyant d'état, en bas du menu ───────────────────────────────────────────
+   Il est branché sur nav_badges(), la même source que les pastilles des entrées :
+   les deux ne peuvent donc pas se contredire. Un voyant vert écrit en dur, qui
+   afficherait « opérationnel » quoi qu'il arrive, apprendrait à ne plus le
+   regarder — et c'est pire que pas de voyant du tout. */
+.sys-state{display:flex;align-items:center;gap:.5rem;font-size:.74rem;color:var(--muted);
+  padding:.35rem .5rem;border-radius:8px;border:1px solid transparent;transition:background .15s,border-color .15s}
+.sys-state:hover{background:var(--panel2);border-color:var(--line)}
+.sys-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ok);box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+.sys-state.warn .sys-dot{background:var(--warn);box-shadow:0 0 0 3px rgba(251,191,36,.2)}
+.sys-state.warn{color:var(--warn)}
+.sys-state.danger .sys-dot{background:var(--danger);box-shadow:0 0 0 3px rgba(248,113,113,.25);
+  animation:navPulse 2s ease-in-out infinite}
+.sys-state.danger{color:var(--danger)}
+@media(prefers-reduced-motion:reduce){.sys-state.danger .sys-dot{animation:none}}
+
+/* ── Pastille de version ─────────────────────────────────────────────────────
+   « Quelle version tourne ici ? » se pose à chaque appel d'assistance, et la
+   réponse était enfouie dans la page « À propos ». */
+.version-pill{display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;border-radius:9px;
+  font-size:.72rem;color:var(--text);text-decoration:none;
+  background:linear-gradient(90deg,rgba(56,189,248,.16),rgba(56,189,248,.05));
+  border:1px solid rgba(56,189,248,.35);transition:background .15s,border-color .15s,transform .15s}
+.version-pill:hover{background:linear-gradient(90deg,rgba(56,189,248,.26),rgba(56,189,248,.09));
+  border-color:var(--accent);transform:translateX(2px)}
+.version-pill .vp-tag{background:var(--accent2);color:#052536;padding:.1rem .4rem;border-radius:4px;
+  font-weight:700;font-family:ui-monospace,"Cascadia Code",monospace;font-size:.68rem}
+.version-pill .vp-link{flex:1;font-weight:500;color:var(--muted)}
+.version-pill .vp-arrow{color:var(--muted);transition:transform .15s}
+.version-pill:hover .vp-arrow{transform:translateX(2px);color:var(--accent)}
+/* Pas de variante « rail » ici : depuis que le menu est un tiroir à toutes les
+   largeurs, le mode rail est neutralisé plus bas (largeur forcée à 250 px, bouton
+   masqué). Des règles html.rail pour ces deux blocs ne s'appliqueraient jamais et
+   feraient croire à un mode qui n'existe plus. */
 .who{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--muted)}
 .logout{color:var(--danger);font-size:.85rem}
 

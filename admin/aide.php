@@ -20,8 +20,27 @@ $GROUPS = [
         pages denses : inventaire du parc, journaux, annuaire. Un clic à côté, la touche <kbd>Échap</kbd>, ou le
         choix d\'une page le referment. Les fonctions y sont groupées par domaine (Surveiller, Accès &amp; droits,
         Protection, Postes &amp; réseau, Intranet, Aide). Les changements sont <strong>immédiats</strong>.</li>
+        <li>La <strong>barre du haut</strong> reste visible quand vous faites défiler une longue page —
+        journal, annuaire, inventaire — pour ne pas avoir à remonter afin de changer de page. Elle porte, de
+        gauche à droite : le bouton de menu, le titre de la page, la <strong>recherche</strong>, un
+        <strong>voyant d\'état</strong> et votre compte. Sur écran étroit, ces éléments s\'effacent dans cet
+        ordre : le titre d\'abord (le menu indique déjà où l\'on est), la recherche en dernier.</li>
+        <li>La <strong>recherche</strong> (<kbd>Ctrl</kbd>+<kbd>K</kbd>) propose ses résultats dans une liste
+        sous le champ. Elle connaît des <strong>synonymes</strong> : « inventaire » trouve <em>Parc
+        informatique</em>, que personne n\'appelle ainsi de tête. Les flèches parcourent la liste,
+        <kbd>Entrée</kbd> ouvre la ligne surlignée. La dernière ligne, <em>Chercher partout</em>, mène à la
+        recherche globale — agents, postes, adresses IP ou MAC — et elle est <strong>toujours</strong>
+        proposée, même quand des pages correspondent.</li>
+        <li>Le <strong>voyant d\'état</strong>, à droite de la recherche, affiche « Système opérationnel » ou le
+        nombre d\'anomalies. Il partage sa source avec les pastilles du menu : les deux ne peuvent pas se
+        contredire. Un clic mène à <em>Santé &amp; sécurité</em>, qui en donne le détail.</li>
         <li>Menu du haut à droite : votre profil &amp; sécurité (photo, mot de passe, double authentification),
-        redémarrer / arrêter le serveur, se déconnecter.</li>
+        redémarrer / arrêter le serveur, se déconnecter. Votre <strong>rôle</strong> y est écrit sous votre nom —
+        « lecture seule » explique d\'avance pourquoi un bouton refusera d\'enregistrer, au lieu de le laisser
+        découvrir au clic.</li>
+        <li>En bas du menu : le même <strong>voyant d\'état</strong>, et la <strong>version</strong> de Bastion.
+        La question « quelle version tourne ici ? » se pose à chaque appel d\'assistance, et la réponse était
+        jusqu\'ici enfouie dans « À propos ».</li>
       </ul>
       <p class="tip">Une <strong>mise à jour tout-en-un</strong> (système Debian + application Bastion) est disponible
       dans <em>Système</em> : un seul bouton vérifie et installe les deux.</p>'],

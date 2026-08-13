@@ -94,8 +94,66 @@ function pf_header(string $title, string $active = ''): void {
   <link rel="icon" type="image/svg+xml" href="/assets/bastion-icon.svg">
   <link rel="stylesheet" href="/assets/admin.css">
   <style>
-    .topbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-    .usermenu{position:relative}
+    /* ── BARRE DU HAUT ───────────────────────────────────────────────────────
+       Collante et translucide : en faisant défiler une longue page — le journal,
+       l'annuaire — on perdait la recherche et le menu utilisateur, et il fallait
+       remonter tout en haut pour changer de page. */
+    .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:1rem;flex-wrap:nowrap;
+      padding:.55rem 0;margin-bottom:.4rem;
+      background:color-mix(in srgb,var(--bg) 82%,transparent);
+      backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+      border-bottom:1px solid var(--line)}
+    /* Repli sans color-mix (navigateurs anciens) : un fond opaque vaut mieux
+       qu'un fond transparent qui laisserait le texte de la page passer dessous. */
+    @supports not (background:color-mix(in srgb,red 50%,transparent)){.topbar{background:var(--bg)}}
+    .tb-left{display:flex;align-items:center;gap:.8rem;min-width:0;flex:0 1 auto}
+    .tb-left h1{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+    /* ── Recherche ───────────────────────────────────────────────────────────
+       C'est un vrai formulaire pointant sur chercher.php : sans JavaScript, la
+       touche Entrée mène tout de même quelque part. La liste déroulante est un
+       confort ajouté par-dessus, jamais le seul chemin. */
+    .tb-search{position:relative;flex:1 1 260px;max-width:440px;min-width:0}
+    .tb-search input{width:100%;padding:.5rem 4.5rem .5rem 2.2rem;font-size:.87rem;border-radius:10px;
+      background:var(--panel);border:1px solid var(--line);color:var(--text);outline:none;
+      transition:border-color .15s,box-shadow .15s,background .15s}
+    .tb-search input:focus{border-color:var(--accent);background:var(--bg);box-shadow:0 0 0 3px rgba(56,189,248,.15)}
+    .tb-search input::-webkit-search-cancel-button{filter:invert(.6)}
+    .ts-ico{position:absolute;left:.7rem;top:50%;transform:translateY(-50%);pointer-events:none;
+      font-size:.85rem;opacity:.65}
+    .ts-kbd{position:absolute;right:.55rem;top:50%;transform:translateY(-50%);pointer-events:none;
+      background:var(--panel2);color:var(--muted);border:1px solid var(--line);border-radius:5px;
+      padding:.1rem .35rem;font-size:.64rem;font-family:ui-monospace,"Cascadia Code",monospace}
+    .tb-search input:focus ~ .ts-kbd{opacity:0}
+    .ts-pop{position:absolute;left:0;right:0;top:calc(100% + .4rem);background:var(--panel);
+      border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 34px rgba(0,0,0,.5);
+      padding:.3rem;z-index:60;max-height:60vh;overflow-y:auto}
+    .ts-row{display:flex;align-items:center;gap:.6rem;padding:.5rem .6rem;border-radius:8px;
+      color:var(--text);text-decoration:none;font-size:.87rem}
+    .ts-row:hover,.ts-row.on{background:var(--panel2)}
+    /* La ligne surlignée est celle qu'ouvre la touche Entrée : il faut la voir
+       avant d'appuyer, sinon on ouvre une page au hasard. */
+    .ts-row.on{box-shadow:inset 2px 0 0 var(--accent)}
+    .ts-ri{width:1.3rem;text-align:center;flex:none}
+    .ts-rt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ts-rn{flex:none;font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+    .ts-row.ts-all{border-top:1px solid var(--line);border-radius:0 0 8px 8px;margin-top:.2rem;color:var(--accent)}
+    .ts-more{padding:.45rem .7rem;font-size:.74rem;color:var(--muted)}
+
+    /* ── Pastille d'état ─────────────────────────────────────────────────────
+       Même source que le voyant du menu : les deux ne peuvent pas diverger. */
+    .state-pill{display:inline-flex;align-items:center;gap:.45rem;flex:none;padding:.3rem .7rem .3rem .35rem;
+      border-radius:20px;font-size:.76rem;text-decoration:none;color:var(--text);
+      background:linear-gradient(90deg,rgba(34,197,94,.16),rgba(34,197,94,.05));border:1px solid rgba(34,197,94,.4)}
+    .state-pill:hover{filter:brightness(1.25)}
+    .state-pill .sp-ico{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+      background:var(--ok);color:#052b12;font-size:.7rem;font-weight:700;flex:none}
+    .state-pill.warn{background:linear-gradient(90deg,rgba(251,191,36,.16),rgba(251,191,36,.05));border-color:rgba(251,191,36,.45)}
+    .state-pill.warn .sp-ico{background:var(--warn);color:#3a2a00}
+    .state-pill.danger{background:linear-gradient(90deg,rgba(248,113,113,.16),rgba(248,113,113,.05));border-color:rgba(248,113,113,.45)}
+    .state-pill.danger .sp-ico{background:var(--danger);color:#3a0d0d}
+
+    .usermenu{position:relative;flex:none}
     .userbtn{display:flex;align-items:center;gap:.55rem;background:var(--panel2);border:1px solid var(--line);
              color:var(--text);padding:.4rem .7rem .4rem .45rem;border-radius:24px;cursor:pointer;font:inherit}
     .userbtn:hover{border-color:var(--accent)}
@@ -103,7 +161,12 @@ function pf_header(string $title, string $active = ''): void {
     .uavatar{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--accent2);
              color:#052536;font-weight:700;font-size:.9rem;flex:0 0 auto}
     .uavatar.sm{width:34px;height:34px}
-    .uname{font-size:.88rem;font-weight:500;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .uwho{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15;min-width:0}
+    .uname{font-size:.85rem;font-weight:500;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    /* Le rôle est affiché en clair : « lecture seule » explique d'avance pourquoi
+       un bouton refusera d'enregistrer, au lieu de le laisser découvrir au clic. */
+    .urole{font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+      max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .ucaret{color:var(--muted);font-size:.7rem}
     .usermenu-pop{position:absolute;right:0;top:calc(100% + .5rem);min-width:230px;background:var(--panel);
                   border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.45);
@@ -127,7 +190,15 @@ function pf_header(string $title, string $active = ''): void {
     @media(max-width:640px){.maj-toast{left:1rem;right:1rem;max-width:none}}
     @media(prefers-reduced-motion:reduce){.maj-toast{animation:none}}
     .usermenu-pop .ico{width:1.2rem;text-align:center}
-    @media (max-width:640px){.uname{display:none}}
+    /* ── Rétrécissement, dans l'ordre de ce dont on peut se passer ────────────
+       Le titre de la page part en premier : le menu latéral indique déjà où l'on
+       se trouve. La recherche est ce qu'on garde le plus longtemps — c'est elle
+       qui remplace le menu quand l'écran ne peut plus l'afficher. */
+    @media (max-width:1100px){.state-pill .sp-txt{display:none}
+      .state-pill{padding:.3rem .35rem}}
+    @media (max-width:900px){.tb-left h1{display:none}}
+    @media (max-width:640px){.uwho{display:none}.ts-kbd{display:none}
+      .tb-search input{padding-right:.7rem}}
   </style>
   <style>
     /* ── Barre de chargement ─────────────────────────────────────────────────
@@ -163,7 +234,12 @@ function pf_header(string $title, string $active = ''): void {
     try{if(localStorage.getItem('pf_rail')==='1')document.documentElement.classList.add('rail');}catch(e){}</script>
   <div class="nav-backdrop" id="navBackdrop"></div>
   <aside class="sidebar">
-    <div class="brand"><img class="logo" src="/assets/bastion-icon.svg" alt="Bastion"><span class="btxt">Bastion<br><small>Administration</small></span></div>
+    <!-- Le logo est posé dans un écusson plutôt que nu : sur un fond sombre, une icône
+         sans support se lit comme une image oubliée là. Le dégradé lui donne un socle. -->
+    <div class="brand">
+      <span class="brand-shield"><img class="logo" src="/assets/bastion-icon.svg" alt="Bastion"></span>
+      <span class="btxt">Bastion<small>Administration</small></span>
+    </div>
     <nav>
       <?php
       // Filtrage du menu selon le rôle. « comptes » ne voit que la gestion des comptes/agents.
@@ -198,17 +274,13 @@ function pf_header(string $title, string $active = ''): void {
              . '</a>';
       };
       ?>
-      <div class="nav-search">
-        <input type="search" id="navQ" placeholder="Rechercher une page…  Ctrl+K"
-               autocomplete="off" aria-label="Rechercher une page de la console">
-      </div>
-      <!-- Le champ ne filtrait que les PAGES : sur « DUPONT » ou « 192.168.182.47 » il
-           répondait « aucune page ne correspond », alors que la console connaît la
-           réponse. Ce relais mène à la recherche globale sans rien retaper. -->
-      <div id="navVide" class="nav-vide" hidden>
-        <span id="navVideTxt">Aucune page ne correspond.</span>
-        <a id="navTout" href="/chercher.php">🔎 Chercher partout →</a>
-      </div>
+      <?php
+      // Le champ de recherche a quitté la barre latérale pour la barre du HAUT : il y
+      // reste visible quand le menu est replié en rail, et il propose désormais ses
+      // résultats en liste déroulante plutôt qu'en filtrant le menu sous les yeux.
+      // Les liens ci-dessous restent la SOURCE de cette liste (href, icône, libellé,
+      // synonymes de data-r) : une seule définition, donc rien à resynchroniser.
+      ?>
 
       <?php
       // ── FRÉQUENTES ──────────────────────────────────────────────────────────
@@ -232,9 +304,33 @@ function pf_header(string $title, string $active = ''): void {
       <?php endforeach; ?>
     </nav>
     <div class="sidebar-foot">
+      <?php
+      // ── ÉTAT DU SYSTÈME, EN BAS DU MENU ────────────────────────────────────
+      // Repris de DockPolice, mais branché sur des données RÉELLES : le compte des
+      // anomalies que la console connaît déjà (nav_badges), et non une pastille
+      // verte écrite en dur. Un voyant qui affiche « opérationnel » quoi qu'il
+      // arrive est pire que pas de voyant — il apprend à ne plus le regarder.
+      $pfNbDanger = 0; $pfNbWarn = 0;
+      foreach ($pfBadges as $b) { if (($b['lvl'] ?? '') === 'danger') { $pfNbDanger++; } else { $pfNbWarn++; } }
+      $pfEtat = $pfNbDanger ? 'danger' : ($pfNbWarn ? 'warn' : 'ok');
+      $pfEtatTxt = $pfNbDanger
+          ? $pfNbDanger . ' panne' . ($pfNbDanger > 1 ? 's' : '')
+          : ($pfNbWarn ? $pfNbWarn . ' à surveiller' : 'Système opérationnel');
+      ?>
+      <a class="sys-state <?= $pfEtat ?>" href="/securite.php"
+         title="<?= $pfEtat === 'ok' ? 'Aucune anomalie détectée' : 'Voir le détail sur Santé & sécurité' ?>">
+        <span class="sys-dot"></span><span class="sys-txt"><?= e($pfEtatTxt) ?></span>
+      </a>
       <button type="button" class="rail-toggle" id="railToggle" title="Réduire / agrandir le menu" aria-label="Réduire ou agrandir le menu">
         <span class="rt-lbl">« Réduire</span><span class="rt-open">»</span>
       </button>
+      <!-- Pastille de version : la question « quelle version tourne ici ? » se pose à
+           chaque appel d'assistance, et la réponse était enfouie dans « À propos ». -->
+      <a class="version-pill" href="/apropos.php" title="Version, licence et auteur de Bastion">
+        <span class="vp-tag">v<?= e(BASTION_VERSION) ?></span>
+        <span class="vp-link">En savoir +</span>
+        <span class="vp-arrow" aria-hidden="true">→</span>
+      </a>
       <div class="credit" style="font-size:.68rem;color:var(--muted);opacity:.75;line-height:1.4">
         Bastion — © 2026 Mickaël MONESTIER<br>Mle 110.480 · Tous droits réservés
       </div>
@@ -242,10 +338,38 @@ function pf_header(string $title, string $active = ''): void {
   </aside>
   <main class="content">
     <header class="topbar">
-      <div style="display:flex;align-items:center;gap:.8rem;min-width:0">
+      <div class="tb-left">
         <button type="button" class="nav-toggle" id="navToggle" aria-label="Ouvrir le menu">☰</button>
         <h1><?= e($title) ?></h1>
       </div>
+
+      <!-- ── RECHERCHE, DANS LA BARRE DU HAUT ──────────────────────────────────
+           Elle vivait dans la barre latérale, donc elle disparaissait dès que le
+           menu était replié en rail — au moment précis où retrouver une page est
+           le plus utile. Ici elle reste visible en permanence.
+
+           C'est un vrai FORMULAIRE, avec une action : sans JavaScript, la touche
+           Entrée mène tout de même à la recherche globale. La liste déroulante
+           est un confort ajouté par-dessus, jamais le seul chemin. -->
+      <form class="tb-search" id="navForm" method="get" action="/chercher.php" role="search">
+        <span class="ts-ico" aria-hidden="true">🔎</span>
+        <input type="search" id="navQ" name="q" autocomplete="off"
+               placeholder="Rechercher une page, un agent, un poste…"
+               aria-label="Rechercher dans la console" aria-expanded="false" aria-controls="navPop">
+        <span class="ts-kbd" aria-hidden="true">Ctrl+K</span>
+        <div class="ts-pop" id="navPop" role="listbox" hidden></div>
+      </form>
+
+      <?php
+      // Pastille d'état : même source que le voyant du menu (nav_badges), donc les
+      // deux ne peuvent pas se contredire. Elle mène à la page qui explique.
+      ?>
+      <a class="state-pill <?= $pfEtat ?>" href="/securite.php"
+         title="<?= $pfEtat === 'ok' ? 'Aucune anomalie détectée' : 'Voir le détail sur Santé & sécurité' ?>">
+        <span class="sp-ico" aria-hidden="true"><?= $pfEtat === 'ok' ? '✓' : '!' ?></span>
+        <span class="sp-txt"><?= e($pfEtatTxt) ?></span>
+      </a>
+
       <?php
       // Photo de profil chargée dans la session à la connexion (et à chaque changement).
       // Absente = on retombe sur l'initiale. La version « ?v= » invalide le cache du
@@ -258,7 +382,13 @@ function pf_header(string $title, string $active = ''): void {
       <div class="usermenu" id="usermenu">
         <button type="button" class="userbtn" id="userbtn" aria-haspopup="true" aria-expanded="false">
           <?= $avImg ?>
-          <span class="uname"><?= e($admin) ?></span>
+          <span class="uwho">
+            <span class="uname"><?= e($admin) ?></span>
+            <span class="urole"><?php
+              $r = $_SESSION['admin_role'] ?? 'full';
+              echo e($r === 'lecture' ? 'Lecture seule' : ($r === 'comptes' ? 'Gestion des comptes' : 'Administrateur'));
+            ?></span>
+          </span>
           <span class="ucaret">▾</span>
         </button>
         <div class="usermenu-pop" id="userpop" role="menu">
@@ -413,70 +543,145 @@ function pf_footer(): void {
       document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeNav(); });
       document.querySelectorAll('.sidebar nav a').forEach(function(a){ a.addEventListener('click',closeNav); });
 
-    // ── RECHERCHE DANS LE MENU ────────────────────────────────────────────────
+    // ── RECHERCHE, EN LISTE DÉROULANTE ────────────────────────────────────────
     // 27 destinations : les parcourir de l'oeil est plus lent que d'en taper trois
     // lettres. La recherche porte aussi sur des SYNONYMES (data-r) — « inventaire »
     // doit trouver « Parc informatique », que personne n'appelle ainsi de tête.
+    //
+    // Elle filtrait auparavant le menu lui-même. Deux défauts : le menu sautait sous
+    // les yeux pendant la frappe, et la recherche disparaissait avec lui dès que le
+    // menu était replié en rail — au moment précis où retrouver une page sert le
+    // plus. Les résultats s'affichent désormais sous le champ, et le menu ne bouge
+    // plus.
+    //
+    // L'INDEX EST LE MENU. On le lit dans le DOM au lieu de le redéclarer en
+    // JavaScript : une page ajoutée à la navigation apparaît donc dans la recherche
+    // sans qu'on ait à y penser. Deux listes auraient divergé au premier ajout.
     (function () {
       var q = document.getElementById('navQ');
-      if (!q) { return; }
-      var liens = Array.prototype.slice.call(document.querySelectorAll('.sidebar nav a'));
-      var titres = Array.prototype.slice.call(document.querySelectorAll('.sidebar .nav-group-label'));
-      var freq = Array.prototype.slice.call(document.querySelectorAll('.sidebar .nav-freq'));
-      var vide = document.getElementById('navVide');
+      var pop = document.getElementById('navPop');
+      var form = document.getElementById('navForm');
+      if (!q || !pop || !form) { return; }
 
       function plat(v) {
         v = (v || '').toLowerCase();
-        return v.normalize ? v.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : v;
+        if (v.normalize) { v = v.normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+        // Les apostrophes sont retirées AUSSI, et pas seulement celles du texte :
+        // « data-r » est translittéré côté serveur par iconv, dont le résultat
+        // dépend de la bibliothèque C de l'hôte. Debian rend « é » par « e » —
+        // d'autres rendent « 'e ». Sur celles-là, « securite » cesserait de
+        // trouver « Santé & sécurité », sans message ni trace : la recherche
+        // aurait simplement l'air de ne rien connaître. Comme la même mise à plat
+        // s'applique à la saisie et à l'index, les retirer ne coûte rien.
+        return v.replace(/['’]/g, '');
       }
 
-      function filtrer() {
-        var t = plat(q.value.trim());
-        // Les titres de groupe et le bloc « Fréquentes » disparaissent pendant une
-        // recherche : conserver « Protection » au-dessus d'une liste filtrée
-        // laisserait croire que le résultat appartient à ce groupe.
-        var actif = t !== '';
-        titres.forEach(function (h) { h.hidden = actif; });
-        freq.forEach(function (h) { h.hidden = actif; });
-        var n = 0;
-        liens.forEach(function (a) {
-          var ok = !actif || plat(a.getAttribute('data-r') || a.textContent).indexOf(t) >= 0;
-          a.hidden = !ok;
-          a.classList.toggle('nav-hit', ok && actif && n === 0);
-          if (ok) { n++; }
+      // Dédoublonnage par adresse : le bloc « Fréquentes » reprend des liens qui
+      // figurent aussi dans leur groupe, et la même page sortirait deux fois.
+      var vus = {}, index = [];
+      Array.prototype.forEach.call(document.querySelectorAll('.sidebar nav a'), function (a) {
+        var h = a.getAttribute('href') || '';
+        if (!h || vus[h]) { return; }
+        vus[h] = 1;
+        var ico = a.querySelector('.ico'), lbl = a.querySelector('.lbl');
+        index.push({
+          href: h,
+          ico: ico ? ico.textContent : '',
+          lbl: lbl ? lbl.textContent : a.textContent.trim(),
+          r: plat(a.getAttribute('data-r') || a.textContent)
         });
-        // Le relais vers la recherche globale est proposé dès qu'on tape, et pas
-        // seulement quand aucune page ne correspond : chercher un agent alors qu'une
-        // page porte le même mot est un cas courant.
-        if (vide) {
-          vide.hidden = !actif;
-          var txt = document.getElementById('navVideTxt');
-          if (txt) { txt.hidden = (n > 0); }
-          var tout = document.getElementById('navTout');
-          if (tout) { tout.href = '/chercher.php?q=' + encodeURIComponent(q.value.trim()); }
-        }
+      });
+
+      var sel = -1, lignes = [];
+
+      function fermer() {
+        pop.hidden = true;
+        while (pop.firstChild) { pop.removeChild(pop.firstChild); }
+        lignes = []; sel = -1;
+        q.setAttribute('aria-expanded', 'false');
       }
 
-      q.addEventListener('input', filtrer);
+      function marquer(i) {
+        if (!lignes.length) { return; }
+        // Modulo : arrivé en bas, la flèche revient en haut plutôt que de ne plus
+        // rien faire — une liste qui cesse de répondre passe pour cassée.
+        sel = (i + lignes.length) % lignes.length;
+        lignes.forEach(function (el, k) { el.classList.toggle('on', k === sel); });
+        if (lignes[sel].scrollIntoView) { lignes[sel].scrollIntoView({ block: 'nearest' }); }
+      }
+
+      // textContent partout, jamais innerHTML : la saisie de l'administrateur est
+      // réaffichée dans la liste, et elle ne doit pas pouvoir écrire dans la page.
+      function ligne(href, ico, lbl, note, cls) {
+        var a = document.createElement('a');
+        a.href = href;
+        a.className = 'ts-row' + (cls ? ' ' + cls : '');
+        a.setAttribute('role', 'option');
+        var i = document.createElement('span'); i.className = 'ts-ri'; i.textContent = ico;
+        var t = document.createElement('span'); t.className = 'ts-rt'; t.textContent = lbl;
+        a.appendChild(i); a.appendChild(t);
+        if (note) {
+          var n = document.createElement('span'); n.className = 'ts-rn'; n.textContent = note;
+          a.appendChild(n);
+        }
+        pop.appendChild(a); lignes.push(a);
+        return a;
+      }
+
+      function note(txt) {
+        var d = document.createElement('div');
+        d.className = 'ts-more'; d.textContent = txt;
+        pop.appendChild(d);
+      }
+
+      function rendre() {
+        var brut = q.value.trim();
+        if (brut === '') { fermer(); return; }
+        var t = plat(brut);
+        while (pop.firstChild) { pop.removeChild(pop.firstChild); }
+        lignes = []; sel = -1;
+
+        // Huit pages au plus : au-delà la liste dépasse l'écran et l'on ne choisit
+        // plus, on relit. Ce qui est écarté est ANNONCÉ — une liste tronquée en
+        // silence se lit comme une liste complète.
+        var trouves = index.filter(function (e) { return e.r.indexOf(t) >= 0; });
+        trouves.slice(0, 8).forEach(function (e) { ligne(e.href, e.ico, e.lbl, 'Page'); });
+        if (trouves.length > 8) { note('+ ' + (trouves.length - 8) + ' autre(s) page(s) — précisez'); }
+        if (!trouves.length) { note('Aucune page de la console ne porte ce nom.'); }
+
+        // La recherche globale est TOUJOURS proposée, même quand des pages
+        // correspondent : chercher un agent dont le nom ressemble à celui d'une page
+        // est courant, et n'offrir le relais qu'en cas d'échec obligerait à vider le
+        // champ pour l'obtenir.
+        ligne('/chercher.php?q=' + encodeURIComponent(brut), '🔎',
+              'Chercher « ' + brut +' » partout', 'Agents, postes, adresses', 'ts-all');
+
+        pop.hidden = false;
+        q.setAttribute('aria-expanded', 'true');
+        marquer(0);
+      }
+
+      q.addEventListener('input', rendre);
+      q.addEventListener('focus', function () { if (q.value.trim() !== '') { rendre(); } });
+
       q.addEventListener('keydown', function (e) {
-        // Entrée ouvre la première correspondance : sans cela il faudrait lâcher le
-        // clavier pour aller cliquer, ce qui annule le gain. Si rien ne correspond,
-        // la frappe part vers la recherche globale plutôt que de ne rien faire.
-        if (e.key === 'Enter') {
-          var p = liens.filter(function (a) { return !a.hidden; })[0];
-          if (p) { location.href = p.getAttribute('href'); }
-          else if (q.value.trim() !== '') { location.href = '/chercher.php?q=' + encodeURIComponent(q.value.trim()); }
-        } else if (e.key === 'Escape') {
-          q.value = ''; filtrer(); q.blur();
+        if (e.key === 'ArrowDown') { e.preventDefault(); marquer(sel + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); marquer(sel - 1); }
+        else if (e.key === 'Escape') { q.value = ''; fermer(); q.blur(); }
+        else if (e.key === 'Enter') {
+          // Une ligne est surlignée : on l'ouvre. Sinon on LAISSE le formulaire
+          // partir vers la recherche globale — c'est aussi ce qui se produit quand
+          // JavaScript n'a pas pu s'exécuter, et la touche Entrée fait alors
+          // toujours quelque chose.
+          if (sel >= 0 && lignes[sel]) { e.preventDefault(); location.href = lignes[sel].getAttribute('href'); }
         }
       });
+
+      document.addEventListener('click', function (e) { if (!form.contains(e.target)) { fermer(); } });
+
       document.addEventListener('keydown', function (e) {
         if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
           e.preventDefault();
-          // Sur téléphone la barre latérale est masquée : l'ouvrir d'abord, sinon
-          // le curseur irait dans un champ invisible.
-          var b = document.getElementById('navToggle');
-          if (b && getComputedStyle(document.querySelector('.sidebar')).transform !== 'none') { b.click(); }
           q.focus(); q.select();
         }
       });
