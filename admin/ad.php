@@ -247,6 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
         case 'timesync_deploy': $out = ad('gpo', 'timesync'); break;
         case 'numlock_deploy': $out = ad('gpo', 'numlock'); break;
+        case 'edge_deploy':    $out = ad('gpo', 'edge'); break;
         case 'defbrowser_deploy': {
             // Le suffixe ProgId est une empreinte hexadécimale ; on refuse tout le reste
             // avant de l'envoyer, il finit dans un XML lu par tous les postes.
@@ -1049,6 +1050,68 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
         <code>dism /online /Export-DefaultAppAssociations:C:\assoc.xml</code>, puis lisez la valeur
         <code>ProgId</code> de la ligne <code>https</code>.
       </div>
+    </div>
+
+    <?php
+      $edgeGpo = in_array('Bastion — Retrait de Microsoft Edge', array_map(fn($g) => $g['name'] ?? '', $gpos), true);
+      // Le bouton n'est proposé que si un navigateur de remplacement est réellement
+      // déployé par le store : le script refusera de retirer Edge sans lui, autant le
+      // dire ici plutôt que de laisser l'exploitant découvrir l'abandon dans un journal
+      // de poste. La table peut ne pas exister si le store n'a jamais été ouvert —
+      // l'absence de navigateur est alors la bonne réponse, pas une erreur à afficher.
+      $navDispo = false;
+      try {
+          $q = pf_db()->query("SELECT COUNT(*) FROM pf_apps WHERE deployed = 1
+                               AND (name LIKE '%Firefox%' OR name LIKE '%Chrome%')");
+          $navDispo = $q && (int) $q->fetchColumn() > 0;
+      } catch (Throwable $e) { $navDispo = false; }
+    ?>
+    <div style="border:1px solid var(--line);border-radius:12px;background:linear-gradient(120deg,#3b1d1d,#231622);padding:1rem 1.2rem;margin-top:1rem">
+      <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+        <span style="font-size:1.8rem">🧹</span>
+        <div style="flex:1;min-width:240px">
+          <div style="font-weight:600">Retirer Microsoft Edge des postes
+            <?php if ($edgeGpo): ?><span class="badge on" style="margin-left:.4rem">✓ Déployée</span><?php endif; ?></div>
+          <div class="dir-help" style="margin:.2rem 0 0">Désinstalle Edge au démarrage du poste, retire ses raccourcis,
+          et <strong>bloque sa réinstallation</strong> par Windows Update — sans quoi il revient de lui-même en quelques
+          jours, la stratégie restant affichée comme déployée.</div>
+        </div>
+      </div>
+
+      <!-- Le prérequis est un VERROU, pas un conseil : un poste sans navigateur ne peut
+           plus ouvrir le portail captif, donc ne s'authentifie plus, donc n'a plus de
+           réseau du tout. Le script du poste refuse dans ce cas ; la console le dit avant. -->
+      <p class="dir-help" style="margin:.8rem 0 0;padding:.6rem .8rem;border-radius:8px;
+         background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.35);color:#fecaca">
+        <strong>Déployez d'abord un autre navigateur.</strong> Sans Firefox ni Chrome, le poste ne peut plus
+        atteindre le portail captif : il ne s'authentifie plus, et perd tout accès réseau. Le script le vérifie
+        sur chaque poste et <strong>abandonne</strong> si aucun n'est présent — mais le parc reste alors dans un
+        état mixte, difficile à lire.
+        <?php if (!$navDispo): ?><br><strong>Aucun navigateur n'est actuellement activé dans le store d'applications.</strong><?php endif; ?>
+      </p>
+
+      <p class="dir-help" style="margin:.6rem 0 0">
+        <strong>Ce qui se défait, et ce qui ne se défait pas.</strong> Délier la stratégie lève le blocage de
+        réinstallation — Edge revient alors de lui-même. La désinstallation, elle, ne se rejoue pas à l'envers :
+        les postes déjà traités devront être réapprovisionnés à la main si vous changez d'avis.
+        <br><span class="muted">WebView2 est préservé et explicitement autorisé : Office, Teams et une part des
+        logiciels du store en dépendent.</span>
+        <br><span class="muted">Microsoft n'ouvre la désinstallation d'Edge que dans l'Espace économique européen.
+        Un poste réglé sur une autre région échouera ; le journal <code>C:\Windows\Temp\bastion-edge.log</code>
+        indique sa région juste avant la tentative.</span>
+      </p>
+
+      <?php if (!$edgeGpo): ?>
+      <form method="post" style="margin-top:.9rem"
+            onsubmit="return confirm('Retirer Microsoft Edge de TOUS les postes du domaine ?\n\nLa désinstallation ne se défait pas automatiquement.\nAssurez-vous qu\'un autre navigateur est déployé.')">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="edge_deploy">
+        <button class="btn"<?= $navDispo ? '' : ' disabled title="Activez d\'abord Firefox ou Chrome dans le store d\'applications"' ?>>🧹 Déployer le retrait</button>
+      </form>
+      <?php else: ?>
+      <div class="dir-help" style="margin-top:.9rem">Effet au prochain démarrage de chaque poste. Vérifiez le résultat
+      dans <code>C:\Windows\Temp\bastion-edge.log</code> : il se termine par <code>RETIRE ET VERIFIE</code> ou par la
+      raison exacte de l'échec.</div>
+      <?php endif; ?>
     </div>
   </div>
 </section>

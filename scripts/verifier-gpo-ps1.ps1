@@ -30,6 +30,10 @@ $cas = @(
     @{ f = 'gpo-kms.py';       a = "'192.168.182.1', False"; s = 'sans-montee' }
     @{ f = 'gpo-timesync.py';  a = "'192.168.182.1'" }
     @{ f = 'gpo-numlock.py';   a = "" }
+    # Retrait d'Edge : le script manipule « ${env:ProgramFiles(x86)} », dont les
+    # parentheses a l'interieur d'une accolade de variable sont un piege classique
+    # d'analyse, et un bloc « Sort-Object » a expression calculee.
+    @{ f = 'gpo-edge.py';      a = "" }
     # Prise de main a distance : la cle publique du relais contient « / » et « + » et se
     # termine par « = ». Elle est injectee dans une chaine PowerShell — un caractere mal
     # place la rendrait inanalysable, et l'echec n'apparaitrait qu'au demarrage du poste.

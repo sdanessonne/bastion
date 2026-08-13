@@ -95,6 +95,21 @@ $GROUPS = [
       Un décalage de plus de cinq minutes fait échouer Kerberos, donc l\'authentification, donc les stratégies —
       et le message d\'erreur affiché ne parle jamais d\'heure. C\'est fréquent sur machine virtuelle, dont l\'horloge
       dérive au démarrage. Ensuite seulement : <code>gpupdate /force</code> puis <code>gpresult /r</code>.</p>
+      <p><strong>Edge est toujours là après le déploiement du retrait.</strong> Le journal du poste,
+      <code>C:\\Windows\\Temp\\bastion-edge.log</code>, donne la réponse à la ligne près. Trois causes, dans l\'ordre.
+      <em>« ABANDON : aucun autre navigateur installé »</em> — le script a refusé d\'agir pour ne pas couper l\'accès au
+      portail captif ; déployez Firefox ou Chrome par le store, puis redémarrez le poste.
+      <em>« ECHEC VERIFIE »</em> avec un GeoId autre que 84 — Microsoft n\'ouvre la désinstallation d\'Edge que dans
+      l\'Espace économique européen, et la région du poste est ailleurs (fréquent sur une machine réinstallée depuis une
+      image étrangère). <em>« programme de désinstallation introuvable »</em> — Edge était en cours de mise à jour ; le
+      script réessaiera au prochain démarrage.</p>
+      <p><strong>Edge est revenu tout seul quelques jours après.</strong> Le blocage de réinstallation a été levé : soit
+      la stratégie a été déliée du domaine, soit elle n\'a jamais atteint le poste. Sans ce blocage, Windows Update
+      repose Edge de lui-même, et rien ne le signale.</p>
+      <p><strong>Depuis le retrait d\'Edge, Office ou Teams ne démarrent plus.</strong> Regardez la dernière ligne du
+      journal : si elle dit <em>« WebView2 introuvable »</em>, c\'est la cause. WebView2 est un produit distinct dont ces
+      logiciels dépendent ; la stratégie l\'autorise explicitement, mais un poste dont la stratégie a été appliquée
+      partiellement peut l\'avoir perdu. Réinstallez le <em>Microsoft Edge WebView2 Runtime</em> sur le poste.</p>
       <p><strong>Windows reste « non activé ».</strong> Un serveur KMS n\'active rien avant d\'avoir vu 25 postes
       distincts (5 pour Office). En deçà du seuil, rien n\'est cassé : le compteur monte à chaque nouvelle machine.
       L\'état réel de chaque poste est dans « Inventaire des postes ».</p>
@@ -364,6 +379,41 @@ $GROUPS = [
       « <strong>Attendre le réseau à l\'ouverture de session</strong> » pour que fond d\'écran et lecteurs apparaissent
       dès la 1<sup>re</sup> connexion. L\'heure du poste doit être synchronisée (GPO « Synchronisation de l\'heure »),
       sinon Kerberos et donc les GPO échouent.</p>'],
+
+    ['edge', '🧹', 'Retirer Microsoft Edge des postes', '
+      <p>Bouton <strong>« Retirer Microsoft Edge »</strong>, onglet <em>Active Directory</em>. Il déploie une stratégie
+      de démarrage qui <strong>désinstalle Edge</strong> sur chaque poste du domaine, retire ses raccourcis, et
+      <strong>bloque sa réinstallation</strong>.</p>
+
+      <p><strong>Pourquoi ce n\'est pas une simple case du catalogue.</strong> Aucune clé de registre ne désinstalle un
+      logiciel. Le catalogue sait très bien <em>brider</em> Edge — mot de passe, InPrivate, synchronisation — mais le
+      retirer suppose d\'exécuter son propre programme de désinstallation sur le poste, sous l\'identité SYSTÈME. C\'est
+      un script de démarrage, et rien d\'autre.</p>
+
+      <p><strong>Déployez un autre navigateur AVANT.</strong> Ce n\'est pas un conseil de confort : sans navigateur, le
+      poste ne peut plus ouvrir le portail captif, donc ne s\'authentifie plus, donc perd <em>tout</em> accès réseau.
+      Le script vérifie la présence de Firefox ou de Chrome et <strong>abandonne en le disant</strong> si aucun n\'est
+      installé — mais le parc se retrouve alors dans un état mixte, difficile à lire. Passez par le store, activez
+      Firefox ou Chrome, pressez « Appliquer sur les postes », <em>puis</em> déployez ce retrait.</p>
+
+      <p><strong>Le blocage de réinstallation n\'est pas optionnel.</strong> Sans lui, Windows Update repose Edge en
+      quelques jours et le parc revient à son état initial — la stratégie restant affichée comme « déployée ».
+      C\'est exactement le genre de panne qui ne s\'annonce pas : tout indique que la fonction marche, et le terrain dit
+      le contraire.</p>
+
+      <p><strong>WebView2 est préservé</strong>, et explicitement autorisé dans la règle de blocage. C\'est un produit
+      distinct, qui partage le moteur d\'Edge, et dont dépendent Office, Teams et une partie des logiciels du store.
+      Sans cette exception nommée, la règle générale « ne rien installer » l\'emporterait et casserait ces applications
+      des mois plus tard, sans lien visible avec cette stratégie.</p>
+
+      <p><strong>Ce qui se défait, et ce qui ne se défait pas.</strong> Délier la stratégie lève le blocage : Edge
+      revient alors de lui-même sur les postes. La désinstallation, en revanche, ne se rejoue pas à l\'envers — les
+      postes déjà traités devront être réapprovisionnés à la main si vous changez d\'avis.</p>
+
+      <p class="tip">Le résultat se lit sur le poste dans <code>C:\\Windows\\Temp\\bastion-edge.log</code>. Il se termine
+      par <code>RETIRE ET VERIFIE</code>, ou par la raison exacte de l\'échec. Le script ne se fie pas au code de sortie
+      du programme de Microsoft, qui rend la main sur un « succès » dans des cas où il n\'a rien retiré : il vérifie la
+      disparition de <code>msedge.exe</code>.</p>'],
 
     ['apps', '🏪', 'Store d\'applications', '      <p>Le <strong>store d\'applications</strong> installe des logiciels sur les postes du domaine, en silence, sans
       passer sur chaque machine. L\'installeur est hébergé sur la passerelle ; une stratégie de démarrage

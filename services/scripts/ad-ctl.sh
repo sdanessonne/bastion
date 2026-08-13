@@ -347,6 +347,26 @@ PY
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
         echo "$guid verrouillage numerique deploye"
         ;;
+      edge)
+        # GPO « Bastion — Retrait de Microsoft Edge » : script de démarrage (SYSTEM) qui
+        # désinstalle Edge et bloque sa réinstallation. Un script et non une stratégie de
+        # registre : aucune clé ne désinstalle un logiciel, il faut exécuter son propre
+        # programme de désinstallation sur le poste.
+        name="Bastion — Retrait de Microsoft Edge"
+        guid=$("$ST" gpo listall 2>/dev/null | awk -v n="$name" '
+            /^GPO/ {g=$3} /display name/ {sub(/^[^:]*: */,""); if ($0==n) {print g; exit}}')
+        if [ -z "$guid" ]; then
+          guid=$("$ST" gpo create "$name" -U "Administrator%${ADPASS}" 2>&1 | grep -oiE '\{[0-9A-Fa-f-]+\}' | head -1)
+          [ -n "$guid" ] || { echo "ERROR: creation GPO echouee" >&2; exit 1; }
+        fi
+        python3 /usr/local/sbin/proxyfibre-gpo-edge "$guid" >/dev/null 2>&1 \
+          || { echo "ERROR: generation script retrait Edge echouee ($guid)" >&2; exit 1; }
+        rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
+        dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
+          || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
+        echo "$guid retrait Edge deploye"
+        ;;
       drives)
         # Lecteurs réseau : GPO « Bastion — Lecteurs réseau » (GPP Drive Maps). $a = JSON.
         [ -f "$a" ] || { echo "ERROR: json absent" >&2; exit 2; }

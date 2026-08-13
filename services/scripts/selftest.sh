@@ -242,7 +242,7 @@ fi
 if [ "$MODE" != "quick" ]; then
   h "Python (py_compile)"
   for p in gpo-apply gpo-apps gpo-kms gpo-drives gpo-bitlocker gpo-timesync gpo-inventory \
-           gpo-wmi gpo-health gpo-photo gpo-numlock gpo-defaultapps; do
+           gpo-wmi gpo-health gpo-photo gpo-numlock gpo-defaultapps gpo-edge; do
     b="$SBIN/proxyfibre-$p"; [ -f "$b" ] || continue
     if python3 -c 'import py_compile,sys; py_compile.compile(sys.argv[1],doraise=True)' "$b" >/dev/null 2>&1; then
       ok "py_compile $p"
