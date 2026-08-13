@@ -44,7 +44,7 @@
     <!-- Écran de licence puis dossier : l'exploitant doit pouvoir déplacer
          l'installation s'il a une autre convention de chemins. -->
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="DOSSIERAPP" />
-    <WixVariable Id="WixUILicenseRtf" Value="licence.rtf" />
+    <WixVariable Id="WixUILicenseRtf" Value="msi\licence.rtf" />
 
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="DOSSIERBASTION" Name="Bastion">
@@ -65,7 +65,7 @@
     <ComponentGroup Id="Composants">
 
       <Component Directory="DOSSIERAPP" Guid="1C6D2F84-90B3-4A7E-8E15-3D9C7A2B6F40">
-        <File Id="Executable" Source="..\publish\BastionStationBlanche.exe" KeyPath="yes" />
+        <File Id="Executable" Source="publish\BastionStationBlanche.exe" KeyPath="yes" />
 
         <!-- Écriture pour le groupe Utilisateurs (S-1-5-32-545) : c'est la
              condition pour que l'écran de configuration puisse enregistrer
