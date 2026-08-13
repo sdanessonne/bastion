@@ -66,3 +66,9 @@ provisioning/iso/*.iso
 dock/**/apps.json
 dock/**/*.pfx
 dock/**/*.snk
+
+# Artefacts de publication du dock : l'executable autonome pese 148 Mo et le MSI
+# 197 Mo. GitHub REFUSE au-dela de 100 Mo par fichier - sans cette regle, le
+# premier « git add -A » apres une compilation ferait echouer la publication, et
+# le paquet resterait dans l'historique meme apres suppression du fichier.
+dock/dist/

@@ -464,6 +464,34 @@ $GROUPS = [
       <strong>refusée</strong>, jamais enregistrée — sans ce contrôle, elle serait déployée sur tout le parc et
       échouerait en silence sur chaque poste.</p>'],
 
+    ['dock', '🚀', 'Bastion Dock — barre de lancement des postes', '
+      <p>Barre d\'icônes flottante sur le bureau de l\'agent, pour lancer ses applications sans les
+      chercher. Elle se déploie par le <strong>store d\'applications</strong>, comme les autres logiciels :
+      activez <em>Bastion Dock</em>, puis pressez <strong>« Appliquer sur les postes »</strong>.</p>
+
+      <p><strong>Ce qu\'elle fait, et ce qu\'elle ne fait pas.</strong> C\'est un <em>lanceur</em> : elle
+      affiche des icônes et démarre des programmes. Elle ne joint aucun serveur, n\'ouvre aucun port et ne
+      remonte rien. Ce n\'est pas un oubli, c\'est le choix de conception : l\'inventaire du parc, la prise
+      de main à distance et les demandes d\'assistance ont déjà leur mécanisme dans Bastion. Un second
+      chemin ferait remonter <strong>deux inventaires qui divergeraient</strong>, et ouvrirait un
+      <strong>second canal de prise de main</strong> à côté de celui dont le consentement par groupe a été
+      construit exprès.</p>
+
+      <p><strong>Le poids compte.</strong> Le paquet fait <strong>198 Mo</strong> — il embarque son propre
+      moteur d\'exécution. Chaque poste le télécharge une fois depuis la passerelle au démarrage. Sur un
+      poste relié en Wi-Fi à débit faible, comptez plusieurs dizaines de minutes ; l\'installation reprendra
+      au démarrage suivant si elle n\'aboutit pas.</p>
+
+      <p><strong>Où vivent ses réglages.</strong> L\'agent peut ajouter une application, déplacer la barre
+      ou changer la taille des icônes : tout est écrit dans <code>apps.json</code>, à côté de l\'exécutable,
+      sous <code>C:\\ProgramData\\</code>. C\'est la raison pour laquelle l\'installation ne se fait pas dans
+      <em>Program Files</em>, où un compte ordinaire ne pourrait pas écrire — la barre semblerait alors
+      oublier tous ses réglages à chaque fermeture.</p>
+
+      <p class="tip">La barre ne s\'affiche qu\'après une <strong>ouverture de session</strong> : elle
+      démarre avec la session de l\'agent, pas avec la machine. Sur un poste qui vient d\'installer le
+      paquet, elle apparaîtra à la connexion suivante.</p>'],
+
     ['kms', '🔑', 'Activation Windows / Office', '      <p><strong>Activation Windows et Office</strong> par serveur KMS hébergé sur la passerelle : les postes du domaine
       s\'activent tout seuls, sans clé à saisir sur chaque machine et sans accès aux serveurs de Microsoft.</p>
       <ul>

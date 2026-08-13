@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using System.Text.Json;
 using DockLite.Models;
 
@@ -9,9 +8,12 @@ namespace DockLite.Services;
 
 public static class ConfigService
 {
-    private static readonly string ConfigPath = Path.Combine(
-        Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? AppContext.BaseDirectory,
-        "apps.json");
+    // AppContext.BaseDirectory et NON Assembly.Location : dans un exécutable à
+    // fichier unique — ce que produit la publication —, « Location » renvoie une
+    // CHAÎNE VIDE. Le chemin de apps.json se résolvait alors ailleurs, et les
+    // réglages de l'agent se perdaient sans le moindre message. Le compilateur le
+    // signale (IL3000) ; le laisser passer aurait donné un dock qui oublie.
+    private static readonly string ConfigPath = Path.Combine(AppContext.BaseDirectory, "apps.json");
 
     public static string ConfigFilePath => ConfigPath;
 
