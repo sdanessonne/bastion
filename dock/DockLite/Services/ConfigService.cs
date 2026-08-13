@@ -21,22 +21,31 @@ public static class ConfigService
         PropertyNameCaseInsensitive = true
     };
 
-    public static DockConfig Load()
-    {
-        var cfg = LoadPosteConfig();
-        ApplyUserPrefs(cfg);
-        return cfg;
-    }
+    public static DockConfig Load() => LoadPosteConfig();
 
     /// <summary>
-    /// Écrit uniquement les prefs utilisateur (cache local immédiat + push serveur async).
-    /// apps.json n'est PAS réécrit : c'est la config poste, administrée séparément.
+    /// Enregistre la configuration dans « apps.json », à côté de l'exécutable.
+    ///
+    /// ── POURQUOI CE N'EST PLUS UNE SYNCHRONISATION SERVEUR ────────────────────
+    /// Le code d'origine n'écrivait RIEN localement : il poussait les préférences
+    /// vers un backoffice, et les relisait au démarrage suivant. Sans ce serveur,
+    /// tout réglage de l'agent — une application ajoutée, la barre déplacée —
+    /// serait perdu à la fermeture, sans le moindre message. Le dock donnerait
+    /// l'impression d'oublier.
+    ///
+    /// L'écriture locale suppose que le dossier d'installation soit accessible en
+    /// écriture : c'est la raison pour laquelle l'installeur pose le logiciel sous
+    /// ProgramData et non sous Program Files, comme la station blanche.
     /// </summary>
     public static void Save(DockConfig config)
     {
-        var prefs = UserDockPrefs.From(config);
-        UserPrefsSync.SaveCache(prefs);
-        UserPrefsSync.PushUserAsync(config.ApiBaseUrl, config.ApiKey, prefs, Environment.MachineName);
+        try
+        {
+            var dir = Path.GetDirectoryName(ConfigPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(ConfigPath, JsonSerializer.Serialize(config, Options));
+        }
+        catch { }
     }
 
     // ---- internals ----
@@ -63,41 +72,6 @@ public static class ConfigService
         }
         catch { }
         return fresh;
-    }
-
-    /// <summary>
-    /// Stratégie de résolution des prefs utilisateur :
-    ///  1. Serveur : config perso de cet utilisateur (cas nominal)
-    ///  2. Cache local : mode hors-ligne, même utilisateur déjà passé ici
-    ///  3. Serveur : dock par défaut configuré dans le backoffice (nouvel utilisateur)
-    ///  4. Fallback : AppDiscovery (premier lancement sans réseau ni cache)
-    /// </summary>
-    private static void ApplyUserPrefs(DockConfig cfg)
-    {
-        var serverPrefs = UserPrefsSync.FetchUser(cfg.ApiBaseUrl, cfg.ApiKey);
-        if (serverPrefs != null)
-        {
-            serverPrefs.ApplyTo(cfg);
-            UserPrefsSync.SaveCache(serverPrefs);
-            return;
-        }
-
-        var cachePrefs = UserPrefsSync.LoadCache();
-        if (cachePrefs != null)
-        {
-            cachePrefs.ApplyTo(cfg);
-            return;
-        }
-
-        var defaultPrefs = UserPrefsSync.FetchDefault(cfg.ApiBaseUrl, cfg.ApiKey);
-        if (defaultPrefs != null)
-        {
-            defaultPrefs.ApplyTo(cfg);
-            return;
-        }
-
-        cfg.Items = new List<DockItem>();
-        foreach (var it in AppDiscovery.Discover()) cfg.Items.Add(it);
     }
 
     private static DockConfig CreateDefault()

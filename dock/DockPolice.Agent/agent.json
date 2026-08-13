@@ -1,7 +1,0 @@
-{
-  "ApiBaseUrl": "",
-  "ApiKey": "",
-  "TelemetryIntervalSeconds": 10,
-  "CommandPollIntervalSeconds": 8,
-  "StaticSnapshotEveryHours": 6
-}

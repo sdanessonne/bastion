@@ -19,9 +19,6 @@ public partial class MainWindow : Window
     private readonly List<DockIcon> _icons = new();
     private MenuItem? _autoHideMenu;
     private MenuItem? _magnifyMenu;
-    private System.Windows.Threading.DispatcherTimer? _notifTimer;
-    private NotificationState _notifState = new();
-    private TicketWindow? _openTicketWindow;
 
     private double _shownTop;
     private double _hiddenTop;
@@ -40,230 +37,32 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // ── CE QUE CE DOCK FAIT, ET CE QU'IL NE FAIT PLUS ────────────────────
+        // Le code d'origine ouvrait ici huit canaux vers un backoffice : télémétrie
+        // machine, commandes à distance, flux d'écran, pilotage clavier/souris,
+        // tickets, bandeaux, habilitations, mises à jour.
+        //
+        // Bastion assure déjà chacun de ces rôles, avec sa propre source de vérité :
+        // l'inventaire du parc, la prise de main par relais RustDesk (dont le
+        // consentement par groupe a été construit exprès), les demandes
+        // d'assistance, l'intranet, le store. Garder les deux ferait remonter DEUX
+        // inventaires qui divergeraient, et ouvrirait un SECOND canal de prise de
+        // main à côté du premier — sans que rien ne le signale.
+        //
+        // Ce dock est donc un LANCEUR : il affiche des icônes et démarre des
+        // programmes. Il ne joint aucun serveur, n'ouvre aucun port, ne remonte
+        // rien. Ce qui doit remonter passe par les mécanismes de Bastion.
         _config = ConfigService.Load();
-        TicketService.ConnectionString = _config.TicketConnectionString;
-        AttachmentApi.BaseUrl = _config.ApiBaseUrl;
-        AttachmentApi.ApiKey = _config.ApiKey;
-        HabilitationService.BaseUrl = _config.ApiBaseUrl;
-        HabilitationService.ApiKey  = _config.ApiKey;
-        RemoteAssistCodeService.BaseUrl = _config.ApiBaseUrl;
-        RemoteAssistCodeService.ApiKey  = _config.ApiKey;
-        ThunderbirdService.BaseUrl = _config.ApiBaseUrl;
-        ThunderbirdService.ApiKey  = _config.ApiKey;
-
-        // Vérification + téléchargement update en arrière-plan (silencieux)
-        _ = AutoUpdateService.CheckAndDownloadAsync();
-
-        // Thunderbird : snapshot des profils + traitement des tâches de déploiement
-        _ = System.Threading.Tasks.Task.Run(async () =>
-        {
-            try { await ThunderbirdService.ReportAsync(); } catch { }
-            try { await ThunderbirdService.ProcessPendingDeploymentsAsync(); } catch { }
-        });
-        var tbTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
-        tbTimer.Tick += async (_, __) =>
-        {
-            try { await ThunderbirdService.ProcessPendingDeploymentsAsync(); } catch { }
-        };
-        tbTimer.Start();
-        _notifState = NotificationStateService.Load();
         DockBorder.ContextMenu = BuildDockContextMenu();
         ArrowTrigger.ContextMenu = BuildDockContextMenu();
         Rebuild();
-        _ = CheckForUpdatesAsync();
-        StartNotificationPolling();
-
-        // Télémétrie + commandes à distance : assurées par le service Windows DockPoliceAgent.
-        // Si le service n'est pas installé/démarré, on bascule en fallback dans le WPF.
-        if (!IsAgentServiceRunning())
-        {
-            MachineReporter.Start();
-            RemoteCommandService.Start();
-        }
-
-        // Stream d'écran + pilotage à distance : côté WPF (le service en SYSTEM
-        // n'a pas accès au desktop interactif de l'utilisateur)
-        ScreenStreamService.Start();
-        RemoteInputService.Start();
-
-        // Auto-update : check périodique vs version courante côté backoffice.
-        // En mode "notify_user" (défaut serveur), lève l'évènement OnUpdateAvailable
-        // qu'on utilise pour afficher un toast à l'utilisateur. En mode "auto_apply"
-        // ou "mandatory", déclenche directement le déploiement via agent_commands.
-        UpdateCheckerService.OnUpdateAvailable += OnUpdateAvailable;
-        UpdateCheckerService.Start();
-
-        // Bandeau défilant départemental / CPN
-        _broadcastService = new BroadcastService(_config.ApiBaseUrl, _config.ApiKey, _config.CommissariatCode);
-        _broadcastService.Start();
-
-        // Mode offline : retente d'envoyer les tickets en attente toutes les 60 s
-        _offlineRetryTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-        _offlineRetryTimer.Tick += async (_, __) => await OfflineTicketQueue.FlushAsync();
-        _offlineRetryTimer.Start();
-        _ = OfflineTicketQueue.FlushAsync();   // tentative immédiate au démarrage
     }
 
-    private BroadcastService? _broadcastService;
-    private System.Windows.Threading.DispatcherTimer? _offlineRetryTimer;
 
-    private static bool IsAgentServiceRunning()
-    {
-        try
-        {
-            using var sc = new System.ServiceProcess.ServiceController("DockPoliceAgent");
-            return sc.Status == System.ServiceProcess.ServiceControllerStatus.Running;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
-    private void StartNotificationPolling()
-    {
-        if (!TicketService.IsConfigured || _config.NotificationPollSeconds <= 0) return;
 
-        // Au tout premier lancement, ne pas notifier les anciens commentaires
-        _ = InitializeNotificationBaselineAsync();
 
-        _notifTimer = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(_config.NotificationPollSeconds)
-        };
-        _notifTimer.Tick += async (_, _) => await PollNotificationsAsync();
-        _notifTimer.Start();
-    }
 
-    private async System.Threading.Tasks.Task InitializeNotificationBaselineAsync()
-    {
-        if (_notifState.LastSeenCommentId == 0)
-        {
-            _notifState.LastSeenCommentId = await TicketService.GetMaxCommentIdAsync();
-            NotificationStateService.Save(_notifState);
-        }
-    }
-
-    private bool _polling;
-    private async System.Threading.Tasks.Task PollNotificationsAsync()
-    {
-        if (_polling) return;
-        _polling = true;
-        try
-        {
-            var newOnes = await TicketService.GetUnreadCommentsForUserAsync(
-                Environment.UserName, _notifState.LastSeenCommentId);
-
-            foreach (var notif in newOnes)
-            {
-                ShowToast(notif);
-            }
-
-            if (newOnes.Count > 0)
-            {
-                _notifState.LastSeenCommentId = newOnes.Max(n => n.CommentId);
-                NotificationStateService.Save(_notifState);
-            }
-        }
-        catch { /* silent — réessai au prochain tick */ }
-        finally { _polling = false; }
-    }
-
-    private void ShowToast(TicketService.TicketReplyNotification notif)
-    {
-        var toast = new ToastWindow(notif);
-        toast.OpenTicketRequested += (_, ticketId) =>
-        {
-            ShowTicketWindow(openMyTickets: true, focusTicketId: ticketId);
-        };
-        toast.Show();
-    }
-
-    /// <summary>
-    /// Toast/MessageBox levé quand UpdateCheckerService détecte une nouvelle version
-    /// côté serveur (mode notify_user, défaut). En mode auto_apply ou mandatory,
-    /// le service déclenche le déploiement directement sans passer ici.
-    /// </summary>
-    private void OnUpdateAvailable(UpdateCheckerService.UpdateInfo info)
-    {
-        // Marshalling sur le thread UI (l'évènement vient d'un timer DispatcherTimer
-        // mais on garantit la sécurité au cas où)
-        Dispatcher.Invoke(() =>
-        {
-            try
-            {
-                var sizeMb = info.Size > 0 ? (info.Size / 1024.0 / 1024.0) : 0;
-                var msg = "Une nouvelle version de DockPolice est disponible.\n\n" +
-                          $"Version installée : {info.CurrentVersion}\n" +
-                          $"Nouvelle version  : {info.LatestVersion}" +
-                          (sizeMb > 0 ? $"  ({sizeMb:N1} Mo)\n" : "\n") +
-                          (string.IsNullOrWhiteSpace(info.Notes) ? "" : "\n" + info.Notes + "\n") +
-                          "\nL'agent local appliquera la mise à jour automatiquement (le poste " +
-                          "redémarrera DockPolice). Lancer maintenant ?";
-
-                var result = MessageBox.Show(
-                    this, msg, "DockPolice — Mise à jour disponible",
-                    MessageBoxButton.YesNo, MessageBoxImage.Information);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    _ = System.Threading.Tasks.Task.Run(async () =>
-                    {
-                        var ok = await UpdateCheckerService.TriggerUpdateAsync(info);
-                        Dispatcher.Invoke(() =>
-                        {
-                            if (ok)
-                            {
-                                MessageBox.Show(this,
-                                    "Mise à jour planifiée.\n\nL'agent va l'appliquer dans les " +
-                                    "prochaines secondes. DockPolice se relancera tout seul.",
-                                    "DockPolice", MessageBoxButton.OK, MessageBoxImage.Information);
-                            }
-                            else
-                            {
-                                MessageBox.Show(this,
-                                    "Impossible de déclencher la mise à jour à distance. " +
-                                    "Vérifie la connexion réseau et l'état du service DockPolice.Agent.",
-                                    "DockPolice", MessageBoxButton.OK, MessageBoxImage.Warning);
-                            }
-                        });
-                    });
-                }
-            }
-            catch { /* silent */ }
-        });
-    }
-
-    private async System.Threading.Tasks.Task CheckForUpdatesAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_config.UpdateCheckUrl)) return;
-        await System.Threading.Tasks.Task.Delay(3000);
-
-        try
-        {
-            var info = await UpdateChecker.CheckAsync(_config.UpdateCheckUrl);
-            if (info == null) return;
-
-            var msg = $"Une nouvelle version de DockPolice est disponible.\n\n" +
-                      $"Version installée : {UpdateChecker.GetCurrentVersion()}\n" +
-                      $"Nouvelle version  : {info.Version}\n\n" +
-                      (string.IsNullOrEmpty(info.ReleaseNotes) ? "" : info.ReleaseNotes + "\n\n") +
-                      "Voulez-vous télécharger la mise à jour ?";
-
-            var result = MessageBox.Show(this, msg, "DockPolice — Mise à jour",
-                MessageBoxButton.YesNo, MessageBoxImage.Information);
-
-            if (result == MessageBoxResult.Yes && !string.IsNullOrEmpty(info.DownloadUrl))
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = info.DownloadUrl,
-                    UseShellExecute = true
-                });
-            }
-        }
-        catch { }
-    }
 
     private ContextMenu BuildDockContextMenu()
     {
@@ -357,200 +156,20 @@ public partial class MainWindow : Window
             ItemsHost.Items.Add(icon);
         }
 
-        // Icône "Infos PC" supprimée du dock — le rapport technique et le bouton
-        // d'installation Firefox sont désormais accessibles depuis la "Demande SAV".
-
-        if (_config.ShowSupportTicket)
-        {
-            var supItem = new DockItem { Name = "Demande SAV", Path = "" };
-            var visual = CreateSupportVisual(_config.IconSize);
-            var supIcon = new DockIcon(supItem, _config.IconSize, _config.IconSpacing, visual);
-            supIcon.MouseLeftButtonUp += (_, __) => ShowTicketWindow();
-            _icons.Add(supIcon);
-            ItemsHost.Items.Add(supIcon);
-        }
-
-        if (_config.ShowProfile)
-        {
-            var profItem = new DockItem { Name = "Mon profil annuaire", Path = "" };
-            var visual = CreateProfileVisual(_config.IconSize);
-            var profIcon = new DockIcon(profItem, _config.IconSize, _config.IconSpacing, visual);
-            profIcon.MouseLeftButtonUp += (_, __) => ShowProfileWindow();
-            _icons.Add(profIcon);
-            ItemsHost.Items.Add(profIcon);
-        }
+        // Les icônes « Demande SAV » et « Mon profil annuaire » ont été retirées :
+        // elles ouvraient des fenêtres branchées sur le backoffice d'origine. Dans
+        // Bastion, une demande d'assistance se dépose sur l'intranet et la fiche de
+        // l'agent vit dans l'annuaire — un second chemin donnerait deux endroits où
+        // chercher la même chose, et deux jeux de données à réconcilier.
 
         UpdateArrowVisibility();
         UpdatePosition();
-
-        // Au démarrage : si l'utilisateur n'a pas encore rempli son profil, ouvrir la fenêtre.
-        if (_config.ShowProfile && TicketService.IsConfigured)
-        {
-            _ = MaybeShowProfileFirstRunAsync();
-        }
     }
 
-    private static UIElement CreateSupportVisual(double size)
-    {
-        var grid = new Grid { Width = size, Height = size };
 
-        var ellipse = new System.Windows.Shapes.Ellipse
-        {
-            Fill = new LinearGradientBrush(
-                Color.FromRgb(235, 120, 60),
-                Color.FromRgb(180, 40, 30),
-                new Point(0.5, 0), new Point(0.5, 1)),
-            Stroke = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
-            StrokeThickness = 1
-        };
 
-        var text = new TextBlock
-        {
-            Text = "?",
-            Foreground = Brushes.White,
-            FontSize = size * 0.62,
-            FontFamily = new FontFamily("Segoe UI"),
-            FontWeight = FontWeights.Bold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 0, size * 0.05)
-        };
 
-        grid.Children.Add(ellipse);
-        grid.Children.Add(text);
-        return grid;
-    }
 
-    private static UIElement CreateProfileVisual(double size)
-    {
-        var grid = new Grid { Width = size, Height = size };
-
-        var ellipse = new System.Windows.Shapes.Ellipse
-        {
-            Fill = new LinearGradientBrush(
-                Color.FromRgb(78, 139, 255),
-                Color.FromRgb(36, 78, 180),
-                new Point(0.5, 0), new Point(0.5, 1)),
-            Stroke = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
-            StrokeThickness = 1
-        };
-
-        // Silhouette stylisée (tête + buste) en path
-        var path = new System.Windows.Shapes.Path
-        {
-            Fill = Brushes.White,
-            Width = size * 0.55,
-            Height = size * 0.55,
-            Stretch = Stretch.Uniform,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Data = Geometry.Parse(
-                "M 50 18 C 38 18 30 27 30 38 C 30 49 38 58 50 58 " +
-                "C 62 58 70 49 70 38 C 70 27 62 18 50 18 Z " +
-                "M 50 64 C 30 64 14 78 14 96 L 86 96 C 86 78 70 64 50 64 Z")
-        };
-
-        grid.Children.Add(ellipse);
-        grid.Children.Add(path);
-        return grid;
-    }
-
-    private async System.Threading.Tasks.Task MaybeShowProfileFirstRunAsync()
-    {
-        try
-        {
-            var ad = ActiveDirectoryService.GetCurrentUser();
-            if (string.IsNullOrWhiteSpace(ad.Matricule)) return;
-
-            // Si l'utilisateur a déjà rempli son profil dans les 90 derniers jours, ne rien faire.
-            if (ProfileFlag.IsCompletedRecently(ad.Matricule, TimeSpan.FromDays(90))) return;
-
-            // Vérification base : un enregistrement existe déjà ?
-            var existing = await DirectoryProfileService.LoadAsync(ad.Matricule);
-            if (existing != null && !string.IsNullOrWhiteSpace(existing.PhoneFixed) &&
-                existing.CommissariatId.HasValue)
-            {
-                // Profil déjà rempli, on marque pour les prochaines fois
-                ProfileFlag.MarkCompleted(ad.Matricule);
-                return;
-            }
-
-            // Sinon, ouvrir la fenêtre profil après un petit délai pour ne pas bloquer le démarrage
-            await System.Threading.Tasks.Task.Delay(2000);
-            Dispatcher.Invoke(() => ShowProfileWindow());
-        }
-        catch
-        {
-            // best-effort, ne jamais bloquer le démarrage du dock
-        }
-    }
-
-    private void ShowProfileWindow()
-    {
-        if (!TicketService.IsConfigured)
-        {
-            MessageBox.Show(
-                "L'accès à la base est nécessaire pour gérer votre profil annuaire.\n\n" +
-                "Demandez à votre administrateur de configurer DockPolice.",
-                "DockPolice — Annuaire",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-        try
-        {
-            var w = new ProfileWindow();
-            w.Owner = null; // pas de parent (la dock window est chromeless/topmost)
-            w.ShowInTaskbar = true;
-            w.ShowDialog();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show("Impossible d'ouvrir la fenêtre profil : " + ex.Message,
-                "DockPolice — Annuaire", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private void ShowTicketWindow(bool openMyTickets = false, int focusTicketId = 0)
-    {
-        if (!TicketService.IsConfigured)
-        {
-            MessageBox.Show(
-                "Le système de tickets n'est pas configuré.\n\n" +
-                "Demandez à votre administrateur de renseigner le champ\n" +
-                "\"TicketConnectionString\" dans apps.json.",
-                "DockPolice - SAV",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            return;
-        }
-
-        try
-        {
-            // Si la fenêtre est déjà ouverte, on la ramène au premier plan
-            if (_openTicketWindow != null && _openTicketWindow.IsVisible)
-            {
-                if (openMyTickets) _openTicketWindow.SwitchToMyTickets(focusTicketId);
-                _openTicketWindow.Activate();
-                _openTicketWindow.Topmost = true;
-                _openTicketWindow.Topmost = false;
-                return;
-            }
-
-            _openTicketWindow = new TicketWindow(_config.CommissariatCode);
-            _openTicketWindow.Closed += (_, _) => _openTicketWindow = null;
-            if (openMyTickets) _openTicketWindow.SwitchToMyTickets(focusTicketId);
-            _openTicketWindow.Show();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this,
-                $"Impossible d'ouvrir la fenêtre SAV :\n\n{ex.Message}\n\n{ex.StackTrace}",
-                "DockPolice - Erreur",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-        }
-    }
 
     private static UIElement CreateInfoVisual(double size)
     {

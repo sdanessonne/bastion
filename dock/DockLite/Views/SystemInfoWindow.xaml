@@ -48,61 +48,11 @@
                 </Grid.ColumnDefinitions>
             </Grid>
 
-            <!-- Bandeau "Extension Firefox" -->
-            <Border x:Name="ExtFirefoxPanel"
-                    Background="#1A2137"
-                    BorderBrush="#2A3350"
-                    BorderThickness="1"
-                    CornerRadius="10"
-                    Padding="14,12"
-                    Margin="0,18,0,0">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0"
-                            Width="36" Height="36" CornerRadius="9"
-                            VerticalAlignment="Center"
-                            Margin="0,0,12,0">
-                        <Border.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#4E8BFF" Offset="0"/>
-                                <GradientStop Color="#1E3A8A" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Border.Background>
-                        <TextBlock Text="🦊" FontSize="20"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="Extension Firefox · Coffre-fort + 2FA"
-                                   Foreground="White" FontWeight="SemiBold" FontSize="13"/>
-                        <TextBlock x:Name="ExtSubText"
-                                   Text="Installation et configuration automatiques pour ce poste"
-                                   Foreground="#9BB6D9" FontSize="11" Margin="0,2,0,0"/>
-                        <!-- Barre de progression (cachée par défaut) -->
-                        <ProgressBar x:Name="ExtProgress"
-                                     Visibility="Collapsed"
-                                     Height="4" Margin="0,6,0,0"
-                                     Minimum="0" Maximum="100" Value="0"
-                                     Background="#2A3350"
-                                     Foreground="#4E8BFF"
-                                     BorderThickness="0"/>
-                    </StackPanel>
-                    <Button Grid.Column="2"
-                            x:Name="InstallExtButton"
-                            Content="Installer / configurer"
-                            Padding="14,7"
-                            Background="#4E8BFF"
-                            Foreground="White"
-                            BorderThickness="0"
-                            Click="InstallExt_Click"
-                            Cursor="Hand"
-                            VerticalAlignment="Center"
-                            MinWidth="180"/>
-                </Grid>
-            </Border>
+            <!-- Le bandeau « Extension Firefox · Coffre-fort + 2FA » a été retiré avec
+                 le code qui l'animait : son bouton appelait « vault-extension-deploy.php »
+                 sur le backoffice d'origine. Laisser le bandeau sans son appel aurait
+                 donné un bouton qui ne fait rien — pire qu'une fonction absente, parce
+                 qu'on le presse plusieurs fois avant de conclure à une panne. -->
 
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Right"

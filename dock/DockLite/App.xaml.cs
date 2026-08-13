@@ -1,71 +1,52 @@
 using System;
 using System.Threading;
 using System.Windows;
-using DockLite.Services;
 
 namespace DockLite;
 
 public partial class App : Application
 {
-    // Mutex par session utilisateur : empêche deux instances dans la même session
-    // (le service Windows pourrait tenter de relancer le dock alors qu'il tourne déjà)
+    // Mutex par session utilisateur : empêche deux instances dans la même session.
+    // Le dock est lancé à l'ouverture de session ; sans ce verrou, une seconde
+    // ouverture (session RDP, reconnexion) donnerait deux barres superposées.
     private Mutex? _instanceMutex;
-
-    // Service de détection carte agent (PC/SC + cert store) — accessible globalement
-    public static SmartCardService? SmartCard { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        // Auto-update : si une nouvelle version est en attente, swap & quitte (le script relance la nouvelle exe)
-        if (AutoUpdateService.TryApplyPendingUpdate())
-        {
-            // Le script swap-on-next-launch.cmd va exécuter la nouvelle version et fermer celle-ci
-            Shutdown();
-            Environment.Exit(0);
-            return;
-        }
-
-        const string mutexName = "Local\\DockPoliceSingleInstance";
+        // ── CE QUI A ÉTÉ RETIRÉ ICI, ET POURQUOI ─────────────────────────────
+        // Le démarrage d'origine faisait deux choses de plus.
+        //
+        // 1. Une MISE À JOUR AUTOMATIQUE qui remplaçait l'exécutable et relançait
+        //    l'application. Sur un parc géré, un logiciel qui se met à jour tout
+        //    seul contourne le store d'applications : la console afficherait une
+        //    version, les postes en auraient une autre, et rien ne le signalerait.
+        //    Le déploiement passe désormais par la stratégie de groupe, comme
+        //    pour les autres logiciels.
+        //
+        // 2. Un service de LECTEUR DE CARTE AGENT qui ouvrait un serveur HTTP sur
+        //    127.0.0.1:43782, consommé par la page de connexion du backoffice
+        //    d'origine. Bastion n'a pas ce backoffice, et un port en écoute sur
+        //    chaque poste sans que personne ne l'utilise est une surface d'attaque
+        //    offerte pour rien.
+        const string mutexName = "Local\\BastionDockSingleInstance";
         _instanceMutex = new Mutex(initiallyOwned: true, mutexName, out bool createdNew);
 
         if (!createdNew)
         {
-            // Une autre instance est déjà active dans cette session : on quitte silencieusement
+            // Une autre instance est déjà active dans cette session : on quitte
+            // silencieusement. Un message ici s'afficherait à chaque ouverture de
+            // session sur les postes où le dock est déjà lancé.
             _instanceMutex.Dispose();
             _instanceMutex = null;
             Shutdown();
             Environment.Exit(0);
         }
-
-        // Démarre la surveillance du lecteur de carte agent + serveur HTTP local 127.0.0.1:43782
-        // (consommé par login.php pour afficher l'état du lecteur en temps réel)
-        try
-        {
-            SmartCard = new SmartCardService();
-            SmartCard.Start();
-        }
-        catch (Exception ex)
-        {
-            // Log pour debug — best-effort, l'app reste fonctionnelle
-            try
-            {
-                var dir = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "DockPolice");
-                System.IO.Directory.CreateDirectory(dir);
-                System.IO.File.AppendAllText(
-                    System.IO.Path.Combine(dir, "smartcard.log"),
-                    $"[{DateTime.Now:O}] App.OnStartup SmartCard.Start() FAILED: {ex.GetType().Name}: {ex.Message}\r\n{ex.StackTrace}\r\n\r\n");
-            }
-            catch { }
-        }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        try { SmartCard?.Dispose(); } catch { }
         try { _instanceMutex?.ReleaseMutex(); } catch { }
         _instanceMutex?.Dispose();
         base.OnExit(e);

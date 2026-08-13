@@ -1,4 +1,36 @@
-# Dock des postes — code importé, à adapter
+# Dock des postes — lanceur d'applications
+
+> **État : dégraissé, compile, pas encore déployé.** Le choix a été fait le 2026-08-14 :
+> ce dock est un **lanceur**, pas une seconde console poste. Les huit services qui
+> faisaient double emploi avec Bastion ont été retirés — voir « Ce qui a été retiré ».
+> Il reste à rebaptiser le produit, fabriquer le MSI et le publier au store.
+
+## Ce qui a été retiré, et ce qu'il en reste
+
+| | Avant | Après |
+|---|---|---|
+| Fichiers C# | 66 | **13** |
+| Lignes | ~14 800 | **1 483** |
+| Points d'entrée serveur | 15 | **0** |
+| Appels réseau | télémétrie, écran, commandes, tickets, bandeaux, mises à jour | **aucun** |
+
+Le dock affiche des icônes et démarre des programmes. Il ne joint aucun serveur,
+n'ouvre aucun port, ne remonte rien. La seule référence réseau restante est
+`AddressFamily.InterNetwork`, pour lire l'adresse IP du poste et l'afficher.
+
+**Trois retraits méritent d'être connus.** La *mise à jour automatique* : un logiciel qui
+se remplace tout seul contourne le store — la console afficherait une version, les postes
+en auraient une autre, et rien ne le signalerait. Le *serveur HTTP local sur le port 43782*
+du lecteur de carte agent : un port en écoute sur chaque poste que plus personne
+n'interroge est une surface d'attaque offerte pour rien. La *synchronisation des
+préférences* : elle n'écrivait rien localement, donc sans backoffice tout réglage de
+l'agent serait perdu à la fermeture, sans message — le dock donnerait l'impression
+d'oublier. Il écrit désormais dans son `apps.json`.
+
+---
+
+# Origine du code
+
 
 Barre d'icônes flottante affichée sur le bureau des postes du domaine. Code repris du
 projet **DockPolice** (`pincile/DockLite`) le 2026-08-13, pour être adapté à Bastion.
