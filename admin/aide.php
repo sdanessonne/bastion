@@ -477,6 +477,20 @@ $GROUPS = [
       <strong>second canal de prise de main</strong> à côté de celui dont le consentement par groupe a été
       construit exprès.</p>
 
+      <p><strong>L\'icône « Demande d\'assistance ».</strong> Elle ouvre la page d\'assistance de
+      l\'intranet dans le navigateur de l\'agent. Ce n\'est <em>pas</em> un second système de tickets :
+      la demande arrive exactement au même endroit que celles déposées depuis l\'intranet, dans
+      <strong>Demandes d\'assistance</strong> de la console. Un formulaire propre au dock aurait créé un
+      second endroit où chercher, et des agents persuadés d\'avoir signalé une panne que personne n\'aurait
+      vue.<br>
+      L\'adresse vise le portail sur <code>2080</code>, qui redirige vers <code>2443</code> en HTTPS —
+      les deux sont laissés passer par le portail captif <strong>avant authentification</strong>. Un poste
+      qui n\'a pas encore ouvert de session réseau peut donc quand même signaler sa panne, ce qui est
+      précisément le moment où il en a besoin. L\'adresse se règle dans <code>apps.json</code> si le plan
+      d\'adressage du site diffère.<br>
+      <span class="muted">Si la page ne s\'ouvre pas, le dock <strong>le dit</strong> et affiche l\'adresse,
+      au lieu de ne rien faire : l\'agent peut la saisir à la main ou la donner au support.</span></p>
+
       <p><strong>Le poids compte.</strong> Le paquet fait <strong>198 Mo</strong> — il embarque son propre
       moteur d\'exécution. Chaque poste le télécharge une fois depuis la passerelle au démarrage. Sur un
       poste relié en Wi-Fi à débit faible, comptez plusieurs dizaines de minutes ; l\'installation reprendra

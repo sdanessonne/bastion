@@ -156,11 +156,22 @@ public partial class MainWindow : Window
             ItemsHost.Items.Add(icon);
         }
 
-        // Les icônes « Demande SAV » et « Mon profil annuaire » ont été retirées :
-        // elles ouvraient des fenêtres branchées sur le backoffice d'origine. Dans
-        // Bastion, une demande d'assistance se dépose sur l'intranet et la fiche de
-        // l'agent vit dans l'annuaire — un second chemin donnerait deux endroits où
-        // chercher la même chose, et deux jeux de données à réconcilier.
+        // « Mon profil annuaire » a été retiré : la fiche de l'agent vit dans
+        // l'annuaire de Bastion, un second écran donnerait deux jeux de données à
+        // réconcilier.
+        //
+        // « Demande d'assistance » est CONSERVÉE, mais comme un simple raccourci
+        // vers l'intranet : le formulaire, la file d'attente et le suivi restent
+        // du côté de Bastion, qui les a déjà.
+        if (_config.ShowSupportTicket && !string.IsNullOrWhiteSpace(_config.AssistanceUrl))
+        {
+            var supItem = new DockItem { Name = "Demande d'assistance", Path = "" };
+            var supIcon = new DockIcon(supItem, _config.IconSize, _config.IconSpacing,
+                                       CreateAssistanceVisual(_config.IconSize));
+            supIcon.MouseLeftButtonUp += (_, __) => OuvrirAssistance();
+            _icons.Add(supIcon);
+            ItemsHost.Items.Add(supIcon);
+        }
 
         UpdateArrowVisibility();
         UpdatePosition();
@@ -170,6 +181,65 @@ public partial class MainWindow : Window
 
 
 
+
+    /// <summary>
+    /// Ouvre la page d'assistance de l'intranet dans le navigateur par défaut.
+    ///
+    /// ── L'ÉCHEC DOIT SE VOIR ─────────────────────────────────────────────────
+    /// Un « Process.Start » enveloppé dans un catch vide ne fait RIEN quand il
+    /// échoue : l'agent clique, rien ne s'ouvre, il reclique, puis il renonce et
+    /// la panne n'est jamais signalée — l'inverse exact de ce que cette icône
+    /// sert à obtenir. On lui dit donc ce qui s'est passé, ET l'adresse, pour
+    /// qu'il puisse la taper à la main ou la donner au support.
+    /// </summary>
+    private void OuvrirAssistance()
+    {
+        var url = _config.AssistanceUrl;
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "Impossible d'ouvrir la page d'assistance.\n\n" +
+                "Adresse : " + url + "\n" +
+                "Cause : " + ex.Message + "\n\n" +
+                "Saisissez cette adresse dans votre navigateur, ou signalez la panne " +
+                "par téléphone.",
+                "Bastion — Demande d'assistance",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>Icône « Demande d'assistance » : une clé sur pastille, dessinée en
+    /// vectoriel plutôt que chargée depuis un fichier — un fichier manquant
+    /// donnerait une icône vide, sans rien pour l'expliquer.</summary>
+    private static UIElement CreateAssistanceVisual(double size)
+    {
+        var grid = new Grid { Width = size, Height = size };
+
+        grid.Children.Add(new System.Windows.Shapes.Ellipse
+        {
+            Fill = new LinearGradientBrush(
+                Color.FromRgb(56, 189, 248),
+                Color.FromRgb(14, 116, 168),
+                new Point(0.5, 0), new Point(0.5, 1)),
+            Stroke = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
+            StrokeThickness = 1
+        });
+
+        grid.Children.Add(new TextBlock
+        {
+            Text = "🛠",
+            FontSize = size * 0.46,
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        return grid;
+    }
 
     private static UIElement CreateInfoVisual(double size)
     {
