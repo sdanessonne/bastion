@@ -644,8 +644,30 @@ $siteOptions = function (int $sel) use ($sites) {
       <div class="u-block">
         <label class="u-chk"><input type="checkbox" name="portal" id="f_portal">
           <span class="txt">🌐 Accès Internet <small>Connexion au portail captif</small></span></label>
+        <?php
+        // ── LISTE DÉROULANTE, ET NON SAISIE LIBRE ────────────────────────────
+        // Le champ était libre : une faute de frappe créait une appartenance à un
+        // groupe INEXISTANT. L'agent perdait alors la politique attendue — quotas,
+        // horaires, sortie par tunnel — et rien ne le signalait, ni à la création
+        // ni ensuite. On ne peut plus désigner que des groupes qui existent.
+        $pfGroupes = [];
+        try {
+            $pfGroupes = pf_db()->query('SELECT groupname FROM pf_groups ORDER BY groupname')
+                                ->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        } catch (Throwable $e) { $pfGroupes = []; }
+        ?>
         <label class="field" style="margin:.7rem 0 0">Groupe (quotas / horaires)
-          <input type="text" name="pgroup" id="f_pgroup" placeholder="ex. default"></label>
+          <select name="pgroup" id="f_pgroup">
+            <option value="">— aucun (accès sans politique de groupe) —</option>
+            <?php foreach ($pfGroupes as $g): ?>
+              <option value="<?= e($g) ?>"><?= e($g) ?></option>
+            <?php endforeach; ?>
+          </select>
+          <?php if (!$pfGroupes): ?>
+            <span class="muted small">Aucun groupe défini — créez-en un dans
+            <a href="/groups.php" style="color:var(--accent)">Groupes &amp; quotas</a>.</span>
+          <?php endif; ?>
+        </label>
       </div>
 
       <div class="u-block<?= $dcUp ? '' : ' disabled' ?>">
@@ -703,7 +725,20 @@ $siteOptions = function (int $sel) use ($sites) {
     hint.textContent=isNew?'':'(laisser vide = inchangé)';
     document.getElementById('f_password').value='';
     document.getElementById('f_expires').value=d.expires||'';
-    document.getElementById('f_pgroup').value=d.pgroup||'';
+    // Un compte peut porter un groupe qui n'existe plus (groupe supprimé depuis).
+    // Poser « .value » sur une valeur absente de la liste laisserait le champ sur la
+    // PREMIÈRE option — donc « aucun » — et le premier enregistrement reclasserait
+    // l'agent sans que personne ne l'ait demandé. On ajoute donc l'option manquante,
+    // nommée pour ce qu'elle est.
+    (function(){
+      var sel=document.getElementById('f_pgroup'), v=d.pgroup||'';
+      if (v && !Array.prototype.some.call(sel.options, function(o){ return o.value===v; })) {
+        var o=document.createElement('option');
+        o.value=v; o.textContent=v+' — groupe introuvable';
+        sel.appendChild(o);
+      }
+      sel.value=v;
+    })();
     document.getElementById('f_adgroup').value='';
     document.getElementById('f_site').value=String(d.site||0);
     document.getElementById('f_nom').value=d.nom||'';

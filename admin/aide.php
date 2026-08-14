@@ -236,6 +236,14 @@ $GROUPS = [
 
   'Accès & sécurité' => [
     ['utilisateurs', '👤', 'Utilisateurs, droits &amp; rôles', '
+      <p><strong>Le groupe du portail</strong> (quotas, horaires, sortie par tunnel) se choisit dans une
+      <strong>liste déroulante</strong> : on ne peut désigner qu\'un groupe qui existe. Le champ était libre, et
+      une faute de frappe rattachait l\'agent à un groupe <em>inexistant</em> — il perdait alors la politique
+      attendue sans que rien ne le signale. Si un compte porte un groupe supprimé depuis, la liste l\'affiche
+      suivi de « <em>groupe introuvable</em> » plutôt que de le remplacer en silence.
+      <br><span class="muted">L\'action groupée « Changer le groupe » reste, elle, une saisie libre : la même
+      vigilance s\'y applique.</span></p>
+
       <p><strong>Utilisateurs &amp; droits</strong> : un seul écran pour tout le cycle de vie d\'un agent —
       <strong>accès Internet</strong> (portail), <strong>compte de domaine</strong> (AD), identité (nom, prénom,
       service), <strong>photo</strong>, <strong>commissariat</strong> d\'appartenance, et opérations en <strong>masse</strong>
