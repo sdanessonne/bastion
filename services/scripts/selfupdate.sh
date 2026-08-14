@@ -315,6 +315,7 @@ case "${1:-}" in
 755 gpo-timesync         services/scripts/gpo-timesync.py
 755 gpo-numlock          services/scripts/gpo-numlock.py
 755 gpo-edge             services/scripts/gpo-edge.py
+755 gpo-wallpaper        services/scripts/gpo-wallpaper.py
 755 gpo-defaultapps      services/scripts/gpo-defaultapps.py
 755 lien                 services/scripts/lien-ctl.sh
 755 lien-veille          services/scripts/lien-veille.php

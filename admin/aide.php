@@ -388,7 +388,13 @@ $GROUPS = [
       navigateurs Edge / Chrome / Firefox, Office, etc.</p>
       <ul>
         <li><strong>Fond d\'écran des postes</strong> : téléversez une image, elle s\'impose à l\'ouverture de session
-        (un aperçu s\'affiche dans la console).</li>
+        (un aperçu s\'affiche dans la console). L\'image est <strong>recopiée sur le disque du poste</strong> au
+        démarrage, et la stratégie pointe sur cette copie locale.
+        <br><span class="muted">Auparavant elle était lue depuis le réseau à chaque ouverture de session : si le
+        partage n\'était pas joignable à cet instant — réseau pas encore monté, Wi-Fi lent, passerelle qui
+        redémarre, portable sorti du commissariat — le bureau restait <strong>noir, sans message</strong>. La copie
+        n\'est refaite que si l\'image a changé, et la précédente est conservée tant que la nouvelle n\'est pas
+        complète. Journal du poste : <code>C:\\ProgramData\\Bastion\\wallpaper.log</code>.</span></li>
         <li><strong>Lecteurs réseau</strong> : connectez automatiquement des dossiers partagés
         (ex. <code>Z: → \\\\dc.bastion.pn.int\\Commun</code>) — voir la rubrique « Lecteurs réseau ».</li>
         <li>Chaque GPO déployée peut être <strong>désactivée</strong> (déliée du domaine, réversible) ou

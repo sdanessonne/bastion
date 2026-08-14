@@ -424,15 +424,25 @@ PY
             setfattr -n security.NTACL -v "$v" "$img"  2>/dev/null || true
           fi
         fi
-        # Chemin UNC de l'image dans SYSVOL (répliqué, lisible par les utilisateurs authentifiés).
+        # Chemin UNC de l'image dans SYSVOL (répliqué, lisible par les utilisateurs
+        # authentifiés). Il ne sert plus qu'à la COPIE faite au démarrage du poste :
+        # la stratégie, elle, pointe désormais sur le chemin LOCAL ci-dessous.
         unc="\\\\${rl}\\SysVol\\${rl}\\Policies\\${guid}\\User\\bastion-wallpaper.${ext}"
+        # ── POURQUOI UN CHEMIN LOCAL, ET NON L'UNC ──────────────────────────────
+        # Avec l'UNC, Windows allait chercher l'image SUR LE RÉSEAU à chaque ouverture
+        # de session : partage injoignable à cet instant — réseau pas encore monté,
+        # Wi-Fi lent, passerelle qui redémarre, portable sorti du commissariat — et le
+        # bureau restait NOIR, sans message. C'est aussi ce défaut qui obligeait à
+        # déployer « Attendre le réseau à l'ouverture de session », qui ralentit
+        # chaque connexion pour tout le monde.
+        local_img="C:\\ProgramData\\Bastion\\wallpaper.jpg"
         tmpj=$(mktemp)
-        python3 - "$unc" "$style" "$tile" > "$tmpj" <<'PY'
+        python3 - "$local_img" "$style" "$tile" > "$tmpj" <<'PY'
 import json, sys
-unc, style, tile = sys.argv[1], sys.argv[2], sys.argv[3]
+chemin, style, tile = sys.argv[1], sys.argv[2], sys.argv[3]
 k = "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System"
 print(json.dumps([
-    {"keyname": k, "valuename": "Wallpaper",      "class": "USER", "type": "REG_SZ", "data": unc},
+    {"keyname": k, "valuename": "Wallpaper",      "class": "USER", "type": "REG_SZ", "data": chemin},
     {"keyname": k, "valuename": "WallpaperStyle", "class": "USER", "type": "REG_SZ", "data": style},
     {"keyname": k, "valuename": "TileWallpaper",  "class": "USER", "type": "REG_SZ", "data": tile},
 ]))
@@ -440,6 +450,11 @@ PY
         python3 /usr/local/sbin/proxyfibre-gpo-apply "$guid" "$tmpj" >/dev/null 2>&1; rc=$?
         rm -f "$tmpj"
         [ "$rc" -eq 0 ] || { echo "ERROR: application du fond d'ecran echouee ($guid)" >&2; exit 1; }
+        # Script de démarrage qui recopie l'image du SYSVOL vers le disque du poste.
+        # Lancé APRÈS gpo-apply, qui vient d'écrire les extensions côté registre :
+        # gpo-wallpaper y AJOUTE la CSE « Scripts » au lieu de la remplacer.
+        python3 /usr/local/sbin/proxyfibre-gpo-wallpaper "$guid" "$unc" >/dev/null 2>&1 \
+          || echo "AVERTISSEMENT: copie locale du fond non installee ($guid) — le fond resterait lu depuis le reseau" >&2
         dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
         "$ST" gpo listcontainers "$guid" -U "Administrator%${ADPASS}" 2>/dev/null | grep -qi "$dn" \
           || "$ST" gpo setlink "$dn" "$guid" -U "Administrator%${ADPASS}" >/dev/null 2>&1 || true
