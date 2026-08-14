@@ -38,6 +38,31 @@ a{color:inherit;text-decoration:none}
 .mono{font-family:ui-monospace,"Cascadia Code",monospace;font-size:.85rem}
 .logo{display:block;width:38px;height:38px;flex:none}
 
+/* ── CHAMPS DE FICHIER ───────────────────────────────────────────────────────
+   Le bouton d'un « input type=file » est dessiné par le SYSTÈME, pas par la page :
+   il restait gris clair, seul élément clair de la console sombre, à côté de nos
+   boutons bleus. On habille donc le pseudo-élément prévu pour cela.
+
+   Traité ici et non dans une page : le même bouton apparaît à l'import CSV, au
+   dépôt de photo, au fond d'écran, à l'envoi d'installeur. Le corriger page par
+   page aurait laissé les suivantes derrière, et la prochaine ajoutée aussi. */
+input[type=file]{font:inherit;font-size:.85rem;color:var(--muted);max-width:100%}
+input[type=file]::file-selector-button{
+  font:inherit;font-size:.85rem;font-weight:500;cursor:pointer;
+  padding:.45rem .9rem;margin-right:.7rem;
+  background:var(--panel2);color:var(--text);
+  border:1px solid var(--line);border-radius:8px;
+  transition:background .15s,border-color .15s,color .15s}
+input[type=file]::file-selector-button:hover{background:var(--bg);border-color:var(--accent);color:var(--accent)}
+/* ::-webkit-file-upload-button : les navigateurs anciens ignorent la forme
+   normalisée ci-dessus. Sans ce doublon, le bouton y resterait gris. */
+input[type=file]::-webkit-file-upload-button{
+  font:inherit;font-size:.85rem;font-weight:500;cursor:pointer;
+  padding:.45rem .9rem;margin-right:.7rem;
+  background:var(--panel2);color:var(--text);
+  border:1px solid var(--line);border-radius:8px}
+input[type=file]:disabled::file-selector-button{opacity:.5;cursor:not-allowed}
+
 /* ── Login ── */
 .login-body{display:grid;place-items:center;
   background:radial-gradient(1000px 500px at 50% -10%,#16305a,var(--bg))}
