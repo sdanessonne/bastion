@@ -695,7 +695,37 @@ $siteOptions = function (int $sel) use ($sites) {
         <label class="u-chk"><input type="checkbox" name="ad_account" id="f_ad" <?= $dcUp ? '' : 'disabled' ?>>
           <span class="txt">🗄️ Compte domaine <small>Ouverture de session Windows (Active Directory)</small></span></label>
         <label class="field" style="margin:.7rem 0 0">Groupe AD <span class="muted small">(optionnel)</span>
-          <input type="text" name="adgroup" id="f_adgroup" placeholder="ex. Fonctionnaires"></label>
+          <?php
+          // Même raison que pour le groupe du portail : une faute de frappe créait
+          // une adhésion à un groupe AD inexistant. Ici la conséquence était même
+          // muette côté console — samba-tool refusait, et l'agent restait sans les
+          // droits qu'on croyait lui avoir donnés.
+          //
+          // La liste vient du CACHE de l'annuaire (ad_lines_cached), jamais d'un
+          // appel direct : cette page se charge à chaque consultation de compte, et
+          // interroger le contrôleur à chaque fois la rendrait lente pour rien.
+          $pfAdGroupes = [];
+          if ($dcUp) {
+              try { $pfAdGroupes = ad_lines_cached('groups', 0, 'group', 'list'); }
+              catch (Throwable $e) { $pfAdGroupes = []; }
+          }
+          sort($pfAdGroupes, SORT_NATURAL | SORT_FLAG_CASE);
+          ?>
+          <select name="adgroup" id="f_adgroup" <?= $dcUp ? '' : 'disabled' ?>>
+            <!-- « Ne pas ajouter » et non « aucun » : ce champ AJOUTE une adhésion,
+                 il n'en retire jamais. Écrire « aucun » laisserait croire qu'on
+                 sort l'agent de ses groupes en enregistrant — ce qui ne se produit
+                 pas, et se découvrirait trop tard. -->
+            <option value="">— ne pas ajouter à un groupe —</option>
+            <?php foreach ($pfAdGroupes as $g): if (trim((string) $g) === '') { continue; } ?>
+              <option value="<?= e($g) ?>"><?= e($g) ?></option>
+            <?php endforeach; ?>
+          </select>
+          <?php if ($dcUp && !$pfAdGroupes): ?>
+            <span class="muted small">Liste indisponible — le contrôleur de domaine n'a rien répondu.
+            Vérifiez-le dans <a href="/ad.php" style="color:var(--accent)">Active Directory</a>.</span>
+          <?php endif; ?>
+        </label>
         <?php if (!$dcUp): ?><p class="muted small" style="margin:.5rem 0 0">Contrôleur de domaine inactif.</p><?php endif; ?>
       </div>
 
