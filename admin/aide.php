@@ -180,9 +180,30 @@ $GROUPS = [
       <p><strong>Quelle différence entre le compte d\'accès et le compte de domaine ?</strong> Le premier ouvre
       Internet par le portail ; le second ouvre la session Windows et les dossiers partagés. Un agent a généralement
       les deux, gérés depuis la même fiche — mais ils peuvent exister l\'un sans l\'autre.</p>
+      <p><strong>Un agent a retrouvé un bureau vide et ses documents envolés après une modification de sa fiche.</strong>
+      Son <strong>compte de domaine</strong> a été décoché puis recréé. Décocher ne suspend pas le compte : il est
+      <em>effacé</em> de l\'annuaire, et le compte recréé porte un identifiant de sécurité (SID) neuf. Windows n\'y
+      reconnaît pas le même utilisateur et lui ouvre un profil neuf ; l\'ancien profil est toujours sur le disque du
+      poste, sous <code>C:\\Utilisateurs\\</code> avec un suffixe, mais il faut y recopier les documents à la main.
+      La console demande maintenant une confirmation explicite avant d\'en arriver là. Pour une absence temporaire,
+      utilisez la <strong>date de fin d\'accès</strong>, qui désactive sans détruire.</p>
+      <p><strong>Une suppression groupée a emporté plus de comptes que ceux affichés.</strong> Les lignes masquées par
+      un filtre restaient sélectionnées : on filtrait un commissariat, on cochait « tout sélectionner », et la
+      sélection contenait encore les comptes d\'un filtre précédent — que rien ne montrait, ni avant ni après.
+      Désormais une ligne qui sort de l\'écran sort de la sélection, et la confirmation énumère les matricules.
+      Pour retrouver ce qui a été supprimé, le <strong>journal d\'audit</strong> conserve chaque action groupée avec
+      son nombre de comptes ; les comptes eux-mêmes se restaurent depuis une <strong>sauvegarde</strong>.</p>
+      <p><strong>« Identifiant invalide » sur un ancien compte que je n\'ai pas renommé.</strong> Corrigé : le format
+      matricule ne s\'impose qu\'à la <em>création</em>. Les comptes antérieurs à cette règle (<code>dupont.jean</code>)
+      étaient devenus impossibles à modifier — ni date de fin, ni commissariat, ni photo — alors que le champ
+      identifiant est en lecture seule en édition : le message désignait une valeur que personne ne pouvait corriger.</p>
+      <p><strong>« 12 mots de passe réinitialisés », mais des agents n\'ont pas le nouveau.</strong> Le comptage
+      incluait les comptes qui n\'ont <em>ni</em> accès Internet <em>ni</em> compte de domaine : il n\'y avait rien à
+      changer chez eux. Le bandeau distingue maintenant les comptes traités des comptes écartés, avec le motif.</p>
       <p><strong>Un administrateur a fait une modification inexpliquée.</strong> Le <strong>journal d\'audit</strong>
       dit qui, quand, depuis quelle adresse et quoi. Commencez toujours par là : la cause est presque toujours une
-      action humaine récente, pas une panne.</p>'],
+      action humaine récente, pas une panne. Les <em>actions groupées</em> y figurent aussi désormais — elles n\'y
+      laissaient aucune trace, et une suppression de cinquante comptes passait donc inaperçue.</p>'],
     ['faq-reseau', '🌐', 'FAQ — Réseau, filtrage et lenteurs', '      <p><strong>J\'ai bloqué un site, il reste accessible.</strong> Le poste garde les adresses DNS en mémoire quelques
       minutes. <code>ipconfig /flushdns</code> sur le poste tranche immédiatement. Si ça persiste au-delà, le site est
       probablement atteint par une autre adresse que celle bloquée.</p>
@@ -236,18 +257,26 @@ $GROUPS = [
 
   'Accès & sécurité' => [
     ['utilisateurs', '👤', 'Utilisateurs, droits &amp; rôles', '
-      <p><strong>Le groupe du portail</strong> (quotas, horaires, sortie par tunnel) se choisit dans une
-      <strong>liste déroulante</strong> : on ne peut désigner qu\'un groupe qui existe. Le champ était libre, et
-      une faute de frappe rattachait l\'agent à un groupe <em>inexistant</em> — il perdait alors la politique
-      attendue sans que rien ne le signale. Si un compte porte un groupe supprimé depuis, la liste l\'affiche
-      suivi de « <em>groupe introuvable</em> » plutôt que de le remplacer en silence.
-      <br><span class="muted">L\'action groupée « Changer le groupe » reste, elle, une saisie libre : la même
-      vigilance s\'y applique.</span></p>
-
       <p><strong>Utilisateurs &amp; droits</strong> : un seul écran pour tout le cycle de vie d\'un agent —
       <strong>accès Internet</strong> (portail), <strong>compte de domaine</strong> (AD), identité (nom, prénom,
       service), <strong>photo</strong>, <strong>commissariat</strong> d\'appartenance, et opérations en <strong>masse</strong>
       (import CSV, actions groupées).</p>
+
+      <p class="tip"><strong>Décocher un accès, c\'est le supprimer — pas le suspendre.</strong> Décocher
+      « Compte domaine » <em>efface</em> le compte de l\'annuaire. Recréé plus tard, il porte un identifiant de
+      sécurité (SID) neuf : Windows lui ouvre alors un <strong>profil neuf</strong> sur les postes — bureau vide,
+      documents de l\'ancien profil hors de portée de l\'agent. La console affiche désormais, à l\'endroit même où
+      la case vient d\'être décochée, un <strong>bandeau rouge portant une case de confirmation</strong> ; sans
+      cette case, l\'enregistrement est refusé et <em>rien</em> n\'est modifié. Pour une absence temporaire, posez
+      plutôt une <strong>date de fin d\'accès</strong> : elle désactive sans détruire.</p>
+
+      <p><strong>Le groupe du portail</strong> (quotas, horaires, sortie par tunnel) se choisit dans une
+      <strong>liste déroulante</strong> : on ne peut désigner qu\'un groupe qui existe. Le champ était libre, et
+      une faute de frappe rattachait l\'agent à un groupe <em>inexistant</em> — il perdait alors la politique
+      attendue sans que rien ne le signale. Si un compte porte un groupe supprimé depuis, la liste l\'affiche
+      suivi de « <em>groupe introuvable</em> » plutôt que de le remplacer en silence. L\'action groupée
+      « Changer le groupe » propose les mêmes noms et <strong>refuse en bloc</strong> un groupe inconnu : aucun
+      compte n\'est touché, plutôt que cinquante reclassés dans un groupe fantôme.</p>
       <ul>
         <li><strong>Date de fin d\'accès</strong> : programmez la désactivation d\'un compte (fin de mission, mutation).
         À l\'échéance, l\'accès Internet et le compte de domaine sont désactivés automatiquement — le compte n\'est pas
@@ -255,12 +284,26 @@ $GROUPS = [
         <li><strong>Droits de gestion</strong> : administrateur de la console et/ou du domaine. Pour un administrateur
         console, un <strong>niveau d\'accès</strong> : <em>complet</em>, <em>comptes &amp; agents seulement</em>, ou
         <em>lecture seule</em> (consultation sans modification).</li>
+        <li><strong>Mot de passe</strong> : pour un compte de domaine ou un administrateur de console, au moins
+        8 caractères avec une majuscule et un chiffre. La fiche est <strong>refusée en entier</strong> si la règle
+        n\'est pas tenue : auparavant l\'accès Internet était créé et le compte de domaine non, laissant un agent
+        qui navigue mais n\'ouvre pas sa session. La stratégie du domaine peut exiger davantage.</li>
+        <li><strong>Sélection et filtres</strong> : filtrer une ligne la <em>retire</em> de la sélection, et
+        « tout sélectionner » ne coche que ce qui est affiché. La confirmation de suppression groupée
+        <strong>énumère les matricules</strong> au lieu d\'annoncer un nombre.</li>
+        <li><strong>Comptes ignorés</strong> : une action groupée annonce combien de comptes elle a écartés
+        <em>et pourquoi</em> (pas de compte de domaine, ni accès Internet ni domaine, commissariat inconnu…).
+        Toutes les actions groupées sont inscrites au <strong>journal d\'audit</strong>.</li>
       </ul>
       <p><strong>Groupes &amp; quotas</strong> : par groupe, la durée de session, les débits, les quotas de données et
       les plages horaires.</p>
-      <p class="tip">Identifiant imposé : matricule à 7 chiffres (ex. <code>0110480</code>) ; administrateur
-      <code>admin-0110480</code>. Le compte <code>admin</code> intégré garde toujours l\'accès complet. Les nouveaux
-      quotas s\'appliquent à la <em>prochaine</em> connexion.</p>'],
+      <p class="tip">Identifiant imposé <em>à la création</em> : matricule à 7 chiffres (ex. <code>0110480</code>) ;
+      administrateur <code>admin-0110480</code>. Les comptes plus anciens, créés avant cette règle, restent
+      modifiables — le format ne s\'applique qu\'aux nouveaux. Le compte <code>admin</code> intégré garde toujours
+      l\'accès complet. Les nouveaux quotas s\'appliquent à la <em>prochaine</em> connexion.</p>
+      <p class="tip">Vous ne pouvez ni supprimer votre propre compte, ni vous retirer votre droit d\'administration :
+      la console refuse. Cette perte-là ne se voit qu\'à la déconnexion suivante, quand il n\'y a plus de quoi
+      revenir en arrière. Passez par un autre administrateur.</p>'],
 
     ['annuaire', '📇', 'Annuaire, photos &amp; badges', '      <p>L\'<strong>annuaire</strong> est le trombinoscope du service : photo, nom, prénom, service, commissariat, droits
       et présence en ligne, avec une recherche instantanée par nom ou par service. Il sert autant à mettre un visage

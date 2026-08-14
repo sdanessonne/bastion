@@ -24,6 +24,127 @@ function pf_valid_id(string $u): bool {
 }
 const PF_ID_HINT = 'Identifiant attendu : matricule à 7 chiffres (ex. 0110480) ou « admin-0110480 » pour un administrateur.';
 
+/**
+ * Complexité minimale d'un mot de passe de COMPTE DOMAINE ou d'ADMINISTRATEUR DE CONSOLE.
+ *
+ * Rien ne la vérifiait ici : côté domaine, samba-tool refusait la création et son message
+ * partait dans un coin du bandeau ; côté console, RIEN ne refusait quoi que ce soit — on
+ * pouvait donner à un administrateur de Bastion un mot de passe d'un caractère, et la
+ * console l'acceptait sans un mot. On vérifie donc AVANT d'écrire.
+ *
+ * Ce seuil est un plancher, pas la règle du domaine : la stratégie par défaut de l'AD peut
+ * exiger davantage (longueur, symboles). Le message le dit, pour que l'exploitant ne conclue
+ * pas d'un refus du domaine que la console lui a menti.
+ *
+ * @return string|null  ce qui manque, ou null si le mot de passe convient.
+ */
+function pf_mdp_faible(string $p): ?string {
+    if (mb_strlen($p) < 8)               { return 'au moins 8 caractères'; }
+    if (!preg_match('/\p{Lu}/u', $p))    { return 'au moins une majuscule'; }
+    if (!preg_match('/\d/', $p))         { return 'au moins un chiffre'; }
+    return null;
+}
+
+// Compte de l'administrateur connecté : sert de garde-fou contre l'auto-exclusion.
+$moi = (string) ($_SESSION['admin'] ?? '');
+
+/**
+ * Tout ce qui interdit d'enregistrer la fiche, en clair. Tableau vide = on peut écrire.
+ *
+ * POURQUOI VÉRIFIER EN AMONT. Le contrôle était dispersé au fil des écritures : un mot de
+ * passe manquant affichait bien « requis », mais les lignes suivantes s'exécutaient quand
+ * même — le groupe du portail effacé, le compte domaine créé à moitié. On repartait d'une
+ * fiche refusée ET d'un compte pourtant modifié, sans savoir lequel des deux croire. Un
+ * seul refus annule désormais l'enregistrement entier.
+ */
+function pf_refus_save(PDO $db, string $u, bool $dcUp, string $moi, bool $existsPortal, bool $existsAd): array {
+    $portal  = isset($_POST['portal']);
+    $adAcct  = isset($_POST['ad_account']) && $dcUp;
+    $isAdmin = isset($_POST['role_admin']);
+    $p       = (string) ($_POST['password'] ?? '');
+    $existsAdmin = (bool) $db->query('SELECT 1 FROM pf_admins WHERE username=' . $db->quote($u))->fetchColumn();
+    $r = [];
+
+    // ── LE FORMAT NE S'IMPOSE QU'À LA CRÉATION ───────────────────────────────
+    // Les comptes hérités (« dupont.jean ») sont antérieurs à la règle du matricule, et le
+    // contrôle s'appliquait aussi à leur MODIFICATION. Le champ identifiant étant en lecture
+    // seule en édition, la console renvoyait « identifiant invalide » sur une valeur que
+    // l'exploitant n'avait aucun moyen de corriger : ces comptes n'étaient plus modifiables
+    // du tout — ni date de fin, ni commissariat, ni photo — seulement supprimables.
+    $existe = $existsPortal || $existsAd || $existsAdmin
+           || (bool) $db->query('SELECT 1 FROM radcheck WHERE username=' . $db->quote($u))->fetchColumn();
+    if (!$existe && !pf_valid_id($u)) { $r[] = 'Identifiant invalide. ' . PF_ID_HINT; }
+
+    // Demander un accès sans fournir de mot de passe ne crée rien du tout : on le refuse
+    // au lieu d'enregistrer une fiche qui semble complète et ne donne accès à rien.
+    if ($portal  && $p === '' && !$existsPortal) { $r[] = "Mot de passe requis pour créer l'accès Internet."; }
+    if ($adAcct  && $p === '' && !$existsAd)     { $r[] = 'Mot de passe requis pour créer le compte domaine.'; }
+    if ($isAdmin && $p === '' && !$existsAdmin)  { $r[] = 'Mot de passe requis pour créer cet administrateur de console.'; }
+
+    if ($p !== '' && ($adAcct || $isAdmin) && ($manque = pf_mdp_faible($p)) !== null) {
+        $r[] = 'Mot de passe trop simple pour un compte domaine ou un administrateur de console : il faut '
+             . $manque . '. La stratégie du domaine peut en exiger davantage.';
+    }
+
+    // ── DÉCOCHER, C'EST DÉTRUIRE ─────────────────────────────────────────────
+    // Décocher « Compte domaine » ne suspend pas le compte : il le SUPPRIME de l'annuaire.
+    // Recréé ensuite, il porte un SID neuf — et Windows ouvre alors un profil NEUF : bureau
+    // vide, documents de l'ancien profil hors de portée de l'agent. Un clic malencontreux
+    // suivi d'« Enregistrer » suffisait, sans un mot. Il faut maintenant cocher la case qui
+    // le dit ; la case n'apparaît que si la suppression est réellement en jeu.
+    if (!$portal && $existsPortal && !isset($_POST['confirm_del_portal'])) {
+        $r[] = 'Décocher « Accès Internet » SUPPRIME le compte du portail : confirmez-le dans la fiche.';
+    }
+    if (!$adAcct && $existsAd && !isset($_POST['confirm_del_ad'])) {
+        $r[] = 'Décocher « Compte domaine » SUPPRIME le compte Active Directory : confirmez-le dans la fiche.';
+    }
+
+    // ── AUTO-EXCLUSION ───────────────────────────────────────────────────────
+    // Se retirer son propre droit console ne se voit qu'à la déconnexion suivante, quand
+    // il est trop tard pour revenir en arrière.
+    if ($u !== '' && $u === $moi && !$isAdmin) {
+        $r[] = "Vous ne pouvez pas retirer votre propre droit d'administration : vous perdriez l'accès à la console "
+             . 'à la déconnexion. Demandez-le à un autre administrateur.';
+    }
+    return $r;
+}
+
+/**
+ * Ce qui interdit une action EN MASSE. null = on peut l'appliquer.
+ *
+ * La fiche individuelle ne laisse plus désigner un groupe inexistant — le champ libre y a
+ * été remplacé par une liste déroulante, justement parce qu'une faute de frappe rattachait
+ * l'agent à un groupe fantôme : plus de quota, plus d'horaires, plus de tunnel, et rien
+ * pour l'annoncer. La barre d'action en masse, elle, était restée en saisie libre : la même
+ * faute y reclassait CINQUANTE agents d'un coup, tout aussi silencieusement. L'argument est
+ * donc vérifié avant que le premier compte ne soit touché — un refus ne laisse pas de
+ * traitement à moitié fait.
+ */
+function pf_refus_masse(string $op, string $arg, bool $dcUp): ?string {
+    if ($op === 'setgroup' && $arg !== '') {
+        $connus = [];
+        try { $connus = pf_db()->query('SELECT groupname FROM pf_groups')->fetchAll(PDO::FETCH_COLUMN) ?: []; }
+        catch (Throwable $e) { return null; }   // table illisible : on ne bloque pas sur une panne de lecture
+        if (!in_array($arg, $connus, true)) {
+            return 'Groupe portail « ' . $arg . " » inconnu : aucun compte n'a été touché. "
+                 . "Créez-le d'abord dans « Groupes & quotas », ou choisissez-en un existant.";
+        }
+    }
+    if ($op === 'addadgroup' && $arg !== '' && $dcUp) {
+        $connus = [];
+        try { $connus = ad_lines_cached('groups', 0, 'group', 'list'); } catch (Throwable $e) { return null; }
+        // Liste vide = le contrôleur n'a rien répondu ; on ne transforme pas une panne de
+        // lecture en refus, sans quoi l'action deviendrait impossible pendant l'incident.
+        if ($connus && !in_array($arg, $connus, true)) {
+            return 'Groupe AD « ' . $arg . " » inconnu : aucun compte n'a été touché.";
+        }
+    }
+    if ($op === 'setpassword' && ($manque = pf_mdp_faible($arg)) !== null) {
+        return 'Mot de passe trop simple : il faut ' . $manque . ". Aucun compte n'a été touché.";
+    }
+    return null;
+}
+
 // ── Commissariats (groupes d'appartenance) + affectation par compte ──────────
 $sites = [];        // id => ['name','cpn']
 foreach ($db->query('SELECT id,name,cpn FROM pf_commissariats ORDER BY cpn,name') as $r) {
@@ -81,8 +202,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $u = trim((string) ($_POST['username'] ?? ''));
     $u = preg_replace('/[^A-Za-z0-9._@-]/', '', $u);
 
-    if ($action === 'save' && $u !== '' && !pf_valid_id($u)) {
-        $flash = ['Identifiant invalide. ' . PF_ID_HINT, 'err'];
+    // L'état réel du compte se lit UNE fois : « ad_lines » interroge le contrôleur de
+    // domaine, et le relire dans la validation puis dans les écritures doublait l'appel.
+    $refus = [];
+    $existsPortal = $existsAd = false;
+    if ($action === 'save' && $u !== '') {
+        $existsPortal = (bool) $db->query('SELECT 1 FROM radcheck WHERE username=' . $db->quote($u) . ' AND attribute="Cleartext-Password"')->fetchColumn();
+        $existsAd     = $dcUp && in_array($u, ad_lines('user', 'list'), true);
+        $refus        = pf_refus_save($db, $u, $dcUp, $moi, $existsPortal, $existsAd);
+    }
+
+    if ($refus) {
+        $flash = [implode(' ', $refus), 'err'];
     } elseif ($action === 'save' && $u !== '') {
         $p        = (string) ($_POST['password'] ?? '');
         $portal   = isset($_POST['portal']);
@@ -91,8 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $adgroup  = trim((string) ($_POST['adgroup'] ?? ''));
         $isAdmin  = isset($_POST['role_admin']);       // administrateur console
         $isDomAdm = isset($_POST['role_domadmin']);    // administrateur domaine
-        $existsPortal = (bool) $db->query('SELECT 1 FROM radcheck WHERE username=' . $db->quote($u) . ' AND attribute="Cleartext-Password"')->fetchColumn();
-        $existsAd     = $dcUp && in_array($u, ad_lines('user', 'list'), true);
+        $detruit  = [];                                // ce que cet enregistrement a supprimé (pour l'audit)
         $msgs = [];
 
         // ── Accès Internet (portail RADIUS) ──
@@ -100,21 +230,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($p !== '') {
                 $db->prepare('DELETE FROM radcheck WHERE username=? AND attribute="Cleartext-Password"')->execute([$u]);
                 $db->prepare('INSERT INTO radcheck (username,attribute,op,value) VALUES (?,"Cleartext-Password",":=",?)')->execute([$u, $p]);
-            } elseif (!$existsPortal) {
-                $flash = ['Le mot de passe est requis pour créer l\'accès Internet.', 'err'];
             }
             $db->prepare('DELETE FROM radusergroup WHERE username=?')->execute([$u]);
             if ($pgroup !== '') { $db->prepare('INSERT INTO radusergroup (username,groupname,priority) VALUES (?,?,1)')->execute([$u, $pgroup]); }
         } else {
             $db->prepare('DELETE FROM radcheck WHERE username=?')->execute([$u]);
             $db->prepare('DELETE FROM radusergroup WHERE username=?')->execute([$u]);
+            if ($existsPortal) { $detruit[] = 'portail'; }
         }
 
         // ── Compte domaine (AD) ──
         if ($adAcct) {
             if (!$existsAd) {
-                if ($p === '') { $flash = ['Le mot de passe est requis pour créer le compte domaine.', 'err']; }
-                else { $out = ad('user', 'create', $u, $p); if (preg_match('/ERROR|Failed|password/i', $out)) { $msgs[] = 'AD : ' . trim($out); } }
+                $out = ad('user', 'create', $u, $p);
+                if (preg_match('/ERROR|Failed|password/i', $out)) { $msgs[] = 'AD : ' . trim($out); }
             } elseif ($p !== '') {
                 ad('user', 'setpassword', $u, $p);
             }
@@ -122,6 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($existsAd) {
             ad('user', 'delete', $u);
             $isDomAdm = false;
+            $detruit[] = 'domaine';
         }
 
         // ── Droit : administrateur de la console ──
@@ -129,8 +259,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($p !== '') {
                 $h = password_hash($p, PASSWORD_DEFAULT);
                 $db->prepare('INSERT INTO pf_admins (username,password_hash) VALUES (?,?) ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash)')->execute([$u, $h]);
-            } elseif (!(bool) $db->query('SELECT 1 FROM pf_admins WHERE username=' . $db->quote($u))->fetchColumn()) {
-                $msgs[] = 'Droit console : mot de passe requis pour créer cet administrateur.';
             }
             // Niveau d'accès (rôle). JAMAIS pour « admin » : il reste complet quoi qu'il arrive.
             $lvl = in_array($_POST['admin_level'] ?? '', ['full', 'comptes', 'lecture'], true) ? (string) $_POST['admin_level'] : 'full';
@@ -140,7 +268,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // ── Droit : administrateur du domaine ──
-        if ($dcUp) {
+        // Le retrait n'est tenté que si le compte EXISTE dans l'annuaire : sans ce test,
+        // chaque enregistrement d'un agent sans compte domaine lançait un samba-tool pour
+        // le sortir d'un groupe où il n'a jamais été — une seconde d'attente pour rien.
+        if ($dcUp && ($adAcct || $existsAd)) {
             if ($isDomAdm && $adAcct) { ad('group', 'addmembers', 'Domain Admins', $u); }
             elseif (!$isDomAdm)       { ad('group', 'removemembers', 'Domain Admins', $u); }
         }
@@ -170,11 +301,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->prepare('DELETE FROM pf_user_expiry WHERE username=?')->execute([$u]);
         }
 
-        if (!$flash) { $flash = ['Compte « ' . $u . ' » enregistré.' . ($msgs ? ' ' . implode(' ', $msgs) : ''), $msgs ? 'err' : 'ok']; }
-        audit('users.save', $u);
+        // Ce qui a été SUPPRIMÉ est annoncé dans le bandeau, pas seulement subi : « enregistré »
+        // tout court laissait croire à une simple mise à jour alors qu'un compte venait de
+        // disparaître de l'annuaire.
+        $quoi = $detruit ? ' Accès supprimé : ' . implode(' et ', $detruit) . '.' : '';
+        $flash = ['Compte « ' . $u . ' » enregistré.' . $quoi . ($msgs ? ' ' . implode(' ', $msgs) : ''), $msgs ? 'err' : 'ok'];
+        audit('users.save', $u . ($detruit ? ' (suppression ' . implode('+', $detruit) . ')' : ''));
     }
 
-    if ($action === 'delete' && $u !== '') {
+    // Se supprimer soi-même réussit sans rien signaler : la page se recharge, et l'accès
+    // n'est perdu qu'à la déconnexion suivante — quand il n'y a plus de quoi revenir.
+    if ($action === 'delete' && $u !== '' && $u === $moi) {
+        $flash = ['Vous ne pouvez pas supprimer votre propre compte. Demandez-le à un autre administrateur.', 'err'];
+    } elseif ($action === 'delete' && $u !== '') {
         $db->prepare('DELETE FROM radcheck WHERE username=?')->execute([$u]);
         $db->prepare('DELETE FROM radusergroup WHERE username=?')->execute([$u]);
         if ($u !== 'admin') { $db->prepare('DELETE FROM pf_admins WHERE username=?')->execute([$u]); }
@@ -222,17 +361,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // ── Actions en masse sur une sélection ──────────────────────────────────
+    $refusMasse = null;
     if ($action === 'bulk') {
         $op   = (string) ($_POST['bulk_op'] ?? '');
         $sel  = array_values(array_filter(array_map(
             fn($x) => preg_replace('/[^A-Za-z0-9._@-]/', '', (string) $x),
             (array) ($_POST['sel'] ?? [])), fn($x) => $x !== ''));
         $arg  = trim((string) ($_POST['bulk_arg'] ?? ''));
+        $refusMasse = pf_refus_masse($op, $arg, $dcUp);
+    }
+    if ($action === 'bulk' && $refusMasse !== null) {
+        $flash = [$refusMasse, 'err'];
+    } elseif ($action === 'bulk') {
         $n = 0; $skip = 0;
         $adList = $dcUp ? ad_lines('user', 'list') : [];
         foreach ($sel as $su) {
             if ($op === 'delete') {
-                if ($su === 'admin') { $skip++; continue; }
+                // « admin » est intouchable, et l'on ne se supprime pas soi-même : la barre
+                // de masse permettait d'emporter son propre compte au milieu de la sélection.
+                if ($su === 'admin' || $su === $moi) { $skip++; continue; }
                 $db->prepare('DELETE FROM radcheck WHERE username=?')->execute([$su]);
                 $db->prepare('DELETE FROM radusergroup WHERE username=?')->execute([$su]);
                 $db->prepare('DELETE FROM pf_admins WHERE username=?')->execute([$su]);
@@ -252,11 +399,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($arg !== '') { $db->prepare('INSERT INTO radusergroup (username,groupname,priority) VALUES (?,?,1)')->execute([$su, $arg]); }
                 $n++;
             } elseif ($op === 'setpassword' && $arg !== '') {
+                // Un compte sans accès portail NI compte domaine ne reçoit rien : il était
+                // pourtant compté comme traité. « 12 mots de passe réinitialisés » pour huit
+                // changements réels, c'est la pire des réponses — on croit l'agent servi.
+                $fait = false;
                 if ((bool) $db->query('SELECT 1 FROM radcheck WHERE username=' . $db->quote($su) . ' AND attribute="Cleartext-Password"')->fetchColumn()) {
                     $db->prepare('UPDATE radcheck SET value=? WHERE username=? AND attribute="Cleartext-Password"')->execute([$arg, $su]);
+                    $fait = true;
                 }
-                if ($dcUp && in_array($su, $adList, true)) { ad('user', 'setpassword', $su, $arg); }
-                $n++;
+                if ($dcUp && in_array($su, $adList, true)) { ad('user', 'setpassword', $su, $arg); $fait = true; }
+                $fait ? $n++ : $skip++;
             } elseif ($op === 'addadgroup' && $arg !== '' && $dcUp) {
                 if (in_array($su, $adList, true)) { ad('group', 'addmembers', $arg, $su); $n++; } else { $skip++; }
             } elseif ($op === 'setsite') {
@@ -267,7 +419,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         $labels = ['delete'=>'supprimé·s', 'setgroup'=>'reclassé·s', 'setpassword'=>'mot de passe réinitialisé', 'addadgroup'=>'ajouté·s au groupe AD', 'setsite'=>'affecté·s au commissariat'];
-        $flash = [$n . ' compte(s) ' . ($labels[$op] ?? 'traité·s') . ($skip ? " ({$skip} ignoré·s)" : '') . '.', $n ? 'ok' : 'err'];
+        // Un compte ignoré l'est toujours pour une raison précise : la taire obligeait à
+        // recompter les lignes à la main pour deviner lesquelles n'avaient pas bougé.
+        $pourquoi = ['delete'=>'compte « admin » ou le vôtre', 'setpassword'=>'ni accès Internet ni compte domaine',
+                     'addadgroup'=>'pas de compte domaine', 'setsite'=>'nom de commissariat inconnu'];
+        $flash = [$n . ' compte(s) ' . ($labels[$op] ?? 'traité·s')
+                . ($skip ? " — {$skip} ignoré·s (" . ($pourquoi[$op] ?? 'non applicable') . ')' : '') . '.', $n ? 'ok' : 'err'];
+        // Une suppression en masse ne laissait AUCUNE trace dans le journal d'audit : la page
+        // « Audit » montrait les suppressions une à une et ignorait celles de cinquante comptes.
+        audit('users.bulk.' . $op, $n . ' compte(s)' . ($arg !== '' && $op !== 'setpassword' ? ' → ' . $arg : '')
+            . ($skip ? ", {$skip} ignoré(s)" : ''));
     }
 
     // ── Import CSV en masse ─────────────────────────────────────────────────
@@ -293,6 +454,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ipg = $col[2] ?? '';
             $iad = in_array(strtolower($col[3] ?? ''), ['1','oui','yes','o','x','true'], true);
             if ($ip === '') { $errs[] = "ligne {$line} ({$iu}) : mot de passe manquant"; continue; }
+            // Un compte domaine demandé avec un mot de passe trop simple échouait APRÈS la
+            // création de l'accès portail : la ligne comptait pour un succès ET pour une
+            // erreur, et l'agent se retrouvait avec Internet mais sans ouverture de session.
+            // On écarte la ligne entière, avant la première écriture.
+            if ($iad && $dcUp && ($manque = pf_mdp_faible($ip)) !== null) {
+                $errs[] = "ligne {$line} ({$iu}) : mot de passe trop simple pour un compte domaine (il faut {$manque})";
+                continue;
+            }
             // Portail
             $existed = (bool) $db->query('SELECT 1 FROM radcheck WHERE username=' . $db->quote($iu) . ' AND attribute="Cleartext-Password"')->fetchColumn();
             $db->prepare('DELETE FROM radcheck WHERE username=? AND attribute="Cleartext-Password"')->execute([$iu]);
@@ -319,6 +488,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sum = "Import : {$created} créé·s, {$updated} mis à jour" . ($dcUp ? ", {$adOk} compte(s) domaine" : '') . '.';
         if ($errs) { $sum .= ' ⚠ ' . count($errs) . ' erreur(s) : ' . implode(' | ', array_slice($errs, 0, 5)); }
         $flash = [$sum, $errs ? 'err' : 'ok'];
+        audit('users.import', "{$created} créé(s), {$updated} mis à jour" . ($errs ? ', ' . count($errs) . ' en erreur' : ''));
     }
 
     // ── Gestion des commissariats (liste des groupes) ────────────────────────
@@ -329,14 +499,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         else {
             $db->prepare('INSERT INTO pf_commissariats (name,cpn) VALUES (?,?) ON DUPLICATE KEY UPDATE cpn=VALUES(cpn)')->execute([$name, $cpn]);
             $flash = ['Commissariat « ' . $name . ' » enregistré.', 'ok'];
+            audit('users.site_add', $name);
         }
     }
     if ($action === 'site_del') {
         $sid = (int) ($_POST['site_id'] ?? 0);
         if ($sid > 0) {
+            $nom = (string) ($sites[$sid]['name'] ?? $sid);
+            $rattaches = (int) $db->query('SELECT COUNT(*) FROM pf_user_site WHERE commissariat_id=' . $sid)->fetchColumn();
             $db->prepare('DELETE FROM pf_commissariats WHERE id=?')->execute([$sid]);
             $db->prepare('DELETE FROM pf_user_site WHERE commissariat_id=?')->execute([$sid]);
-            $flash = ['Commissariat supprimé.', 'ok'];
+            // Le nombre d'agents détachés est annoncé : la confirmation prévient qu'il y en
+            // aura, jamais combien — et un commissariat effacé par erreur détache en silence.
+            $flash = ['Commissariat « ' . $nom . ' » supprimé.'
+                    . ($rattaches ? " {$rattaches} agent(s) détaché(s) : réaffectez-les." : ''), 'ok'];
+            audit('users.site_del', $nom . ($rattaches ? " ({$rattaches} agents détachés)" : ''));
         }
     }
     // Seconde purge, APRÈS les écritures : l'affichage qui suit relit donc l'annuaire réel
@@ -437,6 +614,16 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   .u-block.disabled{opacity:.55}
   .u-block.disabled .u-chk{cursor:not-allowed}
 
+  /* Bandeau de suppression : n'apparaît que si l'enregistrement va DÉTRUIRE quelque chose.
+     Rouge, dans le bloc concerné, et portant sa propre case à cocher — c'est cette case que
+     le serveur exige (cf. pf_refus_save). Une simple fenêtre « êtes-vous sûr ? » se claque
+     par réflexe ; ici il faut viser la case, et son texte dit ce qui disparaît. */
+  .u-danger{margin-top:.7rem;padding:.6rem .75rem;border-radius:8px;
+            background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.45)}
+  .u-danger .u-chk{color:#f87171;font-weight:600}
+  .u-danger .u-chk small{color:#f87171;opacity:.85;font-weight:400}
+  .u-danger input[type=checkbox]{accent-color:#f87171}
+
   /* ── LA FICHE TENAIT SUR DEUX ÉCRANS ─────────────────────────────────────
      Cinq blocs empilés dans une fenêtre de 520 px : il fallait faire défiler
      pour atteindre le compte domaine et les rôles, et l'on enregistrait sans
@@ -464,6 +651,21 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   .r-site{background:rgba(168,139,250,.18);color:#a78bfa}
 </style>
 <?php
+// ── Groupes existants (portail et annuaire) ──────────────────────────────────
+// Lus ICI, une fois : la fiche individuelle s'en sert pour ses listes déroulantes, et la
+// barre d'action en masse pour ses suggestions. La liste AD vient du CACHE — cette page se
+// charge à chaque consultation, et interroger le contrôleur à chaque fois la rendrait lente
+// pour rien.
+$pfGroupes = [];
+try { $pfGroupes = $db->query('SELECT groupname FROM pf_groups ORDER BY groupname')->fetchAll(PDO::FETCH_COLUMN) ?: []; }
+catch (Throwable $e) { $pfGroupes = []; }
+$pfAdGroupes = [];
+if ($dcUp) {
+    try { $pfAdGroupes = ad_lines_cached('groups', 0, 'group', 'list'); } catch (Throwable $e) { $pfAdGroupes = []; }
+}
+$pfAdGroupes = array_values(array_filter((array) $pfAdGroupes, fn($g) => trim((string) $g) !== ''));
+sort($pfAdGroupes, SORT_NATURAL | SORT_FLAG_CASE);
+
 // Options du sélecteur de commissariat, groupées par CPN.
 $siteOptions = function (int $sel) use ($sites) {
     $out = '<option value="0">— Aucun —</option>';
@@ -508,8 +710,14 @@ $siteOptions = function (int $sel) use ($sites) {
         <?php if ($dcUp): ?><option value="addadgroup">Ajouter à un groupe AD</option><?php endif; ?>
         <option value="delete">Supprimer les comptes</option>
       </select>
+      <?php /* Le champ reste libre — un mot de passe s'y saisit — mais il propose les noms
+               qui existent, et le serveur refuse les autres en bloc (cf. pf_refus_masse).
+               La saisie libre non vérifiée reclassait cinquante agents dans un groupe
+               fantôme : sans quota, sans horaires, et sans un mot pour le dire. */ ?>
       <input type="text" name="bulk_arg" id="bulkarg" placeholder="groupe / mot de passe" list="sitelist">
       <datalist id="sitelist"><?php foreach ($sites as $s): ?><option value="<?= e($s['name']) ?>"><?php endforeach; ?></datalist>
+      <datalist id="pgrouplist"><?php foreach ($pfGroupes as $g): ?><option value="<?= e($g) ?>"><?php endforeach; ?></datalist>
+      <datalist id="adgrouplist"><?php foreach ($pfAdGroupes as $g): ?><option value="<?= e($g) ?>"><?php endforeach; ?></datalist>
       <button class="btn-sm" id="bulkgo">Appliquer</button>
     </div>
   </form>
@@ -544,7 +752,7 @@ $siteOptions = function (int $sel) use ($sites) {
                . ' ' . ($profiles[$name]['service'] ?? '') . ' ' . ($sites[$sid]['name'] ?? ''));
     ?>
       <tr class="urow" data-f="<?= e($rsearch) ?>" data-site="<?= $sid ?>" data-types="<?= e(implode(' ', $rtypes)) ?>">
-        <td><input type="checkbox" class="selrow" name="sel[]" form="bulkform" value="<?= e($name) ?>"<?= $name === 'admin' ? ' data-admin="1"' : '' ?>></td>
+        <td><input type="checkbox" class="selrow" name="sel[]" form="bulkform" value="<?= e($name) ?>"<?= $name === 'admin' ? ' data-admin="1"' : '' ?><?= $name === $moi ? ' data-self="1"' : '' ?>></td>
         <td>
           <div style="display:flex;align-items:center;gap:.6rem">
             <?php if (!empty($photoV[$name])): ?><img src="user-photo.php?u=<?= e($name) ?>&amp;v=<?= e($photoV[$name]) ?>" alt="" style="width:34px;height:34px;border-radius:9px;object-fit:cover;flex:none;border:1px solid var(--line)">
@@ -608,7 +816,17 @@ $siteOptions = function (int $sel) use ($sites) {
         if(type==='none') ok = (t==='');
         else ok = (' '+t+' ').indexOf(' '+type+' ')!==-1;
       }
-      r.style.display=ok?'':'none'; if(ok) shown++;
+      r.style.display=ok?'':'none';
+      if(ok){ shown++; }
+      else {
+        /* SORTIR DE L'ÉCRAN, C'EST SORTIR DE LA SÉLECTION.
+           Une ligne masquée gardait sa case cochée : on filtrait sur un commissariat, on
+           cochait « tout sélectionner », on supprimait — et l'on emportait des comptes
+           jamais affichés, choisis par un filtre précédent. Rien ne les montrait, ni avant
+           ni après : le bandeau annonçait seulement un nombre plus grand que prévu. */
+        var cb=r.querySelector('.selrow');
+        if(cb && cb.checked){ cb.checked=false; cb.dispatchEvent(new Event('change',{bubbles:true})); }
+      }
     });
     empty.style.display=shown?'none':'';
     cnt.textContent=shown+' / '+rows.length+' compte(s)';
@@ -665,17 +883,19 @@ $siteOptions = function (int $sel) use ($sites) {
       <div class="u-block">
         <label class="u-chk"><input type="checkbox" name="portal" id="f_portal">
           <span class="txt">🌐 Accès Internet <small>Connexion au portail captif</small></span></label>
+        <div class="u-danger" id="f_del_portal" hidden>
+          <label class="u-chk"><input type="checkbox" name="confirm_del_portal">
+            <span class="txt">Oui, supprimer l'accès Internet de ce compte
+            <small>Le compte disparaît du portail : mot de passe et groupe effacés, session en cours coupée.
+            Il faudra le recréer et redonner un mot de passe à l'agent.</small></span></label>
+        </div>
         <?php
         // ── LISTE DÉROULANTE, ET NON SAISIE LIBRE ────────────────────────────
         // Le champ était libre : une faute de frappe créait une appartenance à un
         // groupe INEXISTANT. L'agent perdait alors la politique attendue — quotas,
         // horaires, sortie par tunnel — et rien ne le signalait, ni à la création
         // ni ensuite. On ne peut plus désigner que des groupes qui existent.
-        $pfGroupes = [];
-        try {
-            $pfGroupes = pf_db()->query('SELECT groupname FROM pf_groups ORDER BY groupname')
-                                ->fetchAll(PDO::FETCH_COLUMN) ?: [];
-        } catch (Throwable $e) { $pfGroupes = []; }
+        // ($pfGroupes est lu plus haut, une seule fois pour la page.)
         ?>
         <label class="field" style="margin:.7rem 0 0">Groupe (quotas / horaires)
           <select name="pgroup" id="f_pgroup">
@@ -694,6 +914,14 @@ $siteOptions = function (int $sel) use ($sites) {
       <div class="u-block<?= $dcUp ? '' : ' disabled' ?>">
         <label class="u-chk"><input type="checkbox" name="ad_account" id="f_ad" <?= $dcUp ? '' : 'disabled' ?>>
           <span class="txt">🗄️ Compte domaine <small>Ouverture de session Windows (Active Directory)</small></span></label>
+        <div class="u-danger" id="f_del_ad" hidden>
+          <label class="u-chk"><input type="checkbox" name="confirm_del_ad">
+            <span class="txt">Oui, supprimer le compte Active Directory
+            <small>Ce n'est pas une désactivation : le compte est effacé de l'annuaire. Recréé plus tard, il
+            portera un identifiant de sécurité (SID) neuf — Windows ouvrira donc un profil NEUF sur les postes :
+            bureau vide, documents de l'ancien profil hors de portée de l'agent. Pour un départ temporaire,
+            posez plutôt une <strong>date de fin d'accès</strong> en haut de la fiche.</small></span></label>
+        </div>
         <label class="field" style="margin:.7rem 0 0">Groupe AD <span class="muted small">(optionnel)</span>
           <?php
           // Même raison que pour le groupe du portail : une faute de frappe créait
@@ -704,12 +932,7 @@ $siteOptions = function (int $sel) use ($sites) {
           // La liste vient du CACHE de l'annuaire (ad_lines_cached), jamais d'un
           // appel direct : cette page se charge à chaque consultation de compte, et
           // interroger le contrôleur à chaque fois la rendrait lente pour rien.
-          $pfAdGroupes = [];
-          if ($dcUp) {
-              try { $pfAdGroupes = ad_lines_cached('groups', 0, 'group', 'list'); }
-              catch (Throwable $e) { $pfAdGroupes = []; }
-          }
-          sort($pfAdGroupes, SORT_NATURAL | SORT_FLAG_CASE);
+          // ($pfAdGroupes est lu plus haut, une seule fois pour la page.)
           ?>
           <select name="adgroup" id="f_adgroup" <?= $dcUp ? '' : 'disabled' ?>>
             <!-- « Ne pas ajouter » et non « aucun » : ce champ AJOUTE une adhésion,
@@ -717,7 +940,7 @@ $siteOptions = function (int $sel) use ($sites) {
                  sort l'agent de ses groupes en enregistrant — ce qui ne se produit
                  pas, et se découvrirait trop tard. -->
             <option value="">— ne pas ajouter à un groupe —</option>
-            <?php foreach ($pfAdGroupes as $g): if (trim((string) $g) === '') { continue; } ?>
+            <?php foreach ($pfAdGroupes as $g): ?>
               <option value="<?= e($g) ?>"><?= e($g) ?></option>
             <?php endforeach; ?>
           </select>
@@ -755,8 +978,9 @@ $siteOptions = function (int $sel) use ($sites) {
         <button type="button" class="btn-sm" data-close>Annuler</button>
         <button class="btn">Enregistrer</button>
       </div>
-      <p class="muted small" style="margin:.6rem 0 0">Un mot de passe pour compte domaine ou admin console doit être
-      complexe (8+ car., majuscule, chiffre).</p>
+      <p class="muted small" style="margin:.6rem 0 0">Un mot de passe pour compte domaine ou administrateur de console
+      doit faire au moins 8 caractères, avec une majuscule et un chiffre : sinon la fiche est refusée et
+      <strong>rien n'est enregistré</strong>. La stratégie du domaine peut en exiger davantage.</p>
     </form>
   </div>
 </div>
@@ -816,19 +1040,43 @@ $siteOptions = function (int $sel) use ($sites) {
     else { pimg.removeAttribute('src'); pimg.style.display='none'; pph.style.display=''; prml.style.display='none'; }
     set('f_portal', isNew?true:d.portal);
     set('f_ad', d.ad); set('f_admin', d.admin); set('f_dom', d.dom);
+    // Ce que le compte possède DÉJÀ. La destruction se juge là-dessus, jamais sur l'état
+    // courant des cases : après un refus la fiche se rouvre AVEC la case décochée, et se
+    // fier aux cases ferait disparaître l'avertissement au moment où il sert.
+    HAD.portal = isNew ? false : !!d.had_portal;
+    HAD.ad     = isNew ? false : !!d.had_ad;
+    dangers();
     document.getElementById('f_level').value=d.role||'full';
     var lw=document.getElementById('f_level_wrap'); if(lw) lw.style.display=document.getElementById('f_admin').checked?'':'none';
   }
+  // Avertissement de suppression : visible seulement quand l'enregistrement détruirait
+  // vraiment quelque chose. Sa case est celle qu'exige le serveur (cf. pf_refus_save).
+  var HAD={portal:false, ad:false};
+  function dangers(){
+    [['f_portal','f_del_portal','portal'], ['f_ad','f_del_ad','ad']].forEach(function(t){
+      var cb=document.getElementById(t[0]), box=document.getElementById(t[1]);
+      if(!cb||!box) return;
+      var perte = HAD[t[2]] && !cb.checked;
+      box.hidden = !perte;
+      // Rendue invisible, la confirmation est aussi décochée : sans quoi elle resterait
+      // armée après un revirement, prête à valider une destruction qu'on ne demande plus.
+      if(!perte){ var c=box.querySelector('input[type=checkbox]'); if(c){ c.checked=false; } }
+    });
+  }
+  document.getElementById('f_portal').addEventListener('change', dangers);
+  document.getElementById('f_ad').addEventListener('change', dangers);
   document.getElementById('f_admin').addEventListener('change',function(){
     var lw=document.getElementById('f_level_wrap'); if(lw) lw.style.display=this.checked?'':'none';
   });
   document.getElementById('newuser').addEventListener('click',function(){
-    fill({u:'',portal:1,ad:0,pgroup:'',admin:0,dom:0,site:0,nom:'',prenom:'',service:'',photov:'',expires:'',role:'full'}, true); open();
+    fill({u:'',portal:1,ad:0,pgroup:'',admin:0,dom:0,site:0,nom:'',prenom:'',service:'',photov:'',expires:'',role:'full',
+          had_portal:0,had_ad:0}, true); open();
     setTimeout(function(){uName.focus();},60);
   });
   [].forEach.call(document.querySelectorAll('.edit-user'),function(b){
     b.addEventListener('click',function(){
       fill({u:b.dataset.u, portal:b.dataset.portal==='1', ad:b.dataset.ad==='1',
+            had_portal:b.dataset.portal==='1', had_ad:b.dataset.ad==='1',
             pgroup:b.dataset.pgroup, admin:b.dataset.admin==='1', dom:b.dataset.dom==='1', site:b.dataset.site,
             nom:b.dataset.nom, prenom:b.dataset.prenom, service:b.dataset.service, photov:b.dataset.photov, expires:b.dataset.expiry, role:b.dataset.role}, false);
       open();
@@ -854,7 +1102,11 @@ $siteOptions = function (int $sel) use ($sites) {
   }
 
   <?php if ($openModal): ?>
+  <?php /* « had_portal » / « had_ad » décrivent l'ÉTAT EN BASE, pas les cases soumises :
+           après un refus, la fiche se rouvre avec la case décochée, et c'est justement là
+           que l'avertissement de suppression doit reparaître. */ ?>
   fill(<?= json_encode(['u'=>$edit['username'],'portal'=>$edit['portal'],'ad'=>$edit['ad'],
+        'had_portal'=>isset($portalG[$edit['username']]), 'had_ad'=>isset($adUsers[$edit['username']]),
         'pgroup'=>$edit['pgroup'],'admin'=>$edit['admin'],'dom'=>$edit['domadmin'],'site'=>$edit['site'],
         'nom'=>$edit['nom'],'prenom'=>$edit['prenom'],'service'=>$edit['service'],
         'photov'=>($photoV[$edit['username']] ?? ''), 'expires'=>($expiry[$edit['username']] ?? ''),
@@ -914,8 +1166,13 @@ $siteOptions = function (int $sel) use ($sites) {
       <br><code>identifiant ; motdepasse ; groupe_portail ; domaine(oui/non) ; commissariat ; nom ; prénom ; service</code>
       <br>L'identifiant est un <strong>matricule à 7 chiffres</strong> (ex. <code>0110480</code>) ou <code>admin-0110480</code>.
       Les colonnes 3 à 8 sont facultatives (le commissariat est reconnu par son nom). Une ligne commençant par <code>#</code> ou l'en-tête « identifiant » est ignorée.
-      Les comptes existants sont mis à jour (mot de passe + groupe).</p>
-    <textarea name="csv" rows="6" placeholder="dupont.jean ; Motdepasse1 ; default ; oui&#10;martin.claire ; Secret2024! ; cadres ; oui&#10;stagiaire.ete ; Passage01 ; invites ; non"
+      Les comptes existants sont mis à jour (mot de passe + groupe).
+      <br>Une ligne avec <code>domaine = oui</code> exige un mot de passe d'au moins 8 caractères, avec majuscule et chiffre :
+      sinon la ligne est <strong>écartée entière</strong> et signalée — elle ne crée pas non plus l'accès Internet.</p>
+    <!-- L'exemple portait des identifiants « dupont.jean », hérités d'avant la règle du
+         matricule : recopié tel quel, il était rejeté ligne par ligne pour identifiant
+         invalide. Un exemple faux dans le mode d'emploi coûte un appel à l'assistance. -->
+    <textarea name="csv" rows="6" placeholder="0110480 ; Motdepasse1 ; default ; oui ; Palaiseau ; DUPONT ; Jean ; Police secours&#10;0224891 ; Secret2024A ; cadres ; oui ; Massy ; MARTIN ; Claire ; PJ&#10;admin-0110480 ; Passage01X ; ; non"
       style="width:100%;padding:.7rem;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;font-family:monospace;font-size:.85rem"></textarea>
     <div style="display:flex;align-items:center;gap:1rem;margin-top:.7rem;flex-wrap:wrap">
       <label class="muted small">…ou fichier .csv : <input type="file" name="csvfile" accept=".csv,text/csv,text/plain"></label>
@@ -934,24 +1191,54 @@ $siteOptions = function (int $sel) use ($sites) {
   var bar=document.getElementById('bulkbar'), cnt=document.getElementById('selcount'),
       all=document.getElementById('selall'), rows=[].slice.call(document.querySelectorAll('.selrow')),
       op=document.getElementById('bulkop'), arg=document.getElementById('bulkarg');
+  // Une ligne masquée par le filtre n'est pas sélectionnable : « tout sélectionner » ne
+  // portait pas sur ce qui est affiché mais sur la table entière, et l'on validait alors
+  // une action en masse sur des comptes hors de vue.
+  function visibles(){
+    return rows.filter(function(r){
+      var tr=r.closest('tr');
+      return tr && tr.style.display!=='none';
+    });
+  }
   function refresh(){
-    var sel=rows.filter(function(r){return r.checked;});
+    var sel=rows.filter(function(r){return r.checked;}), vis=visibles();
     cnt.textContent=sel.length;
     bar.classList.toggle('show', sel.length>0);
+    // La case d'en-tête reflète l'état réel : cochée seulement si TOUT le visible l'est,
+    // grisée en position intermédiaire. Sans cela elle restait cochée après un filtrage
+    // qui venait pourtant de vider la sélection.
+    all.checked = vis.length>0 && sel.length>=vis.length;
+    all.indeterminate = sel.length>0 && sel.length<vis.length;
   }
   function argPlaceholder(){
     var v=op.value;
     arg.style.display=(v==='delete')?'none':'';
-    arg.placeholder=(v==='setgroup')?'nom du groupe portail':(v==='setpassword')?'nouveau mot de passe':(v==='addadgroup')?'nom du groupe AD':(v==='setsite')?'nom du commissariat (vide = retirer)':'';
-    if(v==='setsite'){arg.setAttribute('list','sitelist');}else{arg.removeAttribute('list');}
+    arg.placeholder=(v==='setgroup')?'nom du groupe portail':(v==='setpassword')?'nouveau mot de passe (8+ car., majuscule, chiffre)':(v==='addadgroup')?'nom du groupe AD':(v==='setsite')?'nom du commissariat (vide = retirer)':'';
+    // Chaque opération propose SES noms existants ; sans liste, la saisie libre inventait
+    // des groupes que rien ne rejetait.
+    var listes={setsite:'sitelist', setgroup:'pgrouplist', addadgroup:'adgrouplist'};
+    if(listes[v]){arg.setAttribute('list',listes[v]);}else{arg.removeAttribute('list');}
   }
-  all.addEventListener('change',function(){rows.forEach(function(r){r.checked=all.checked;});refresh();});
+  all.addEventListener('change',function(){var c=all.checked;visibles().forEach(function(r){r.checked=c;});refresh();});
   rows.forEach(function(r){r.addEventListener('change',refresh);});
   op.addEventListener('change',argPlaceholder);
   document.getElementById('bulkgo').addEventListener('click',function(e){
     var sel=rows.filter(function(r){return r.checked;});
     if(!sel.length){e.preventDefault();return;}
-    if(op.value==='delete' && !confirm('Supprimer '+sel.length+' compte(s) (portail + domaine + droits) ?')){e.preventDefault();return;}
+    if(op.value==='delete'){
+      /* La confirmation annonçait un NOMBRE. Un nombre ne se vérifie pas : « supprimer 23
+         compte(s) » se valide aussi vite qu'on l'a lu, et l'erreur ne se découvre qu'au
+         moment où un agent ne peut plus ouvrir sa session. On énumère donc les matricules,
+         et l'on nomme ceux que le serveur refusera de toucher. */
+      var noms=sel.map(function(r){return r.value;}),
+          gardes=sel.filter(function(r){return r.dataset.admin||r.dataset.self;})
+                    .map(function(r){return r.value;}),
+          apercu=noms.slice(0,12).join(', ')+(noms.length>12?' … (+'+(noms.length-12)+')':''),
+          txt='Supprimer '+noms.length+' compte(s) — portail, domaine et droits :\n\n'+apercu+'\n\n'
+             +'Le compte domaine est EFFACÉ de l\'annuaire : un profil Windows neuf sera créé si vous le recréez.';
+      if(gardes.length){ txt+='\n\nIgnoré(s) : '+gardes.join(', ')+' (compte « admin » ou le vôtre).'; }
+      if(!confirm(txt)){e.preventDefault();return;}
+    }
     if((op.value==='setgroup'||op.value==='setpassword'||op.value==='addadgroup') && !arg.value.trim()){
       e.preventDefault();arg.focus();return;
     }
