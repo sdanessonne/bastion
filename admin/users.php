@@ -436,6 +436,27 @@ if ($flash) { pf_flash($flash[0], $flash[1]); }
   .u-chk .txt small{display:block;color:var(--muted);font-size:.76rem;margin-top:.1rem;font-weight:400}
   .u-block.disabled{opacity:.55}
   .u-block.disabled .u-chk{cursor:not-allowed}
+
+  /* ── LA FICHE TENAIT SUR DEUX ÉCRANS ─────────────────────────────────────
+     Cinq blocs empilés dans une fenêtre de 520 px : il fallait faire défiler
+     pour atteindre le compte domaine et les rôles, et l'on enregistrait sans
+     avoir vu le bas. Sur un écran large, la place existe — on l'utilise.
+
+     Mise en COLONNES et non en onglets : un onglet masque des champs, et l'on
+     valide alors une fiche dont on n'a pas vu la moitié. Ici tout reste visible
+     et tout reste soumis ; c'est une mise en page, pas un découpage.
+
+     « break-inside:avoid » est indispensable : sans lui un bloc se couperait au
+     milieu, la case à cocher se retrouvant dans une colonne et son champ dans
+     l'autre. */
+  @media (min-width:1000px){
+    #usermodal .modal{max-width:940px}
+    #usermodal .u-form{column-count:2;column-gap:1.1rem}
+    #usermodal .u-form > *{break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid}
+    /* Les champs simples d'en-tête (identifiant, mot de passe, date) gardent
+       leur marge basse : en colonnes, elle sert de séparation verticale. */
+    #usermodal .u-form label.field{margin-bottom:.85rem}
+  }
   .roles .u-chk+.u-chk{margin-top:.7rem}
   .rbadge{display:inline-block;font-size:.68rem;padding:.1rem .5rem;border-radius:20px;margin-left:.25rem}
   .r-portal{background:rgba(56,189,248,.15);color:#38bdf8} .r-ad{background:rgba(74,222,128,.15);color:#4ade80}
