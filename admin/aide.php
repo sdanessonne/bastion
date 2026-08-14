@@ -452,6 +452,16 @@ $GROUPS = [
         <li><strong>Désactiver</strong> un logiciel ne le retire pas des postes où il est déjà posé — il le
         <strong>désinstalle</strong> à la prochaine application de la stratégie.</li>
       </ul>
+      <p><strong>Quand un logiciel ajouté arrive-t-il sur les postes ?</strong> Au <strong>démarrage</strong> du
+      poste, et désormais aussi à la <strong>prochaine ouverture de session</strong> — mais seulement si la liste
+      déployée a changé depuis le dernier passage. La stratégie porte une empreinte de ce qui est déployé ; le
+      poste retient celle qu\'il a appliquée, et compare. Si rien n\'a bougé, il ressort en quelques millisecondes
+      sans rien télécharger.<br>
+      <span class="muted">Ce détour n\'est pas de la coquetterie : un rejeu <em>inconditionnel</em> avait été
+      essayé, puis retiré le 6 août 2026 parce qu\'il rendait les sessions très lentes — une seule application en
+      échec faisait retélécharger toutes les autres à chaque connexion. Conséquence assumée du réglage actuel :
+      une application qui échoue est retentée au prochain <em>démarrage</em>, pas à chaque session.</span></p>
+
       <p><strong>Ce que voit l\'agent</strong> — pendant une installation, une fenêtre s\'affiche dans sa session avec le
       nom du logiciel en cours et une barre de progression. Elle ne s\'affiche <em>que</em> s\'il y a réellement quelque
       chose à installer, et se ferme seule à la fin. Sur un poste déjà à jour : rien. C\'est normal.</p>

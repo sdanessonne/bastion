@@ -10,7 +10,7 @@ Usage : gpo-apps.py <{GUID}> <apps.json>
 apps.json : {"gw":"192.168.182.1","apps":[
   {"marker":"7zip","url":"http://.../apps/7zip.msi","args":"/qn","msi":true}, ...]}
 """
-import sys, os, json, subprocess
+import sys, os, json, hashlib, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import psfile
 
@@ -31,12 +31,35 @@ def copy_ntacl(src, dst):
     except Exception:
         pass
 
-def ps1(apps, retraits=()):
+def ps1(apps, retraits=(), generation=''):
     """Construit le script PowerShell d'installation."""
     lines = [
+        "param([switch]$Session)",
         "$ErrorActionPreference = 'SilentlyContinue'",
         "$base = 'HKLM:\\Software\\Bastion\\Apps'",
         "New-Item -Path $base -Force | Out-Null",
+        "",
+        "# ── REJEU A L'OUVERTURE DE SESSION, MAIS SEULEMENT SI QUELQUE CHOSE A CHANGE ──",
+        "# Historique de ce garde-fou. Le rejeu a chaque ouverture de session a d abord",
+        "# ete ajoute (pour qu une application deployee le jour meme arrive sans attendre",
+        "# un redemarrage), puis RETIRE le 2026-08-06 : il rendait les sessions tres",
+        "# lentes, parce qu il retentait TOUTES les applications dont le marqueur manque",
+        "# — donc, si une seule echouait, il retelechargeait tout le reste a chaque",
+        "# connexion pendant que l agent essayait de travailler.",
+        "#",
+        "# Le defaut n etait pas le rejeu : c etait qu il etait INCONDITIONNEL. La GPO",
+        "# porte desormais une GENERATION — l empreinte de la liste deployee. Le poste",
+        "# retient celle qu il a appliquee. A l ouverture de session on compare : si rien",
+        "# n a change, on sort en quelques millisecondes sans rien telecharger.",
+        "#",
+        "# Consequence assumee : une application qui ECHOUE ne sera pas retentee a chaque",
+        "# session (la generation n a pas bouge) mais au prochain demarrage. C est",
+        "# exactement ce qu on veut — c est ce cas qui ralentissait les sessions.",
+        "$GENERATION = '" + str(generation).replace("'", "") + "'",
+        "if ($Session) {",
+        "  $vu = (Get-ItemProperty -Path $base -Name 'Generation' -ErrorAction SilentlyContinue).Generation",
+        "  if ($vu -eq $GENERATION) { exit }",
+        "}",
         "$apps = @(",
     ]
     # La VIRGULE ne suit JAMAIS le dernier élément : « @( …, ) » est une erreur de syntaxe
@@ -326,15 +349,30 @@ def ps1(apps, retraits=()):
         "'@",
         "try { Set-Content -Path $vue -Value $src -Encoding UTF8 -ErrorAction Stop } catch { }",
         "",
+        "# La generation appliquee n est enregistree QU ICI, en fin de passage : si le",
+        "# script est interrompu (arret du poste en pleine installation), elle reste a",
+        "# l ancienne valeur et le travail reprendra a la session suivante. L ecrire plus",
+        "# tot ferait croire le poste a jour alors qu il ne l est pas.",
+        "try { Set-ItemProperty -Path $base -Name 'Generation' -Value $GENERATION -ErrorAction Stop }",
+        "catch { Note 'ECHEC enregistrement de la generation : le rejeu se refera a chaque session' }",
+        "",
         "try {",
-        "  # L'installation reste au DEMARRAGE, et seulement la.",
-        "  #",
-        "  # Une tache rejouant ce script a CHAQUE ouverture de session a ete essayee le",
-        "  # 2026-08-06 : elle rendait les sessions tres lentes. Le script retente en effet",
-        "  # toutes les applications dont le marqueur manque — donc, si une seule echoue,",
-        "  # il retelecharge et relance tout le reste a chaque connexion, pendant que",
-        "  # l'agent essaie de travailler. Le gain (une application deployee le jour meme)",
-        "  # ne valait pas ce prix. On revient au demarrage seul.",
+        "  # 1. L'INSTALLATION, rejouee a l'ouverture de session sous l'identite SYSTEM.",
+        "  #    L'agent n'a pas les droits d'installer ; c'est donc une tache SYSTEM, et",
+        "  #    elle sort immediatement si la generation n'a pas change (voir en tete).",
+        "  # Le script est RECOPIE en local avant d'etre planifie. Le pointer sur le",
+        "  # SYSVOL rendrait la tache dependante du reseau au moment precis de",
+        "  # l'ouverture de session : un partage momentanement injoignable ferait",
+        "  # echouer la tache sans que rien ne l'explique.",
+        "  $local = Join-Path $dir 'apps-installe.ps1'",
+        "  Copy-Item -LiteralPath $PSCommandPath -Destination $local -Force -ErrorAction SilentlyContinue",
+        "  $a1 = New-ScheduledTaskAction -Execute 'powershell.exe' `",
+        "        -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"' + $local + '\" -Session')",
+        "  $t1 = New-ScheduledTaskTrigger -AtLogOn",
+        "  $p1 = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest",
+        "  $s1 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 60) -MultipleInstances IgnoreNew",
+        "  Register-ScheduledTask -TaskName 'Bastion - installation des logiciels' -Action $a1 -Trigger $t1 `",
+        "        -Principal $p1 -Settings $s1 -Force -ErrorAction Stop | Out-Null",
         "  # 2. L'AFFICHAGE, dans la session de l'agent. « Groupe Utilisateurs » : la tache",
         "  #    se declenche pour celui qui ouvre la session, quel qu'il soit.",
         "  $a2 = New-ScheduledTaskAction -Execute 'powershell.exe' `",
@@ -364,6 +402,16 @@ def main():
     # Applications décochées : à retirer des postes où Bastion les avait installées.
     retraits = cfg.get('retraits', [])
 
+    # EMPREINTE DE CE QUI EST DEPLOYE — elle décide du rejeu à l'ouverture de session.
+    # Elle porte sur ce qui change l'INSTALLATION (identifiant, adresse, arguments,
+    # type de paquet) et sur les retraits, mais PAS sur le libellé : renommer une
+    # application dans la console ne doit pas provoquer une réinstallation du parc.
+    empreinte = json.dumps(
+        [[a.get('marker'), a.get('url'), a.get('args'), bool(a.get('msi'))] for a in apps]
+        + [['-', r.get('marker')] for r in retraits],
+        sort_keys=True, ensure_ascii=False)
+    generation = hashlib.sha256(empreinte.encode('utf-8')).hexdigest()[:16]
+
     realm = subprocess.run(['testparm', '-s', '--parameter-name=realm'], capture_output=True, text=True).stdout.strip().lower()
     base_dn = ','.join('DC=' + p for p in realm.split('.'))
     sysvol = '/var/lib/samba/sysvol/%s/Policies/%s' % (realm, guid)
@@ -384,7 +432,7 @@ def main():
     # 1) PowerShell d'installation. Écrit par psfile : marque d'ordre d'octets UTF-8 +
     #    caractères sûrs. Sans cela, un simple tiret cadratin dans un message rendait
     #    le fichier inanalysable par PowerShell 5.1 (voir services/scripts/psfile.py).
-    p_ps1 = psfile.ecrire_ps1(os.path.join(startup, 'bastion-apps.ps1'), ps1(apps, retraits))
+    p_ps1 = psfile.ecrire_ps1(os.path.join(startup, 'bastion-apps.ps1'), ps1(apps, retraits, generation))
     # 2) Lanceur .cmd (contourne la politique d'exécution PowerShell) : ASCII, sans marque.
     p_cmd = psfile.ecrire_cmd(os.path.join(startup, 'bastion-apps.cmd'),
                               # « start /b » : on lance SANS attendre.
