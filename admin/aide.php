@@ -394,8 +394,8 @@ $GROUPS = [
       <p><strong>Retirer un poste du domaine</strong> : cliquez sur le poste, puis « Retirer du domaine ». Cela
       efface son objet de l\'annuaire — à faire quand un poste part au rebut ou va être réinstallé. Retirer un poste
       <em>depuis le poste lui-même</em> (Windows) ne le supprime pas de l\'annuaire : il y resterait affiché
-      indéfiniment. Le <strong>contrôleur de domaine</strong> (le serveur) apparaît dans la liste mais ne propose pas
-      ce bouton : on n\'efface pas le serveur de son propre annuaire.</p>
+      indéfiniment. Le <strong>contrôleur de domaine</strong> (le serveur) ne figure pas dans cette liste : ce n\'est
+      pas un poste du parc mais la passerelle elle-même, et sa version Samba se lit dans <em>Système</em>.</p>
       <p class="tip">Si le poste est <strong>chiffré par BitLocker</strong>, ses <strong>clés de récupération</strong>
       sont séquestrées dans l\'annuaire, <em>sous</em> l\'objet du poste. Les retirer du domaine les efface aussi, et
       elles deviennent irrécupérables : la confirmation le rappelle et indique combien il y en a. Notez-les avant si
