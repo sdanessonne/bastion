@@ -453,22 +453,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ip  = $col[1] ?? '';
             $ipg = $col[2] ?? '';
             $iad = in_array(strtolower($col[3] ?? ''), ['1','oui','yes','o','x','true'], true);
-            if ($ip === '') { $errs[] = "ligne {$line} ({$iu}) : mot de passe manquant"; continue; }
+            $existed  = (bool) $db->query('SELECT 1 FROM radcheck WHERE username=' . $db->quote($iu) . ' AND attribute="Cleartext-Password"')->fetchColumn();
+            $adExists = $dcUp && in_array($iu, $adList, true);
+
+            // ── MOT DE PASSE ABSENT : toléré pour un compte DÉJÀ existant ─────────
+            // L'export ne contient jamais les mots de passe (les promener en clair serait une
+            // fuite). Pour qu'un ré-import ne vide pas pour autant les comptes, un mot de passe
+            // absent met simplement à jour identité, groupe et commissariat d'un compte qui
+            // existe — sans y toucher. Il reste refusé pour un compte NEUF : on ne crée pas un
+            // accès sans mot de passe.
+            if ($ip === '' && !$existed && !$adExists) {
+                $errs[] = "ligne {$line} ({$iu}) : mot de passe manquant (compte nouveau)";
+                continue;
+            }
             // Un compte domaine demandé avec un mot de passe trop simple échouait APRÈS la
             // création de l'accès portail : la ligne comptait pour un succès ET pour une
             // erreur, et l'agent se retrouvait avec Internet mais sans ouverture de session.
             // On écarte la ligne entière, avant la première écriture.
-            if ($iad && $dcUp && ($manque = pf_mdp_faible($ip)) !== null) {
+            if ($ip !== '' && $iad && $dcUp && ($manque = pf_mdp_faible($ip)) !== null) {
                 $errs[] = "ligne {$line} ({$iu}) : mot de passe trop simple pour un compte domaine (il faut {$manque})";
                 continue;
             }
-            // Portail
-            $existed = (bool) $db->query('SELECT 1 FROM radcheck WHERE username=' . $db->quote($iu) . ' AND attribute="Cleartext-Password"')->fetchColumn();
-            $db->prepare('DELETE FROM radcheck WHERE username=? AND attribute="Cleartext-Password"')->execute([$iu]);
-            $db->prepare('INSERT INTO radcheck (username,attribute,op,value) VALUES (?,"Cleartext-Password",":=",?)')->execute([$iu, $ip]);
-            $db->prepare('DELETE FROM radusergroup WHERE username=?')->execute([$iu]);
-            if ($ipg !== '') { $db->prepare('INSERT INTO radusergroup (username,groupname,priority) VALUES (?,?,1)')->execute([$iu, $ipg]); }
-            $existed ? $updated++ : $created++;
+            // Portail : mot de passe réécrit seulement s'il est fourni.
+            if ($ip !== '') {
+                $db->prepare('DELETE FROM radcheck WHERE username=? AND attribute="Cleartext-Password"')->execute([$iu]);
+                $db->prepare('INSERT INTO radcheck (username,attribute,op,value) VALUES (?,"Cleartext-Password",":=",?)')->execute([$iu, $ip]);
+            }
+            // Groupe portail : uniquement si le compte a (ou vient d'obtenir) un accès portail —
+            // on ne fabrique pas une appartenance de groupe pour un compte qui n'a pas de portail.
+            if ($ip !== '' || $existed) {
+                $db->prepare('DELETE FROM radusergroup WHERE username=?')->execute([$iu]);
+                if ($ipg !== '') { $db->prepare('INSERT INTO radusergroup (username,groupname,priority) VALUES (?,?,1)')->execute([$iu, $ipg]); }
+            }
+            ($existed || $adExists) ? $updated++ : $created++;
             // Commissariat (colonne 5 facultative, par nom)
             $isite = trim($col[4] ?? '');
             if ($isite !== '') { pf_set_site($db, $sites, $iu, (int) ($siteByName[mb_strtolower($isite)] ?? 0)); }
@@ -477,11 +494,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($inom !== '' || $iprenom !== '' || $iservice !== '') { pf_set_profile($db, $iu, $inom, $iprenom, $iservice); }
             // Domaine
             if ($iad && $dcUp) {
-                if (in_array($iu, $adList, true)) { ad('user', 'setpassword', $iu, $ip); $adOk++; }
-                else {
+                if ($adExists) {
+                    if ($ip !== '') { ad('user', 'setpassword', $iu, $ip); }
+                    $adOk++;
+                } elseif ($ip !== '') {
                     $out = ad('user', 'create', $iu, $ip);
                     if (preg_match('/ERROR|Failed|password/i', $out)) { $errs[] = "ligne {$line} ({$iu}) AD : " . trim($out); }
                     else { $adOk++; $adList[] = $iu; }
+                } else {
+                    // « domaine = oui » sur une ligne sans mot de passe et sans compte AD : on ne
+                    // peut pas créer le compte domaine, on le dit plutôt que de l'ignorer.
+                    $errs[] = "ligne {$line} ({$iu}) : compte domaine à créer mais mot de passe absent";
                 }
             }
         }
@@ -598,6 +621,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
     $openModal = true;
 }
 
+// ── Export CSV du parc de comptes ────────────────────────────────────────────
+// Symétrique de l'import : mêmes colonnes, même séparateur. Sert à tenir un état des
+// comptes (dossier, contrôle hiérarchique) ou à repartir d'une base existante.
+// LE MOT DE PASSE N'EST JAMAIS EXPORTÉ — la colonne reste vide. Un fichier de comptes qui
+// promène les mots de passe en clair est une fuite qui se recopie de machine en machine ;
+// et l'import sait désormais mettre à jour un compte existant sans mot de passe, donc le
+// fichier reste ré-importable tel quel (il ne recrée pas les comptes neufs, faute de secret).
+// Émis AVANT tout HTML (pf_header n'a pas encore été appelé), puis exit.
+if (isset($_GET['export'])) {
+    audit('users.export', count($all) . ' compte(s)');
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="comptes-bastion-' . date('Y-m-d') . '.csv"');
+    $fo = fopen('php://output', 'w');
+    fwrite($fo, "\xEF\xBB\xBF");   // BOM UTF-8 : Excel affiche alors les accents correctement
+    // Séparateur « ; » (Excel FR), guillemet « " », et ÉCHAPPEMENT VIDE : les trois arguments
+    // sont fournis exprès. PHP 8.4 émet sinon un « Deprecated: the $escape parameter must be
+    // provided » — un avertissement qui, ici, s'écrirait EN PLEIN MILIEU du CSV téléchargé si
+    // display_errors est actif. L'échappement vide donne en prime un CSV conforme (RFC 4180 :
+    // les guillemets internes sont doublés, pas préfixés d'antislash).
+    $csv = function ($row) use ($fo) { fputcsv($fo, $row, ';', '"', ''); };
+    $csv(['identifiant', 'motdepasse', 'groupe_portail', 'domaine', 'commissariat', 'nom', 'prenom', 'service']);
+    foreach ($all as $name) {
+        $sid = $userSite[$name] ?? 0;
+        $csv([
+            $name,
+            '',                                              // jamais le mot de passe
+            $portalG[$name] ?? '',
+            isset($adUsers[$name]) ? 'oui' : 'non',
+            ($sid && isset($sites[$sid])) ? $sites[$sid]['name'] : '',
+            $profiles[$name]['nom'] ?? '',
+            $profiles[$name]['prenom'] ?? '',
+            $profiles[$name]['service'] ?? '',
+        ]);
+    }
+    fclose($fo);
+    exit;
+}
+
 pf_header('Utilisateurs & droits', 'users.php');
 if ($flash) { pf_flash($flash[0], $flash[1]); }
 ?>
@@ -694,6 +755,9 @@ $siteOptions = function (int $sel) use ($sites) {
           <button class="btn-sm">🪪 Publier les identités sur les postes</button>
         </form>
       <?php endif; ?>
+      <?php /* Lien direct (GET) et non bouton JS : l'export est une simple lecture, et un
+               lien laisse le navigateur nommer et enregistrer le fichier normalement. */ ?>
+      <a class="btn-sm" href="?export=1" title="Télécharger tous les comptes au format CSV (sans les mots de passe)">⬇️ Exporter (CSV)</a>
       <button type="button" class="btn-sm" id="managesites">🏢 Commissariats</button>
       <button type="button" class="btn" id="newuser">➕ Nouvel utilisateur</button>
     </div>
@@ -739,7 +803,13 @@ $siteOptions = function (int $sel) use ($sites) {
   </div>
   <div class="table-wrap">
   <table class="grid-table">
-    <thead><tr><th style="width:1%"><input type="checkbox" id="selall" title="Tout sélectionner"></th><th>Identifiant</th><th>Accès / droits</th><th>Commissariat</th><th>État</th><th></th></tr></thead>
+    <?php /* Colonnes triables : l'en-tête porte « data-sort » (la clé de tri lue sur chaque
+             ligne). Un clic trie, un second inverse. « Accès / droits » n'est pas triable —
+             une ligne peut cumuler plusieurs badges, un ordre n'aurait pas de sens. */ ?>
+    <thead><tr><th style="width:1%"><input type="checkbox" id="selall" title="Tout sélectionner"></th>
+      <th class="th-sort" data-sort="id">Identifiant</th><th>Accès / droits</th>
+      <th class="th-sort" data-sort="sitename">Commissariat</th>
+      <th class="th-sort" data-sort="online">État</th><th></th></tr></thead>
     <tbody>
     <?php if (!$all): ?><tr><td colspan="6" class="muted center">Aucun compte.</td></tr>
     <?php else: foreach ($all as $name): $sid = $userSite[$name] ?? 0;
@@ -751,7 +821,8 @@ $siteOptions = function (int $sel) use ($sites) {
       $rsearch = mb_strtolower($name . ' ' . ($profiles[$name]['nom'] ?? '') . ' ' . ($profiles[$name]['prenom'] ?? '')
                . ' ' . ($profiles[$name]['service'] ?? '') . ' ' . ($sites[$sid]['name'] ?? ''));
     ?>
-      <tr class="urow" data-f="<?= e($rsearch) ?>" data-site="<?= $sid ?>" data-types="<?= e(implode(' ', $rtypes)) ?>">
+      <tr class="urow" data-f="<?= e($rsearch) ?>" data-site="<?= $sid ?>" data-types="<?= e(implode(' ', $rtypes)) ?>"
+          data-id="<?= e(mb_strtolower($name)) ?>" data-sitename="<?= e(mb_strtolower($sites[$sid]['name'] ?? '')) ?>" data-online="<?= !empty($online[$name]) ? 1 : 0 ?>">
         <td><input type="checkbox" class="selrow" name="sel[]" form="bulkform" value="<?= e($name) ?>"<?= $name === 'admin' ? ' data-admin="1"' : '' ?><?= $name === $moi ? ' data-self="1"' : '' ?>></td>
         <td>
           <div style="display:flex;align-items:center;gap:.6rem">
@@ -798,6 +869,13 @@ $siteOptions = function (int $sel) use ($sites) {
   ouverture de session Windows · <span style="color:#eab308">Admin console</span> = gère Bastion ·
   <span style="color:#f87171">Admin domaine</span> = gère l'Active Directory.</p>
 </section>
+<style>
+  .th-sort{cursor:pointer;user-select:none;white-space:nowrap}
+  .th-sort:hover{color:var(--text)}
+  .th-sort::after{content:"↕";opacity:.35;margin-left:.3rem;font-size:.8em}
+  .th-sort.asc::after{content:"↑";opacity:.9}
+  .th-sort.desc::after{content:"↓";opacity:.9}
+</style>
 <script>
 (function(){
   var q=document.getElementById('filt-q'), fs=document.getElementById('filt-site'),
@@ -805,6 +883,16 @@ $siteOptions = function (int $sel) use ($sites) {
       empty=document.getElementById('filt-empty'),
       rows=[].slice.call(document.querySelectorAll('tr.urow'));
   if(!q) return;
+
+  // Les filtres SURVIVENT à un enregistrement. Chaque action (créer, modifier, supprimer)
+  // recharge la page en POST ; sans mémoire, on retrouvait la liste entière et il fallait
+  // refiltrer à la main pour revenir là où l'on était. On les garde dans sessionStorage
+  // (le temps de l'onglet seulement — ce ne sont pas des préférences durables).
+  var KEY='pf_users_filt';
+  try{ var s=JSON.parse(sessionStorage.getItem(KEY)||'{}');
+       if(s.q!=null) q.value=s.q; if(s.site!=null) fs.value=s.site; if(s.type!=null) ft.value=s.type; }catch(e){}
+  function remember(){ try{ sessionStorage.setItem(KEY, JSON.stringify({q:q.value,site:fs.value,type:ft.value})); }catch(e){} }
+
   function apply(){
     var term=q.value.trim().toLowerCase(), site=fs.value, type=ft.value, shown=0;
     rows.forEach(function(r){
@@ -830,8 +918,33 @@ $siteOptions = function (int $sel) use ($sites) {
     });
     empty.style.display=shown?'none':'';
     cnt.textContent=shown+' / '+rows.length+' compte(s)';
+    remember();
   }
   q.addEventListener('input',apply); fs.addEventListener('change',apply); ft.addEventListener('change',apply);
+
+  // ── Tri des colonnes ─────────────────────────────────────────────────────
+  // Réordonne les lignes DANS le tableau (pas une copie) : le filtrage, la sélection et les
+  // formulaires par ligne continuent de fonctionner sur les mêmes éléments. Comparaison
+  // « naturelle » pour que 0110480 se range avant 0224891 sans surprise.
+  var tbody=rows.length?rows[0].parentNode:null, coll;
+  try{ coll=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'}); }catch(e){ coll=null; }
+  function cmp(a,b){ return coll?coll.compare(a,b):(a<b?-1:a>b?1:0); }
+  function sortBy(th){
+    if(!tbody) return;   // aucun compte : rien à trier
+    var keCol=th.getAttribute('data-sort'), dir=th.classList.contains('asc')?'desc':'asc';
+    [].forEach.call(document.querySelectorAll('.th-sort'),function(h){h.classList.remove('asc','desc');});
+    th.classList.add(dir);
+    var sorted=rows.slice().sort(function(x,y){
+      var vx=x.dataset[keCol]||'', vy=y.dataset[keCol]||'', r=cmp(vx,vy);
+      return dir==='asc'?r:-r;
+    });
+    sorted.forEach(function(r){ tbody.appendChild(r); });   // filt-empty reste en dernier ci-dessous
+    if(empty) tbody.appendChild(empty);
+  }
+  [].forEach.call(document.querySelectorAll('.th-sort'),function(th){
+    th.addEventListener('click',function(){ sortBy(th); });
+  });
+
   apply();
 })();
 </script>
@@ -1167,6 +1280,10 @@ $siteOptions = function (int $sel) use ($sites) {
       <br>L'identifiant est un <strong>matricule à 7 chiffres</strong> (ex. <code>0110480</code>) ou <code>admin-0110480</code>.
       Les colonnes 3 à 8 sont facultatives (le commissariat est reconnu par son nom). Une ligne commençant par <code>#</code> ou l'en-tête « identifiant » est ignorée.
       Les comptes existants sont mis à jour (mot de passe + groupe).
+      <br><strong>Mot de passe vide</strong> : accepté pour un compte qui <em>existe déjà</em> — on met alors à jour son
+      identité, son groupe et son commissariat sans toucher au mot de passe. C'est ce qui rend le fichier d'<strong>export</strong>
+      (⬇️ en haut) ré-importable tel quel : il ne contient jamais les mots de passe. Pour un compte <em>neuf</em>, le mot
+      de passe reste obligatoire.
       <br>Une ligne avec <code>domaine = oui</code> exige un mot de passe d'au moins 8 caractères, avec majuscule et chiffre :
       sinon la ligne est <strong>écartée entière</strong> et signalée — elle ne crée pas non plus l'accès Internet.</p>
     <!-- L'exemple portait des identifiants « dupont.jean », hérités d'avant la règle du

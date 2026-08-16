@@ -301,6 +301,14 @@ $GROUPS = [
         <li><strong>Comptes ignorés</strong> : une action groupée annonce combien de comptes elle a écartés
         <em>et pourquoi</em> (pas de compte de domaine, ni accès Internet ni domaine, commissariat inconnu…).
         Toutes les actions groupées sont inscrites au <strong>journal d\'audit</strong>.</li>
+        <li><strong>Export CSV</strong> (bouton ⬇️) : télécharge tous les comptes — identifiant, groupe, domaine,
+        commissariat, identité — aux mêmes colonnes que l\'import, pour un état du parc ou un contrôle. Les
+        <strong>mots de passe n\'y figurent jamais</strong> : un fichier de comptes qui promène les mots de passe en
+        clair est une fuite. Ce fichier reste <em>ré-importable tel quel</em> — l\'import met à jour un compte existant
+        sans mot de passe (il n\'en recrée pas les comptes disparus, faute de secret).</li>
+        <li><strong>Trier et filtrer</strong> : les colonnes Identifiant, Commissariat et État se trient d\'un clic sur
+        leur titre. Les filtres (recherche, commissariat, type d\'accès) <strong>survivent à un enregistrement</strong> :
+        après avoir modifié un compte, on retrouve la liste là où on l\'avait laissée, pas remise à zéro.</li>
       </ul>
       <p><strong>Groupes &amp; quotas</strong> : par groupe, la durée de session, les débits, les quotas de données et
       les plages horaires.</p>
