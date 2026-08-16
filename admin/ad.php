@@ -225,7 +225,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (stripos($out, 'ERROR') === false && stripos($out, 'Failed') === false) {
                 try { pf_db()->prepare('DELETE FROM pf_inventaire WHERE poste=?')
                              ->execute([strtoupper(rtrim($cnm, '$'))]); } catch (Throwable $e) {}
-                $out = "Poste « " . rtrim($cnm, '$') . " » retiré du domaine et de l'inventaire.";
+                // On CONSERVE le message du script : lui seul sait combien de clés BitLocker ont
+                // été détruites avec le poste, et l'exploitant doit le lire — c'est irréversible.
+                $out = trim($out) . " Retiré aussi de l'inventaire.";
             }
             break;
         case 'group_add':       $out = ad('group', 'add', (string) ($_POST['name'] ?? '')); break;
@@ -677,7 +679,7 @@ if ($dcUp) {
 // Ordinateurs : description perso (pf_computer_desc) + dernier fonctionnaire connecté (audit d'auth).
 $computerDesc = [];
 $lastByWs = [];
-$computerDetail = [];   // nom (maj) => ['os'=>…, 'll'=>epoch dernière ouverture]
+$computerDetail = [];   // nom (maj) => ['os'=>…, 'll'=>epoch dernière ouverture, 'dc'=>bool]
 if ($dcUp) {
     try {
         pf_db()->exec('CREATE TABLE IF NOT EXISTS pf_computer_desc (name VARCHAR(64) PRIMARY KEY, description TEXT)');
@@ -696,7 +698,7 @@ if ($dcUp) {
     foreach (explode("\n", ad_cache('compdetail', 0, 'computer', 'detail')) as $l) {
         $p = explode("\t", $l);
         if (trim($p[0] ?? '') === '') { continue; }
-        $computerDetail[strtoupper(trim($p[0]))] = ['os' => trim($p[1] ?? ''), 'll' => (int) trim($p[2] ?? '0')];
+        $computerDetail[strtoupper(trim($p[0]))] = ['os' => trim($p[1] ?? ''), 'll' => (int) trim($p[2] ?? '0'), 'dc' => trim($p[3] ?? '0') === '1'];
     }
 }
 
@@ -1130,7 +1132,8 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
 <section class="dir-sec panel">
   <div class="panel-head"><h2>💻 Ordinateurs du domaine (<?= count($computers) ?>)</h2></div>
   <p class="lead" style="padding:0 1.2rem;margin:.7rem 0"><strong>Cliquez sur un poste</strong> pour voir le dernier
-  fonctionnaire connecté et ajouter une description. Joindre un poste : DNS sur <code><?= e(explode('.', $baseDN)[0] === 'DC=bastion' ? '192.168.182.2' : '192.168.182.2') ?></code>,
+  fonctionnaire connecté, ajouter une description, ou le <strong>retirer du domaine</strong> (rebut, réinstallation).
+  Joindre un poste : DNS sur <code>192.168.182.2</code>,
   domaine <code><?= e($curRealm) ?></code>, identifiants <code>Administrator</code>.</p>
   <div style="padding:0 1.2rem 1.2rem">
     <?php if (!$computers): ?><span class="muted">Aucun poste joint pour le moment.</span>
@@ -1167,9 +1170,27 @@ Office  :  cd "C:\Program Files\Microsoft Office\Office16"
             <textarea name="desc" rows="2" placeholder="Description du poste (localisation, service, usage…)"><?= e($cd) ?></textarea>
             <button class="btn-sm">Enregistrer la description</button>
           </form>
-          <form method="post" style="margin-top:.5rem" onsubmit="return confirm('Retirer <?= e($cn) ?> du domaine ?')">
+          <?php
+          // Le CONTRÔLEUR DE DOMAINE figure dans la liste des ordinateurs comme les autres
+          // (samba-tool computer list le renvoie), mais on ne propose pas de le « retirer du
+          // domaine » : ce serait effacer le serveur lui-même de son propre annuaire. Le
+          // script refuse déjà (SERVER_TRUST_ACCOUNT) ; ici on n'affiche même pas le bouton.
+          if ($dt && !empty($dt['dc'])): ?>
+            <p class="expl muted small" style="margin-top:.5rem">🛡️ Contrôleur de domaine — il ne se retire pas du domaine.</p>
+          <?php else:
+            // La confirmation NOMME les clés BitLocker qui seront détruites avec le poste :
+            // supprimer efface le sous-arbre (poste + clés séquestrées), et cette perte-là est
+            // irréversible. On la dit avant, pas après.
+            $nbk = count($bk);
+            $conf = $nbk > 0
+              ? 'Retirer ' . $cn . ' du domaine ?\n\n⚠ Ce poste a ' . $nbk . ' clé(s) de récupération BitLocker séquestrée(s) dans l\'annuaire : elles seront SUPPRIMÉES aussi et deviendront irrécupérables. À ne faire que si le poste est mis au rebut ou réinstallé.'
+              : 'Retirer ' . $cn . ' du domaine ?';
+          ?>
+          <form method="post" style="margin-top:.5rem" onsubmit="return confirm('<?= e($conf) ?>')">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="computer_delete">
-            <input type="hidden" name="name" value="<?= e($cn) ?>"><button class="btn-sm btn-danger">Retirer du domaine</button></form>
+            <input type="hidden" name="name" value="<?= e($cn) ?>">
+            <button class="btn-sm btn-danger">Retirer du domaine<?= $nbk > 0 ? ' (+ ' . $nbk . ' clé BitLocker)' : '' ?></button></form>
+          <?php endif; ?>
         </div>
       </details>
     <?php endforeach; endif; ?>

@@ -92,13 +92,59 @@ PY
   computer)
     case "$sub" in
       list)   exec "$ST" computer list ;;
-      delete) exec "$ST" computer delete "$a" ;;
+      delete)
+        # « samba-tool computer delete » supprime une FEUILLE : il refuse tout objet qui a
+        # des enfants, avec un message ldb incomprehensible pour l'exploitant —
+        #   « subtree_delete: Unable to delete a non-leaf node (it has 3 children)! »
+        # Or un poste chiffre par BitLocker porte, SOUS son objet ordinateur, un objet
+        # msFVE-RecoveryInformation par volume : ce sont les cles de recuperation
+        # sequestrees dans l'annuaire. Le bouton « Retirer du domaine » echouait donc sur
+        # TOUT poste chiffre, et seulement sur ceux-la — d'ou un dispositif qui paraissait
+        # marcher (les postes sans BitLocker partaient) tout en etant a moitie casse.
+        #
+        # On supprime donc le SOUS-ARBRE (poste + cles), exactement comme la console Windows
+        # quand elle previent « cet objet contient d'autres objets ». La suppression detruit
+        # les cles BitLocker : c'est voulu pour un poste mis au rebut, et la console previent
+        # a la confirmation qu'il y en a. Refus explicite si la cible est un CONTROLEUR DE
+        # DOMAINE (drapeau SERVER_TRUST_ACCOUNT) : on n'efface pas le serveur lui-meme.
+        [ -n "$a" ] || { echo "ERROR: nom d'ordinateur requis" >&2; exit 2; }
+        python3 - "$a" <<'PY'
+import sys
+from samba.samdb import SamDB
+from samba.auth import system_session
+from samba.param import LoadParm
+name = sys.argv[1].rstrip('$')
+lp = LoadParm(); lp.load_default()
+db = SamDB(url='/var/lib/samba/private/sam.ldb', session_info=system_session(), lp=lp)
+esc = name.replace('\\', '\\5c').replace('(', '\\28').replace(')', '\\29').replace('*', '\\2a')
+res = db.search(expression='(&(objectClass=computer)(sAMAccountName=%s$))' % esc,
+                attrs=['dn', 'userAccountControl'])
+if not res:
+    print('ERROR: Unable to find computer "%s"' % name, file=sys.stderr); sys.exit(1)
+uac = int(str(res[0]['userAccountControl'][0])) if 'userAccountControl' in res[0] else 0
+if uac & 0x2000:   # SERVER_TRUST_ACCOUNT : controleur de domaine
+    print('ERROR: « %s » est un controleur de domaine : suppression refusee.' % name, file=sys.stderr)
+    sys.exit(1)
+dn = res[0].dn
+kids = db.search(base=dn, scope=2, expression='(objectClass=msFVE-RecoveryInformation)', attrs=['dn'])
+db.delete(dn, ['tree_delete:0'])
+n = len(kids)
+if n:
+    print('Ordinateur "%s" supprime, avec %d cle(s) de recuperation BitLocker.' % (name, n))
+else:
+    print('Ordinateur "%s" supprime.' % name)
+PY
+        ;;
       detail)
         # Inventaire : pour chaque poste du domaine, « nom TAB systeme TAB derniere_ouverture ».
         # Lecture en un seul appel via SamDB (rapide) ; lastLogonTimestamp est un FILETIME Windows
         # (100 ns depuis 1601) converti en horodatage Unix.
         rl=$(testparm -s --parameter-name=realm 2>/dev/null | tr 'A-Z' 'a-z')
         dn=$(printf '%s' "$rl" | awk -F. '{o="";for(i=1;i<=NF;i++){o=o (i>1?",":"") "DC=" $i} print o}')
+        # 4e colonne « dc » : 1 si l'objet est un CONTROLEUR DE DOMAINE (drapeau
+        # SERVER_TRUST_ACCOUNT). La console s'en sert pour NE PAS proposer « Retirer du
+        # domaine » sur le serveur lui-meme — il figure dans la liste des ordinateurs comme
+        # les autres, et rien ne le distinguait a l'oeil.
         python3 - "$dn" <<'PY' 2>/dev/null
 import sys, ldb
 from samba.samdb import SamDB
@@ -107,7 +153,7 @@ from samba.param import LoadParm
 lp = LoadParm(); lp.load_default()
 db = SamDB(url='/var/lib/samba/private/sam.ldb', session_info=system_session(), lp=lp)
 res = db.search(base=sys.argv[1], expression='(objectClass=computer)',
-                attrs=['sAMAccountName', 'operatingSystem', 'lastLogonTimestamp'])
+                attrs=['sAMAccountName', 'operatingSystem', 'lastLogonTimestamp', 'userAccountControl'])
 def val(e, k):
     return str(e[k][0]) if (k in e and len(e[k])) else ''
 for e in res:
@@ -119,7 +165,9 @@ for e in res:
     v = val(e, 'lastLogonTimestamp')
     if v.isdigit() and int(v) > 0:
         ll = str(int(int(v) / 10000000 - 11644473600))
-    print(name + '\t' + osname + '\t' + ll)
+    uac = val(e, 'userAccountControl')
+    is_dc = '1' if (uac.isdigit() and int(uac) & 0x2000) else '0'
+    print(name + '\t' + osname + '\t' + ll + '\t' + is_dc)
 PY
         ;;
       *) echo "sous-action refusee" >&2; exit 2 ;;

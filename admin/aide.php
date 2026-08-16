@@ -203,7 +203,14 @@ $GROUPS = [
       <p><strong>Un administrateur a fait une modification inexpliquée.</strong> Le <strong>journal d\'audit</strong>
       dit qui, quand, depuis quelle adresse et quoi. Commencez toujours par là : la cause est presque toujours une
       action humaine récente, pas une panne. Les <em>actions groupées</em> y figurent aussi désormais — elles n\'y
-      laissaient aucune trace, et une suppression de cinquante comptes passait donc inaperçue.</p>'],
+      laissaient aucune trace, et une suppression de cinquante comptes passait donc inaperçue.</p>
+      <p><strong>« Retirer du domaine » échoue avec « <code>non-leaf node … it has N children</code> ».</strong>
+      C\'est un poste chiffré par <strong>BitLocker</strong> : ses clés de récupération sont séquestrées dans
+      l\'annuaire, rattachées sous l\'objet du poste, et l\'ancien code refusait de supprimer un objet qui a des
+      enfants. La suppression fonctionnait donc sur les postes non chiffrés et échouait sur les autres, avec ce
+      message obscur. Corrigé : le poste et ses clés sont retirés ensemble, et la confirmation prévient combien de
+      clés seront détruites. Si la machine reste chiffrée quelque part, notez la clé avant de retirer le poste :
+      une fois l\'objet supprimé, la clé est perdue.</p>'],
     ['faq-reseau', '🌐', 'FAQ — Réseau, filtrage et lenteurs', '      <p><strong>J\'ai bloqué un site, il reste accessible.</strong> Le poste garde les adresses DNS en mémoire quelques
       minutes. <code>ipconfig /flushdns</code> sur le poste tranche immédiatement. Si ça persiste au-delà, le site est
       probablement atteint par une autre adresse que celle bloquée.</p>
@@ -383,7 +390,18 @@ $GROUPS = [
       </ol>
       <p>Depuis un poste, un dossier partagé s\'ouvre par le <strong>nom du serveur</strong> :
       <code>\\\\dc.bastion.pn.int\\Commun</code>. Le <em>nom de domaine</em> (<code>\\\\bastion.pn.int\\…</code>)
-      ne convient pas pour un dossier ordinaire : Windows répond « Élément introuvable ».</p>'],
+      ne convient pas pour un dossier ordinaire : Windows répond « Élément introuvable ».</p>
+      <p><strong>Retirer un poste du domaine</strong> : cliquez sur le poste, puis « Retirer du domaine ». Cela
+      efface son objet de l\'annuaire — à faire quand un poste part au rebut ou va être réinstallé. Retirer un poste
+      <em>depuis le poste lui-même</em> (Windows) ne le supprime pas de l\'annuaire : il y resterait affiché
+      indéfiniment. Le <strong>contrôleur de domaine</strong> (le serveur) apparaît dans la liste mais ne propose pas
+      ce bouton : on n\'efface pas le serveur de son propre annuaire.</p>
+      <p class="tip">Si le poste est <strong>chiffré par BitLocker</strong>, ses <strong>clés de récupération</strong>
+      sont séquestrées dans l\'annuaire, <em>sous</em> l\'objet du poste. Les retirer du domaine les efface aussi, et
+      elles deviennent irrécupérables : la confirmation le rappelle et indique combien il y en a. Notez-les avant si
+      la machine reste chiffrée et pourrait un jour réclamer sa clé. Auparavant, la suppression d\'un tel poste
+      <strong>échouait</strong> avec un message « <code>non-leaf node</code> » incompréhensible — corrigé : le poste
+      et ses clés partent ensemble.</p>'],
 
     ['partages', '📁', 'Dossiers partagés : droits &amp; quota', '
       <p>Un <strong>dossier partagé</strong> est un espace commun sur la passerelle, ouvert depuis un poste par
