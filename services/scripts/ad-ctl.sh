@@ -675,13 +675,25 @@ PY
       delete)
         # SUPPRIME définitivement une GPO (objet LDAP + arborescence SYSVOL). $a = GUID.
         # Irréversible. Les deux GPO par défaut de Windows sont protégées.
-        [ -n "$a" ] || { echo "ERROR: GUID requis" >&2; exit 2; }
+        # La progression (prog) alimente la jauge de la console quand un nonce est passé en 5e
+        # argument. IMPÉRATIF : toute sortie en échec pose « prog -1 » AVANT de quitter — sinon
+        # la barre reste figée et l'exploitant ne sait jamais que ça a échoué (le processus
+        # tourne en arrière-plan, détaché de la requête : rien d'autre ne le lui dirait).
+        [ -n "$a" ] || { prog -1 "GUID manquant"; echo "ERROR: GUID requis" >&2; exit 2; }
         case "$(printf '%s' "$a" | tr 'a-f' 'A-F')" in
           "{31B2F340-016D-11D2-945F-00C04FB984F9}"|"{6AC1786C-016F-11D2-945F-00C04FB984F9}")
+            prog -1 "Stratégie système protégée"
             echo "ERROR: GPO systeme Windows protegee" >&2; exit 3 ;;
         esac
-        "$ST" gpo del "$a" -U "Administrator%${ADPASS}" >/dev/null 2>&1 \
-          && echo "gpo $a supprimee" || { echo "ERROR: suppression echouee" >&2; exit 1; }
+        prog 20 "Connexion au domaine…"
+        prog 55 "Suppression de l'objet et du dossier SYSVOL…"
+        if "$ST" gpo del "$a" -U "Administrator%${ADPASS}" >/dev/null 2>&1; then
+          prog 100 "Terminé"
+          echo "gpo $a supprimee"
+        else
+          prog -1 "Suppression échouée"
+          echo "ERROR: suppression echouee" >&2; exit 1
+        fi
         ;;
       domainlinks)
         # Liste (un GUID par ligne, en MAJUSCULES) les GPO LIÉES QUELQUE PART dans le domaine :

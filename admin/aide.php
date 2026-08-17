@@ -476,6 +476,11 @@ $GROUPS = [
         (ex. <code>Z: → \\\\dc.bastion.pn.int\\Commun</code>) — voir la rubrique « Lecteurs réseau ».</li>
         <li>Chaque GPO déployée peut être <strong>désactivée</strong> (déliée du domaine, réversible) ou
         <strong>désinstallée</strong>. Son état réel (active / désactivée) est indiqué.</li>
+        <li><strong>Le déploiement ET la désinstallation affichent une jauge de progression.</strong> La suppression
+        d\'une stratégie efface un objet dans l\'annuaire <em>et</em> son dossier dans le SYSVOL : cela prend quelques
+        secondes, pendant lesquelles le bouton semblait sans effet — on recliquait. La barre suit maintenant le travail
+        réel et, surtout, <strong>affiche l\'échec</strong> (stratégie protégée, erreur du domaine) au lieu de laisser
+        croire à une suppression qui n\'a pas eu lieu.</li>
       </ul>
       <p class="tip">Sur le poste : <code>gpupdate /force</code> puis redémarrage / réouverture de session. Déployez
       « <strong>Attendre le réseau à l\'ouverture de session</strong> » pour que fond d\'écran et lecteurs apparaissent

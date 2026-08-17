@@ -356,7 +356,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
         case 'gpo_unlink': $out = ad('gpo', 'unlink', (string) ($_POST['guid'] ?? '')); break;   // désactiver (délier)
         case 'gpo_link':   $out = ad('gpo', 'link',   (string) ($_POST['guid'] ?? '')); break;   // réactiver (relier)
-        case 'gpo_delete': $out = ad('gpo', 'delete', (string) ($_POST['guid'] ?? '')); break;   // désinstaller (supprimer)
+        case 'gpo_delete':   // désinstaller (supprimer)
+            $gd = (string) ($_POST['guid'] ?? '');
+            if (($_POST['ajax'] ?? '') === '1') {
+                // Jauge de suppression : MÊME mécanique que le déploiement (nonce +
+                // ?gpo_progress). La suppression (objet LDAP + arborescence SYSVOL) prend
+                // quelques secondes ; sans retour, le bouton semblait sans effet et l'on
+                // recliquait. « setsid » détache le processus pour qu'il survive à la requête,
+                // sa sortie est captée dans /tmp pour être relue à la fin.
+                $nonce = bin2hex(random_bytes(8));
+                $outf  = sys_get_temp_dir() . '/pf-gpo-' . $nonce . '.out';
+                @unlink($outf);
+                // Nonce en 5e argument (b vide) : c'est lui qui active la progression côté script.
+                $inner = sprintf('sudo /usr/local/sbin/proxyfibre-ad gpo delete %s %s %s',
+                    escapeshellarg($gd), escapeshellarg(''), escapeshellarg($nonce));
+                shell_exec(sprintf('setsid sh -c %s > %s 2>&1 & echo ok',
+                    escapeshellarg($inner), escapeshellarg($outf)));
+                audit('ad.gpo_delete', $gd);
+                header('Content-Type: application/json');
+                echo json_encode(['nonce' => $nonce]);
+                exit;
+            }
+            $out = ad('gpo', 'delete', $gd);   // repli sans JavaScript : suppression bloquante
+            break;
         case 'share_create': $out = ad('share', 'create', (string) ($_POST['name'] ?? '')); break;
         case 'share_delete': $out = ad('share', 'delete', (string) ($_POST['name'] ?? '')); break;
         case 'share_quota':
@@ -1983,24 +2005,33 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
       var CAP=97;   // plafond de l'avance douce ; le 100 % est réservé à la vraie fin
       function paint(){ var p=Math.max(0,Math.min(100,shownPct)); fill.style.width=p+'%'; pctEl.textContent=Math.round(p)+' %'; }
       function stop(){ if(poll){clearInterval(poll);poll=null;} if(creep){clearInterval(creep);creep=null;} }
-      function show(name){ ov.className='gpo-inst'; icoEl.textContent='📋'; titleEl.textContent='Déploiement de la stratégie';
+      // La MÊME barre sert au déploiement ET à la suppression : même overlay, même sondage
+      // ?gpo_progress=<nonce>. Seuls les libellés changent, portés par « cfg ». Le champ
+      // « note » (message SYSVOL) ne concerne que le déploiement, d'où « cfg.note ».
+      var CFG_DEPLOY={ico:'📋',title:'Déploiement de la stratégie',okico:'✅',oktitle:'Stratégie déployée',
+        oklabel:'Terminé — appliquée aux postes au prochain gpupdate.',failtitle:'Échec du déploiement',note:true};
+      var CFG_DELETE={ico:'🗑️',title:'Suppression de la stratégie',okico:'✅',oktitle:'Stratégie supprimée',
+        oklabel:'Terminé — la stratégie a été retirée du domaine.',failtitle:'Échec de la suppression',note:false};
+      var cfg=CFG_DEPLOY;
+      function show(name){ ov.className='gpo-inst'; icoEl.textContent=cfg.ico; titleEl.textContent=cfg.title;
         nameEl.textContent='« '+name+' »'; lblEl.textContent='Préparation…'; note.hidden=true; acts.hidden=true;
         shownPct=0; serverPct=0; paint(); ov.hidden=false; }
-      function fail(msg){ stop(); ov.classList.add('err'); icoEl.textContent='⛔'; titleEl.textContent='Échec du déploiement';
+      function fail(msg){ stop(); ov.classList.add('err'); icoEl.textContent='⛔'; titleEl.textContent=cfg.failtitle;
         note.hidden=true; shownPct=100; paint(); lblEl.textContent=msg||'Une erreur est survenue.'; acts.hidden=false; }
-      function succeed(){ stop(); ov.classList.add('ok'); icoEl.textContent='✅'; titleEl.textContent='Stratégie déployée';
-        note.hidden=true; shownPct=100; paint(); lblEl.textContent='Terminé — appliquée aux postes au prochain gpupdate.';
+      function succeed(){ stop(); ov.classList.add('ok'); icoEl.textContent=cfg.okico; titleEl.textContent=cfg.oktitle;
+        note.hidden=true; shownPct=100; paint(); lblEl.textContent=cfg.oklabel;
         setTimeout(function(){ location.reload(); }, 1200); }
-      window.startGpoDeploy=function(form, title){
-        show(title); t0=Date.now();
-        // Avance douce : la barre glisse vers CAP tant que le serveur travaille — garde la
-        // jauge vivante pendant la longue réparation SYSVOL (~40 s), sans jamais atteindre 100.
+      // Lancement commun. Avance douce vers CAP tant que le serveur travaille — garde la jauge
+      // vivante (déploiement : réparation SYSVOL ~40 s ; suppression : quelques secondes) sans
+      // jamais atteindre 100 avant la vraie fin.
+      function run(form){
+        t0=Date.now();
         creep=setInterval(function(){ if(shownPct<CAP){ shownPct += (CAP-shownPct)*0.02; paint(); } }, 250);
         var fd=new FormData(form); fd.append('ajax','1');
         fetch(location.pathname, {method:'POST', body:fd, headers:{'X-Requested-With':'fetch'}})
           .then(function(r){ return r.json(); })
           .then(function(j){
-            if(!j || !j.nonce){ fail('Lancement du déploiement impossible.'); return; }
+            if(!j || !j.nonce){ fail('Lancement impossible.'); return; }
             var nonce=j.nonce, misses=0;
             poll=setInterval(function(){
               fetch('ad.php?gpo_progress='+encodeURIComponent(nonce), {headers:{'X-Requested-With':'fetch'}})
@@ -2009,21 +2040,28 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
                   misses=0;
                   if(typeof p.pct==='number'){ serverPct=p.pct; if(p.pct>shownPct){ shownPct=p.pct; paint(); } }
                   if(p.label) lblEl.textContent=p.label;
-                  // Note rassurante pendant l'étape SYSVOL (serveur figé à 65 % le temps du réalignement).
-                  note.hidden = !((Date.now()-t0)>8000 && serverPct>=60 && serverPct<100);
-                  if(p.done){ if(p.ok) succeed(); else fail(p.msg||'Le déploiement a échoué.'); }
+                  // Note rassurante pendant l'étape SYSVOL (déploiement seulement, serveur figé un temps).
+                  note.hidden = !(cfg.note && (Date.now()-t0)>8000 && serverPct>=60 && serverPct<100);
+                  if(p.done){ if(p.ok) succeed(); else fail(p.msg||'Opération échouée.'); }
                 })
                 .catch(function(){ if(++misses>15) fail('Perte de contact avec la passerelle.'); });
             }, 600);
           })
-          .catch(function(){ fail('Lancement du déploiement impossible (réseau).'); });
-      };
+          .catch(function(){ fail('Lancement impossible (réseau).'); });
+      }
+      window.startGpoDeploy=function(form, title){ cfg=CFG_DEPLOY; show(title); run(form); };
+      window.startGpoDelete=function(form, title){ cfg=CFG_DELETE; show(title); run(form); };
       document.addEventListener('submit', function(ev){
-        var f=ev.target;
-        if(!f.classList || !f.classList.contains('gpo-deploy-form')) return;
-        ev.preventDefault();
-        var title=f.getAttribute('data-title')||'la stratégie';
-        if(confirm('Déployer « '+title+' » sur tout le domaine ?')) window.startGpoDeploy(f, title);
+        var f=ev.target; if(!f.classList) return;
+        if(f.classList.contains('gpo-deploy-form')){
+          ev.preventDefault();
+          var t=f.getAttribute('data-title')||'la stratégie';
+          if(confirm('Déployer « '+t+' » sur tout le domaine ?')) window.startGpoDeploy(f, t);
+        } else if(f.classList.contains('gpo-delete-form')){
+          ev.preventDefault();
+          var td=f.getAttribute('data-title')||'la stratégie';
+          if(confirm('SUPPRIMER définitivement « '+td+' » ?\n\nCette action est IRRÉVERSIBLE : la stratégie et ses réglages sont effacés du domaine.')) window.startGpoDelete(f, td);
+        }
       });
     })();
     </script>
@@ -2093,7 +2131,10 @@ $wpStyleLabels = ['10' => 'Remplir', '6' => 'Ajuster', '2' => 'Étirer', '0' => 
                   <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_link">
                   <input type="hidden" name="guid" value="<?= e($g['guid'] ?? '') ?>"><button class="btn-sm">▶ Réactiver</button></form>
               <?php endif; ?>
-              <form method="post" style="margin:0" onsubmit="return confirm('SUPPRIMER définitivement « <?= e($name) ?> » ?\n\nCette action est IRRÉVERSIBLE : la stratégie et ses réglages sont effacés du domaine.')">
+              <?php /* Formulaire AJAX (comme le déploiement) : le gestionnaire « submit » du
+                       script confirme puis lance la jauge. Sans JavaScript, il retombe sur la
+                       suppression bloquante classique du handler gpo_delete. */ ?>
+              <form method="post" class="gpo-delete-form" data-title="<?= e($name) ?>" style="margin:0">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="do" value="gpo_delete">
                 <input type="hidden" name="guid" value="<?= e($g['guid'] ?? '') ?>"><button class="btn-sm btn-danger">🗑 Désinstaller</button></form>
             </div>
